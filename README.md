@@ -1,6 +1,6 @@
 # Claude Social Media Skills
 
-Claude Code skills for promoting your work on social media via [Buffer](https://buffer.com).
+Claude Code skills for promoting and syndicating your work on social media.
 
 ## Skills
 
@@ -24,26 +24,24 @@ Fetch your public GitHub contributions (merged PRs, commits, releases) and compo
 /promote-github https://github.com/user/repo/pull/123
 ```
 
+### `/crosspost-newsletter`
+
+Cross-post a full [beehiiv](https://beehiiv.com) newsletter article as a native long-form post on LinkedIn, Substack, and/or Medium. Uses browser automation to preserve rich formatting, headings, and images. Sets canonical URL back to the original post.
+
+```
+/crosspost-newsletter https://www.example.com/p/my-post
+/crosspost-newsletter latest
+```
+
 ## Setup
 
 1. Install [Claude Code](https://claude.ai/code)
-2. Connect a [Buffer MCP server](https://publish.buffer.com/settings/api) with your API key
-3. Symlink each skill directory into `~/.claude/skills/`:
+2. Connect a [Buffer MCP server](https://publish.buffer.com/settings/api) with your API key (for promote-newsletter and promote-github)
+3. Install [gstack](https://github.com/nichochar/gstack) browse (for crosspost-newsletter)
+4. Symlink each skill directory into `~/.claude/skills/`:
    ```bash
    ln -s /path/to/claude-social-media-skills/promote-newsletter ~/.claude/skills/promote-newsletter
    ln -s /path/to/claude-social-media-skills/promote-github ~/.claude/skills/promote-github
+   ln -s /path/to/claude-social-media-skills/crosspost-newsletter ~/.claude/skills/crosspost-newsletter
    ```
-4. Use the slash commands from any Claude Code session
-
-## How It Works
-
-Each skill follows a multi-phase workflow:
-
-1. **Fetch** content (newsletter via RSS/URL, or GitHub via `gh` CLI)
-2. **Identify** the best snippets or contributions to promote
-3. **User selects** what to post and how (batch vs. individual)
-4. **Compose** platform-specific posts respecting character limits
-5. **Review** all posts before publishing
-6. **Post** to Buffer across all connected channels
-
-Supported platforms: Twitter/X, Bluesky, LinkedIn, Threads, Facebook, Mastodon, Instagram, Pinterest.
+5. Use the slash commands from any Claude Code session
