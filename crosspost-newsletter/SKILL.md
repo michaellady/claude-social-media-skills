@@ -50,7 +50,12 @@ Fetch the RSS feed, list recent articles, ask the user which one, then follow th
 **Content preparation:**
 1. **Strip beehiiv boilerplate** — remove tracking pixels, analytics images, newsletter signup forms, footer, "View in browser" links, beehiiv-specific CSS classes/inline styles, UTM parameters from links
 2. **Keep semantic HTML only** — h1-h6, p, strong, em, a, ul/ol/li, blockquote, pre/code (do NOT include img tags — images are uploaded separately)
-3. **Save clean HTML to a temp file** — `/tmp/article-body.html`
+3. **Format blockquote attributions** — the quote author/attribution must always be on a separate line below the quote text. In the HTML, place a `<br>` before the em dash and author name inside each `<blockquote>`:
+   ```html
+   <blockquote>"Quote text here."<br>— Author Name</blockquote>
+   ```
+   This formatting must be done in the initial paste HTML for all platforms. Post-paste editing of blockquotes causes save errors on Medium, and LinkedIn's editor is similarly restrictive. Getting it right in the initial paste is the only reliable approach.
+4. **Save clean HTML to a temp file** — `/tmp/article-body.html`
 4. **Escape for JS embedding** — when loading from file into `$B js`, escape backticks and `${` sequences:
    ```bash
    ARTICLE_HTML=$(cat /tmp/article-body.html | sed "s/\`/\\\\\`/g" | sed 's/\$/\\$/g')
