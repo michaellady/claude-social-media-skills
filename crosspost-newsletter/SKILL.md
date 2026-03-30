@@ -6,7 +6,7 @@ user_invocable: true
 
 # crosspost-newsletter
 
-Cross-post a full beehiiv newsletter article to LinkedIn (native article), Substack, and/or Medium using browser automation via gstack browse. Preserves rich formatting, headings, images, and sets canonical URL back to the original beehiiv post.
+Cross-post a full beehiiv newsletter article to LinkedIn (native article), Substack, and/or Medium using browser automation via gstack browse. Preserves rich formatting, headings, images, and sets canonical URL back to the original beehiiv post. If a platform offers the option to send the article as an email to subscribers, always enable it.
 
 ## Usage
 
@@ -357,7 +357,7 @@ $B snapshot -i
 ```
 Find and click "Publish" or "Continue". Substack may show a publish dialog.
 
-**CRITICAL: Substack asks whether to send the post as an email to subscribers. Since this is a cross-post (not the original), UNCHECK any "Send to email subscribers" or "Email this post" option.** Only publish as a web-only post.
+**Substack asks whether to send the post as an email to subscribers. KEEP this option CHECKED — we want to send the article as an email to subscribers on every platform that supports it.**
 
 ```bash
 $B snapshot -i
