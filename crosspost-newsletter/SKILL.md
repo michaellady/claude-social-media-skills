@@ -6,7 +6,7 @@ user_invocable: true
 
 # crosspost-newsletter
 
-Cross-post a full beehiiv newsletter article to LinkedIn (native article), Substack, and/or Medium using browser automation via gstack browse. Preserves rich formatting, headings, images, and sets canonical URL back to the original beehiiv post. If a platform offers the option to send the article as an email to subscribers, always enable it.
+Cross-post a full beehiiv newsletter article to LinkedIn (native article), Substack, and/or Medium. Uses gstack browse for LinkedIn and Substack, and Claude in Chrome (mcp__claude-in-chrome__*) for Medium (which blocks headless browsers via Cloudflare). Preserves rich formatting, headings, images, and sets canonical URL back to the original beehiiv post. If a platform offers the option to send the article as an email to subscribers, always enable it.
 
 ## Usage
 
@@ -328,12 +328,117 @@ Substack does NOT have a canonical URL field in the post settings UI. Skip this 
 
 #### Platform: Medium
 
-**WARNING: Medium aggressively blocks headless Chromium via Cloudflare (HTTP 403).** Cookie import typically does not bypass this. If Cloudflare blocks access:
-1. Inform the user that Medium is blocked by bot detection.
-2. Offer to skip Medium.
-3. If the user wants to proceed, handoff for manual login, but expect Cloudflare to continue blocking even after login.
+**Medium blocks headless browsers (gstack browse) via Cloudflare.** Use the Claude in Chrome extension (`mcp__claude-in-chrome__*` tools) instead, which operates through the user's real Chrome browser.
 
-If access is achieved, follow the same pattern as LinkedIn/Substack: fill title, paste body, upload images via toolbar, set canonical URL in story settings if available.
+**Step 1 — Set up Claude in Chrome tab:**
+```
+mcp__claude-in-chrome__tabs_context_mcp (createIfEmpty: true)
+mcp__claude-in-chrome__tabs_create_mcp  # if needed
+```
+
+**Step 2 — Navigate to story editor:**
+```
+mcp__claude-in-chrome__navigate (url: "https://medium.com/new-story", tabId: <tabId>)
+```
+If not logged in, the user must log in manually in Chrome — Medium sessions are in the real browser.
+
+**Step 3 — Fill the title:**
+Use `read_page` with `filter: "interactive"` to find the textbox element. Click it and type:
+```
+mcp__claude-in-chrome__computer (action: "left_click", ref: "<textbox ref>")
+mcp__claude-in-chrome__computer (action: "type", text: "<article title>")
+mcp__claude-in-chrome__computer (action: "key", text: "Enter")
+```
+
+**Step 4 — Insert the article body:**
+Use `javascript_tool` to clipboard-paste HTML. Medium's editor accepts rich paste well — headings, blockquotes, links, bold, code all preserved:
+```javascript
+// mcp__claude-in-chrome__javascript_tool
+const html = `<ARTICLE_HTML>`;
+const dt = new DataTransfer();
+dt.setData('text/html', html);
+dt.setData('text/plain', html.replace(/<[^>]*>/g, ''));
+const editors = [...document.querySelectorAll('[contenteditable="true"]')];
+const editor = editors.find(el => el.getBoundingClientRect().height > 50);
+if (editor) {
+  editor.focus();
+  const sel = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(editor);
+  range.collapse(false);
+  sel.removeAllRanges();
+  sel.addRange(range);
+  const evt = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
+  editor.dispatchEvent(evt);
+  'PASTE_OK';
+}
+```
+
+**IMPORTANT — Quote formatting:** Medium's editor does NOT support `<br>` inside blockquotes for post-paste editing (causes "cannot save your story" errors). If you need authors on separate lines within blockquotes, either:
+- Include `<br>` before the author attribution in the initial paste HTML (e.g. `<blockquote>"Quote text"<br>— Author</blockquote>`) — this works during initial paste
+- Or have the user manually edit quotes after paste via handoff
+
+Do NOT use Shift+Enter or direct DOM manipulation on blockquotes after paste — it breaks Medium's save mechanism.
+
+**Step 5 — Upload images inline:**
+For each image, position cursor after the correct paragraph, then:
+1. Click the "+" button that appears on empty lines to reveal the toolbar
+2. Click the image icon (first icon in the toolbar)
+3. This opens a native file dialog and creates a file input. Upload via JS:
+```javascript
+// mcp__claude-in-chrome__javascript_tool
+new Promise((resolve) => {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    const maxW = 800;
+    const scale = Math.min(1, maxW / img.naturalWidth);
+    canvas.width = img.naturalWidth * scale;
+    canvas.height = img.naturalHeight * scale;
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob((blob) => {
+      const file = new File([blob], 'image.jpg', { type: 'image/jpeg' });
+      const input = document.querySelector('input[type="file"]');
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      resolve('UPLOADED: ' + file.size + ' bytes');
+    }, 'image/jpeg', 0.8);
+  };
+  img.onerror = () => resolve('IMG_LOAD_FAILED');
+  img.src = '<IMAGE_URL>';
+});
+```
+Note: Direct `fetch()` is CORS-blocked on Medium. The Image+canvas approach works because `crossOrigin = 'anonymous'` allows cross-origin image loading for canvas rendering. Keep images under 800px width to avoid timeouts.
+
+**Step 6 — Set canonical URL:**
+Navigate to story settings via the "..." menu → "More settings" → "Advanced Settings":
+1. `mcp__claude-in-chrome__computer (action: "left_click")` on the "..." button (top-right of editor)
+2. Click "More settings" in the dropdown
+3. Click "Advanced Settings" in the left nav
+4. Check the "This story was originally published elsewhere" checkbox via JS:
+```javascript
+const checkboxes = [...document.querySelectorAll('input[type="checkbox"]')];
+const canonical = checkboxes.find(c => c.labels?.[0]?.textContent?.includes('originally published'));
+if (canonical) { canonical.click(); 'CHECKED: ' + canonical.checked; }
+```
+5. Click "Edit canonical link", clear the field, type the beehiiv URL
+6. Click "Save canonical link"
+7. Navigate back to the editor
+
+**Step 7 — Publish:**
+1. Click "Publish" button (top-right)
+2. Medium shows a publish confirmation page with:
+   - Story preview (title, description, preview image)
+   - Topics (optional)
+   - Publication (optional — "Submit your story to connect with community")
+   - `[checkbox] "Notify your N subscribers"` — **KEEP CHECKED**
+   - "Publish" button and "Schedule for later" link
+3. Click the final "Publish" button
+4. Confirmation dialog: "Your story has been published and sent!"
+5. Capture the published URL from the page
 
 ---
 
@@ -385,8 +490,17 @@ ProseMirror clipboard paste preserves text formatting but strips `<img>` tags. *
 ### Substack duplicate title fields
 The editor has both sidebar metadata fields and visible textarea fields. `$B fill` may target the wrong one. **Workaround:** use JS to find textareas by placeholder text and set `.value` directly.
 
-### Medium Cloudflare blocking
-Medium returns HTTP 403 from Cloudflare for headless Chromium browsers. Cookie import does not help. **Workaround:** skip Medium or handoff for fully manual creation.
+### Medium requires Claude in Chrome
+Medium returns HTTP 403 from Cloudflare for headless Chromium browsers (gstack browse). User agent spoofing does not reliably work — may get through initially but gets blocked on subsequent page loads. **Workaround:** use Claude in Chrome extension (`mcp__claude-in-chrome__*` tools) which operates through the user's real Chrome browser and bypasses Cloudflare entirely.
+
+### Medium blockquote line breaks
+Medium's editor does NOT support post-paste editing of blockquotes with Shift+Enter or direct DOM manipulation — both cause persistent "Something is wrong and we cannot save your story" errors that prevent saving and publishing. **Workaround:** include `<br>` tags in the initial paste HTML before the author attribution. If the initial paste doesn't preserve the line breaks, have the user manually edit quotes via handoff.
+
+### Medium image upload via JS
+Direct `fetch()` is CORS-blocked on Medium's domain. **Workaround:** use `new Image()` with `crossOrigin = 'anonymous'`, draw to canvas, then create a File blob from `canvas.toBlob()`. Set the file on the `input[type="file"][name="uploadedFile"]` element and dispatch a `change` event. Keep images under 800px width to avoid JS execution timeouts.
+
+### Medium canonical URL
+Available under Story Settings → Advanced Settings → "Customize Canonical Link" → check "This story was originally published elsewhere". Use JS `click()` on the checkbox (not `form_input`) as the UI checkbox can be finicky. After checking, the "Edit canonical link" button reveals a URL input field.
 
 ### gstack browse command reference
 - `$B type` — type text into focused element (NOT `type_text`)
@@ -400,3 +514,13 @@ Medium returns HTTP 403 from Cloudflare for headless Chromium browsers. Cookie i
 - `$B handoff "message"` — hand control to user
 - `$B resume` — resume after handoff
 - `$B cookie-import-browser chrome domain.com` — import cookies (syntax: browser then domain, no `--domain` flag)
+
+### Claude in Chrome tool reference
+- `mcp__claude-in-chrome__tabs_context_mcp` — get available tabs (call first)
+- `mcp__claude-in-chrome__tabs_create_mcp` — create new tab
+- `mcp__claude-in-chrome__navigate` — navigate to URL
+- `mcp__claude-in-chrome__read_page` — get accessibility tree (use `filter: "interactive"` for buttons/inputs)
+- `mcp__claude-in-chrome__find` — find elements by natural language
+- `mcp__claude-in-chrome__computer` — mouse/keyboard actions and screenshots
+- `mcp__claude-in-chrome__javascript_tool` — execute JS in page context (no top-level `await` — wrap in async IIFE or use Promises)
+- `mcp__claude-in-chrome__form_input` — set form values by ref
