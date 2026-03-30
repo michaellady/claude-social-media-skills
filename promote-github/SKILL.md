@@ -1,12 +1,12 @@
 ---
 name: promote-github
-description: Use when user wants to promote their GitHub contributions on social media, create social posts from commits, PRs, or releases, or post GitHub activity to Buffer channels — "promote my github", "share what I shipped", "post about my PRs", "promote this PR".
+description: Use when user wants to promote their GitHub contributions on social media, create social posts from new repos, commits, PRs, or releases, or post GitHub activity to Buffer channels — "promote my github", "share what I shipped", "post about my PRs", "promote this PR", "promote this repo".
 user_invocable: true
 ---
 
 # promote-github
 
-Fetch public GitHub contributions (merged PRs, commits, releases) and create platform-specific social media posts via Buffer MCP. Frame every post around value and impact — not technical jargon.
+Fetch public GitHub contributions (new repos, merged PRs, commits, releases) and create platform-specific social media posts via Buffer MCP. Frame every post around value and impact — not technical jargon.
 
 ## Usage
 
@@ -37,7 +37,7 @@ Convert the argument to a GitHub search date qualifier:
 - `this-week` → `>YYYY-MM-DD` using the date 7 days ago
 - `YYYY-MM-DD..YYYY-MM-DD` → use as-is
 
-Fetch three data sources. Run all three in parallel:
+Fetch four data sources. Run all in parallel:
 
 **1. Merged PRs:**
 ```bash
@@ -63,7 +63,22 @@ gh api "repos/{owner}/{repo}/releases?per_page=30" \
   --jq '.[] | select(.published_at >= "{start_date}") | {tag_name, name, html_url, published_at, body: .body[:500]}'
 ```
 
-**Deduplicate:** If a commit's repo and date overlap with a merged PR in the same repo, prefer the PR as the higher-level unit of work. Drop the standalone commit entry.
+**4. New Repos Created:**
+Fetch repos created by the user in the date range:
+```bash
+gh api "search/repositories?q=user:{username}+created:{date_qualifier}&sort=created&per_page=100" \
+  --jq '.items[] | select(.private == false) | {full_name, html_url, description, created_at, language}'
+```
+For each new repo found, also fetch its commits to understand what was included at creation:
+```bash
+gh api "repos/{owner}/{repo}/commits?per_page=100" \
+  --jq '[.[] | {sha: .sha[:7], message: .commit.message}]'
+```
+Present the new repo as a single contribution with its description and a summary of what was included (based on commit messages). This gives context for composing an impact-framed post about launching the project.
+
+**Deduplicate:**
+- If a commit belongs to a repo that was newly created in the same date range, drop the standalone commit — it will be covered by the "New Repo" entry.
+- If a commit's repo and date overlap with a merged PR in the same repo, prefer the PR as the higher-level unit of work. Drop the standalone commit entry.
 
 ---
 
@@ -101,18 +116,23 @@ Then fetch based on URL pattern:
 Present fetched contributions as a numbered list, grouped by type:
 
 ```
+New Repos:
+1. [claude-social-media-skills] "Claude Code skills for promoting your work on social media via Buffer" — created Mar 30
+   Includes: promote-github skill, promote-newsletter skill, README
+   → https://github.com/user/claude-social-media-skills
+
 Merged PRs:
-1. [repo-name] "Add real-time notifications" — merged Mar 28
+2. [repo-name] "Add real-time notifications" — merged Mar 28
    → https://github.com/user/repo/pull/12
-2. [repo-name] "Fix Docker arch detection" — merged Mar 27
+3. [repo-name] "Fix Docker arch detection" — merged Mar 27
    → https://github.com/user/repo/pull/2548
 
-Commits (not part of a merged PR):
-3. [repo-name] "Update README with setup docs" — Mar 29
+Commits (not part of a merged PR or new repo):
+4. [repo-name] "Update README with setup docs" — Mar 29
    → https://github.com/user/repo/commit/36cca4d
 
 Releases:
-4. [repo-name] v0.13.0 — published Mar 29
+5. [repo-name] v0.13.0 — published Mar 29
    → https://github.com/user/repo/releases/tag/v0.13.0
 ```
 
