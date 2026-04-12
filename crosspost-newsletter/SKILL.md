@@ -483,10 +483,66 @@ For each image, position cursor and use the toolbar Image button:
    ```
 7. For subsequent images, the `data-img-upload` attribute may already exist. Use a unique attribute each time or find the latest `.heic` input.
 
-**Step 7 — Canonical URL:**
+**Step 7 — Add image captions (from Phase 1 extraction):**
+
+Substack exposes a three-dot menu on each image that contains an "Edit caption" action. The menu only surfaces when the image is properly selected via real mouse events — a simple `.click()` is not enough. Dispatch the full pointer+mouse event sequence with exact coordinates, then click the "Edit caption" action, then fill the `<figcaption class="image-caption">` via `document.execCommand('insertText')`.
+
+For each image (captions from Phase 1 `bodyImages[].caption`):
+```bash
+$B js "
+  const imgs = [...document.querySelectorAll('.ProseMirror img')];
+  const img = imgs[N];  // 0-indexed image
+  img.scrollIntoView({ block: 'center' });
+  const r = img.getBoundingClientRect();
+  const opts = { bubbles: true, cancelable: true, view: window,
+                 clientX: r.x + r.width/2, clientY: r.y + r.height/2,
+                 button: 0, buttons: 1, pointerType: 'mouse',
+                 pointerId: 1, isPrimary: true };
+  // Full event sequence — click() alone does NOT reveal the menu
+  img.dispatchEvent(new PointerEvent('pointerdown', opts));
+  img.dispatchEvent(new MouseEvent('mousedown', opts));
+  img.dispatchEvent(new PointerEvent('pointerup', opts));
+  img.dispatchEvent(new MouseEvent('mouseup', opts));
+  img.dispatchEvent(new MouseEvent('click', opts));
+  'SELECTED';
+"
+```
+
+Then click the "Edit caption" action:
+```bash
+$B js "
+  const actions = [...document.querySelectorAll('.image-action')];
+  const editCap = actions.find(a => a.textContent.trim() === 'Edit caption');
+  if (editCap) editCap.click();
+  'CLICKED';
+"
+```
+
+Then fill the caption via Range + execCommand:
+```bash
+$B js "
+  const imgs = [...document.querySelectorAll('.ProseMirror img')];
+  const figure = imgs[N].closest('figure');
+  const cap = figure?.querySelector('figcaption.image-caption');
+  if (!cap) { 'NO_CAP'; } else {
+    const range = document.createRange();
+    range.selectNodeContents(cap);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    document.execCommand('delete', false);
+    document.execCommand('insertText', false, '<caption text>');
+    'SET: ' + cap.textContent;
+  }
+"
+```
+
+Repeat for each image. Direct `figcaption.textContent = "..."` does NOT work — ProseMirror ignores it. Only `execCommand('insertText')` routes through ProseMirror's dispatch and persists.
+
+**Step 8 — Canonical URL:**
 Substack does NOT have a canonical URL field in the post settings UI. Skip this step.
 
-**Step 8 — Publish:**
+**Step 9 — Publish:**
 1. Click "Continue" button. A publish dialog appears with:
    - Audience: "Everyone" (checked)
    - `[checkbox] "Send via email and the Substack app"` — **KEEP CHECKED**
@@ -880,6 +936,9 @@ ta.dispatchEvent(new Event('change', { bubbles: true }));
 
 ### LinkedIn converts `<h2>` to `<h3>` on paste
 LinkedIn's paste sanitizer downgrades all `<h2>` headings to `<h3>`. When anchoring operations to headings (moving figures, inserting anchors), query `h3` (or the wildcard `h1,h2,h3,h4,h5,h6`) — not the tag from your source HTML.
+
+### Substack image captions require full pointer+mouse event sequence
+The three-dot menu on a Substack image (which contains "Edit caption") only surfaces when the image NodeView enters a selected state. A synthetic `img.click()` or even a basic `MouseEvent('click')` does NOT trigger this. You must dispatch the full `pointerdown → mousedown → pointerup → mouseup → click` sequence with real `clientX/clientY` coordinates (center of the image via `getBoundingClientRect`). Once the menu is visible in the DOM, clicking the "Edit caption" action inserts a `<figcaption class="image-caption">`, and filling that caption requires `document.execCommand('insertText', ...)` routed through a Range+Selection (NOT direct `.textContent = ...`, which ProseMirror ignores). See Substack Step 7 for the working pattern.
 
 ### Substack strips images on paste
 ProseMirror clipboard paste preserves text formatting but strips `<img>` tags. **Workaround:** upload images separately via the toolbar Image button after pasting text.
