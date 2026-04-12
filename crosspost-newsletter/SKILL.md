@@ -874,7 +874,10 @@ mcp__claude-in-chrome__find (tabId: <tabId>, query: "Link tab in post type selec
 mcp__claude-in-chrome__computer (action: "left_click", ref: <Link tab ref>)
 ```
 
-**Step 6 — Fill title and URL:**
+**Step 6 — Fill title, URL, and body text:**
+
+Reddit link posts support an optional body text field ("Optional Body text field") below the URL. Fill it with a short value/impact-framed intro — this significantly improves engagement compared to a bare link post. Compose the body text from the article's subtitle and a 1-2 sentence hook:
+
 ```
 mcp__claude-in-chrome__find (tabId: <tabId>, query: "Title textbox")
 mcp__claude-in-chrome__computer (action: "left_click", ref: <title ref>)
@@ -883,7 +886,21 @@ mcp__claude-in-chrome__computer (action: "type", text: "<article title>")
 mcp__claude-in-chrome__find (tabId: <tabId>, query: "Link URL textbox")
 mcp__claude-in-chrome__computer (action: "left_click", ref: <url ref>)
 mcp__claude-in-chrome__computer (action: "type", text: "<beehiiv URL>")
+
+mcp__claude-in-chrome__find (tabId: <tabId>, query: "Optional Body text field")
+mcp__claude-in-chrome__computer (action: "left_click", ref: <body ref>)
+mcp__claude-in-chrome__computer (action: "type", text: "<2-3 sentence intro/hook>")
 ```
+
+The body text should:
+- Lead with a hook or the article's core thesis (not a summary)
+- Be under 500 characters for comment-section readability
+- End with an implicit or explicit invitation to discuss
+- NOT begin with "Check out my article" or other self-promotional phrasing (Reddit downvotes this)
+- Match the tone of the target subreddit
+
+Example (for a personal essay about AI + Jiu-Jitsu):
+> "I just got my black belt in Brazilian Jiu-Jitsu after 14 years, and the parallels to learning AI Agents are striking. Here are 3 lessons from the mat that apply to coding with Claude."
 
 **Step 7 — Handle subreddit-specific required fields:**
 
