@@ -874,9 +874,11 @@ mcp__claude-in-chrome__find (tabId: <tabId>, query: "Link tab in post type selec
 mcp__claude-in-chrome__computer (action: "left_click", ref: <Link tab ref>)
 ```
 
-**Step 6 — Fill title, URL, and body text:**
+**Step 6 — Fill title, URL, and body text (BODY TEXT IS REQUIRED):**
 
-Reddit link posts support an optional body text field ("Optional Body text field") below the URL. Fill it with a short value/impact-framed intro — this significantly improves engagement compared to a bare link post. Compose the body text from the article's subtitle and a 1-2 sentence hook:
+**Reddit link posts MUST include body text.** Despite the field being labeled "Optional Body text field", many subreddits (including r/ClaudeAI and most moderated AI/dev subs) automatically remove link posts with no body — their automod rules flag them as low-effort spam. Today's r/ClaudeAI submission was removed within minutes because it had no body text.
+
+Always compose and fill a 2-3 sentence body text before clicking Post:
 
 ```
 mcp__claude-in-chrome__find (tabId: <tabId>, query: "Title textbox")
@@ -1091,6 +1093,9 @@ Each sub has different rules: required flairs, karma minimums, self-promotion ba
 **Notable 2026 rule changes:**
 - **r/programming bans LLM-primarily-generated posts** — human-written content is still allowed but heavily moderated. When cross-posting a newsletter that is clearly human-authored, r/programming is eligible, but expect stricter moderation than other dev subs.
 - **r/MachineLearning prefers research/benchmarks** — personal essays or high-level opinion pieces frequently get removed by mods.
+
+### Reddit link posts without body text get auto-removed
+Many subreddits' automod rules flag link posts with no body text as low-effort spam and remove them within minutes — even though Reddit's UI labels the body field "Optional". Confirmed today: a bare-link submission to r/ClaudeAI was removed automatically. **Workaround:** always fill the body field with a 2-3 sentence intro/hook. Treat it as mandatory, not optional, for every Reddit submission regardless of what the form labels say.
 
 ### Reddit blocks Claude in Chrome but allows gstack browse
 The Claude in Chrome extension refuses to navigate to `reddit.com` with the message "This site is not allowed due to safety restrictions." **Workaround:** use gstack browse (`$B`) for Reddit submissions. A spoofed user agent (`$B useragent "Mozilla/5.0 ... Chrome/131 ..."`) is NOT required — Reddit works fine with the default gstack user agent once cookies are imported.
