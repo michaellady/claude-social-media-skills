@@ -659,18 +659,52 @@ Reddit has an OAuth2 write API, but it requires creating a Reddit app and managi
 
 **Step 1 — Select subreddits:**
 
-Present the default subreddit list and let the user multi-select (with an option to add custom subs):
+Before presenting the list, consider the article's content type and recommend a tailored subset:
+- **Technical tutorial / how-to** → Programming + AI categories both fit
+- **Personal essay / reflection** → AI category (r/ClaudeAI, r/vibecoding, r/singularity) fits well; programming subs are a weaker fit
+- **Research / benchmarks** → r/MachineLearning, r/LocalLLaMA, r/LocalLLM
+- **Business / launch** → r/SaaS, r/Entrepreneur, r/indiehackers, r/startups
+- **Ops / infra** → r/devops, r/sre
 
-Default list:
-- `r/programming`
-- `r/webdev`
-- `r/ClaudeAI`
-- `r/ArtificialIntelligence`
-- `r/artificial`
-- `r/LocalLLaMA`
-- `r/SaaS`
-- `r/Entrepreneur`
-- `r/devops`
+Present the full categorized subreddit list and let the user multi-select (with an option to add custom subs):
+
+**AI / LLM / Agents** (primary fit for most AI-related content):
+- `r/ClaudeAI` — Anthropic/Claude-specific; Claude Code workflows
+- `r/AI_Agents` (212K) — explicitly about LLMs with tool-use / agentic systems
+- `r/vibecoding` (89K) — hands-on AI coding
+- `r/VibeCodeDevs` (15K) — sister community
+- `r/ChatGPTCoding` — Claude Code + AI coding workflows
+- `r/ArtificialIntelligence` — general AI discussion
+- `r/artificial` — general AI discussion (different sub, smaller)
+- `r/singularity` — future of AI, philosophical posts welcome
+- `r/OpenAI` (730K+) — OpenAI/ChatGPT-focused
+- `r/GPT` (590K+) — GPT-focused
+- `r/PromptEngineering` — practical prompt tactics
+- `r/LocalLLaMA` — local LLM tinkering, quantization, Ollama/llama.cpp
+- `r/LocalLLM` — related to LocalLLaMA
+- `r/LanguageTechnology` — NLP, transformers, embeddings
+- `r/MachineLearning` (2M+) — research-heavy; may reject personal essays
+- `r/aineurips` — AI research + news, less technical than r/MachineLearning
+
+**Programming / Software Engineering** (best for technical how-to; weak fit for personal essays):
+- `r/programming` — **NOTE**: bans LLM-primarily-generated posts (2026 rule); human-written OK but moderated
+- `r/coding` — opinion pieces / tutorials, no news
+- `r/webdev` — web development focus
+- `r/ExperiencedDevs` — 3+ years dev, career + engineering
+- `r/softwareengineering` — system design, enterprise challenges
+- `r/cscareerquestions` — CS/SWE/SRE careers
+- `r/compsci` — general computer science
+- `r/learnprogramming` — beginner help (weak fit for cross-posts)
+
+**Business / Indie / SaaS:**
+- `r/SaaS` — SaaS launches and discussion
+- `r/Entrepreneur` — general entrepreneurship
+- `r/indiehackers` — indie maker content
+- `r/startups` — startup launches
+
+**Specialty / Ops:**
+- `r/devops` — devops practices
+- `r/sre` — site reliability engineering
 
 If the user selects more than 5 subs, warn them about Reddit's 9:1 self-promotion rule and confirm.
 
@@ -863,6 +897,10 @@ Reddit enforces a sitewide 9:1 rule — 9 community contributions for every 1 se
 
 ### Reddit subreddit-specific rules
 Each sub has different rules: required flairs, karma minimums, self-promotion bans, mandatory community questions. The skill cannot enumerate every rule — it handles whatever the submit form presents (flair dropdowns, rule acknowledgment modals, community questions) and reports the error if a submission is rejected. **Workaround:** use `read_page` to detect required fields before submitting; handoff if community questions appear.
+
+**Notable 2026 rule changes:**
+- **r/programming bans LLM-primarily-generated posts** — human-written content is still allowed but heavily moderated. When cross-posting a newsletter that is clearly human-authored, r/programming is eligible, but expect stricter moderation than other dev subs.
+- **r/MachineLearning prefers research/benchmarks** — personal essays or high-level opinion pieces frequently get removed by mods.
 
 ### Reddit CAPTCHA
 Reddit occasionally shows a CAPTCHA on submit, especially for newer accounts or rapid posting. Claude in Chrome cannot solve CAPTCHAs. **Workaround:** screenshot after clicking Post, detect CAPTCHA visually, handoff to user with clear instructions, resume after they solve it.
