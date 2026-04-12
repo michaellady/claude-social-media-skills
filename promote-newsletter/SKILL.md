@@ -66,7 +66,7 @@ The post body (excluding CTA) must be a direct excerpt from the article.
 **Every post must end with this CTA** (separated by a blank line), using the article title:
 
 ```
-Comment "newsletter" to get a link to my latest post, "<Article Title>"
+Comment "newsletter" to get my latest post, "<Article Title>"
 ```
 
 **Character limits** (CTA is ~70 chars depending on title length, leave ~5 char safety margin):
@@ -83,7 +83,7 @@ Comment "newsletter" to get a link to my latest post, "<Article Title>"
 | TikTok     | 2,200 | 2,200 - CTA length - 7 margin |
 | LinkedIn   | 3,000 | 3,000 - CTA length - 7 margin |
 
-Calculate the actual CTA length using the article title to determine snippet budgets. The CTA format is `Comment "newsletter" to get a link to my latest post, "<title>"` — count the full string including the title.
+Calculate the actual CTA length using the article title to determine snippet budgets. The CTA format is `Comment "newsletter" to get my latest post, "<title>"` — count the full string including the title.
 
 For short-form platforms (Twitter, Bluesky, Pinterest): pick the most concise snippet or trim aggressively.
 For long-form platforms (LinkedIn, Instagram): the full snippet can be used, potentially with multiple paragraphs.
