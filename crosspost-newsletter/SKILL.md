@@ -77,13 +77,42 @@ Fetch the RSS feed, list recent articles, ask the user which one, then follow th
 **Content preparation:**
 1. **Strip beehiiv boilerplate** — remove tracking pixels, analytics images, newsletter signup forms, footer, "View in browser" links, beehiiv-specific CSS classes/inline styles, UTM parameters from links
 2. **Keep semantic HTML only** — h1-h6, p, strong, em, a, ul/ol/li, blockquote, pre/code (do NOT include img tags — images are uploaded separately)
-3. **Format blockquote attributions** — the quote author/attribution must always be on a separate line below the quote text. In the HTML, place a `<br>` before the em dash and author name inside each `<blockquote>`:
+3. **PRESERVE EXACT ELEMENT ORDER from source** — walk the beehiiv DOM (`.dream-post-content-doc` children) in document order and emit elements in the same order. Do NOT reorder, group, or guess positions. Blockquotes, footnotes, and mid-article callouts are easy to misplace when hand-constructing the HTML — the Sun Tzu blockquote in "3 Lessons in AI Agents from a Black Belt" belongs as the VERY LAST element after both footnotes, not before them. Use this extraction JS to get everything in correct order:
+   ```bash
+   $B js "
+     const body = document.querySelector('.dream-post-content-doc');
+     const parts = [];
+     for (const wrap of body.children) {
+       const child = wrap.firstElementChild;
+       if (!child) continue;
+       const cls = child.getAttribute('class') || '';
+       const wrapCls = wrap.className || '';
+       if (cls.includes('paragraph')) parts.push('<p>' + child.innerHTML + '</p>');
+       else if (cls.startsWith('hynlcx')) parts.push('<h2>' + child.textContent.trim() + '</h2>');
+       else if (wrapCls.includes('imageBlock')) {
+         const img = wrap.querySelector('img');
+         if (img) parts.push('IMG::' + img.src);
+       } else if (wrapCls.includes('blockquote') || cls.includes('blockquote')) {
+         parts.push('<blockquote>' + wrap.textContent.trim().replace(/^❝/, '').trim() + '</blockquote>');
+       }
+     }
+     parts.join('\\n');
+   "
+   ```
+   Then hand-clean the output (strip beehiiv-specific spans, fix blockquote attribution, replace `IMG::` placeholders with empty lines that document where each image goes). Do not introduce any new elements or reorder what the extractor produced.
+4. **Verify element order matches source** — before saving `/tmp/article-body.html`, run a sanity check:
+   - Count `<blockquote>` tags — should match beehiiv's count
+   - Count `<h2>` tags — should match the number of section headings in the source
+   - Count `<p>` tags — should match (±1-2 for empty/spacer paragraphs)
+   - Check first and last paragraph text against the source
+   - For each blockquote: confirm the paragraph immediately before it (in your HTML) matches the paragraph immediately before it in beehiiv. This catches misplaced blockquotes before they get pasted into every platform.
+5. **Format blockquote attributions** — the quote author/attribution must always be on a separate line below the quote text. In the HTML, place a `<br>` before the em dash and author name inside each `<blockquote>`:
    ```html
    <blockquote>"Quote text here."<br>— Author Name</blockquote>
    ```
    This formatting must be done in the initial paste HTML for all platforms. Post-paste editing of blockquotes causes save errors on Medium, and LinkedIn's editor is similarly restrictive. Getting it right in the initial paste is the only reliable approach.
-4. **Save clean HTML to a temp file** — `/tmp/article-body.html`
-4. **Escape for JS embedding** — when loading from file into `$B js`, escape backticks and `${` sequences:
+6. **Save clean HTML to a temp file** — `/tmp/article-body.html`
+7. **Escape for JS embedding** — when loading from file into `$B js`, escape backticks and `${` sequences:
    ```bash
    ARTICLE_HTML=$(cat /tmp/article-body.html | sed "s/\`/\\\\\`/g" | sed 's/\$/\\$/g')
    ```
@@ -774,6 +803,9 @@ Cross-post complete!
 If any submissions were rate-limited, silently killed, or required CAPTCHA, note it in the status column.
 
 ## Known Issues & Workarounds
+
+### Hand-constructed HTML drifts from source order
+When manually composing `/tmp/article-body.html` from beehiiv extraction output, it is easy to misplace blockquotes, footnotes, and mid-article callouts — they end up in the wrong position relative to surrounding paragraphs. The Sun Tzu blockquote in "3 Lessons in AI Agents from a Black Belt" belongs as the LAST element after both footnotes, but was initially placed before footnote [1]. **Workaround:** walk the beehiiv DOM with the extractor JS in Phase 1 Step 3, preserve document order, and verify element counts + neighbor-check each blockquote before saving the HTML file. Because the HTML is pasted verbatim into every platform, any ordering mistake propagates to all of them.
 
 ### LinkedIn image toolbar ignores cursor position
 Setting a selection range (e.g. `range.setStartAfter(heading)`) before clicking the image toolbar button has no effect — images consistently land at a cached/default position, regardless of where you put the cursor. **Workaround:** batch-upload all body images in order, accept that they'll all clump together in the wrong spot, then move each `<figure>` to its target heading via `parentNode.insertBefore(figure, heading.nextSibling)` followed by dispatching an `input` event on the editor.
