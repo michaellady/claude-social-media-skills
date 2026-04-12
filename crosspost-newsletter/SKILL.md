@@ -599,68 +599,117 @@ mcp__claude-in-chrome__computer (action: "type", text: "<article title>")
 mcp__claude-in-chrome__computer (action: "key", text: "Enter")
 ```
 
-**Step 4 — Insert the article body:**
-Use `javascript_tool` to clipboard-paste HTML. Medium's editor accepts rich paste well — headings, blockquotes, links, bold, code all preserved:
+**Step 4 — Insert the article body via naive copy-paste from beehiiv (PREFERRED):**
+
+The cleanest approach is to copy the rendered article from the beehiiv page and paste into Medium — this brings over the body text, formatting, AND images in a single operation. It's MUCH simpler than the Image+canvas upload approach (which is slow and fragile).
+
+1. Open the beehiiv article in a second tab:
+   ```
+   mcp__claude-in-chrome__tabs_create_mcp
+   mcp__claude-in-chrome__navigate (tabId: <beehiivTab>, url: "<beehiiv-post-url>")
+   ```
+
+2. Select the article body (`.dream-post-content-doc`):
+   ```javascript
+   // mcp__claude-in-chrome__javascript_tool on beehiiv tab
+   const body = document.querySelector('.dream-post-content-doc');
+   body.scrollIntoView({ block: 'start' });
+   const range = document.createRange();
+   range.selectNodeContents(body);
+   const sel = window.getSelection();
+   sel.removeAllRanges();
+   sel.addRange(range);
+   'SELECTED ' + body.textContent.length;
+   ```
+
+3. Copy to clipboard on the beehiiv tab:
+   ```
+   mcp__claude-in-chrome__computer (tabId: <beehiivTab>, action: "key", text: "cmd+c")
+   ```
+
+4. Switch to the Medium tab, click the body textbox (after typing title + Enter already placed cursor in body), and paste:
+   ```
+   mcp__claude-in-chrome__computer (tabId: <mediumTab>, action: "key", text: "cmd+v")
+   ```
+
+5. Wait ~8 seconds for Medium to upload the images it pulled from the paste, then verify:
+   ```javascript
+   const editor = [...document.querySelectorAll('[contenteditable="true"]')].find(el => el.querySelectorAll('p').length > 0);
+   ({ paras: editor?.querySelectorAll('p').length, imgs: editor?.querySelectorAll('img').length, headings: editor?.querySelectorAll('h1,h2,h3').length });
+   ```
+
+Expect: ~50+ paragraphs, 4 images (or however many were in the article), 8 headings (1 title + 7 section heads).
+
+**Step 5 — Clean up empty H3s that appear before each image:**
+
+The paste leaves an empty `<h3>` before each figure. These render as extra vertical space in the final article. Remove them with real keyboard actions (NOT direct DOM manipulation — `.remove()` triggers Medium's "Something is wrong and we cannot save your story" automation-detection error).
+
+For each figure:
+1. Find the preceding empty `<h3>` and its screen coordinates:
+   ```javascript
+   const figs = [...document.querySelector('[contenteditable="true"]').querySelectorAll('figure')];
+   const f = figs[N];
+   const prev = f.parentElement.children[[...f.parentElement.children].indexOf(f) - 1];
+   prev.scrollIntoView({ block: 'center' });
+   const r = prev.getBoundingClientRect();
+   ({ x: Math.round(r.x + 20), y: Math.round(r.y + r.height/2), empty: !prev.textContent.trim() });
+   ```
+2. Real click at the coordinates, then press Backspace:
+   ```
+   mcp__claude-in-chrome__computer (action: "left_click", coordinate: [x, y])
+   mcp__claude-in-chrome__computer (action: "key", text: "Backspace")
+   ```
+3. Repeat for each figure. The clicks + Backspace go through Medium's keyboard handlers and don't trigger the automation-detection error.
+
+Verify after cleanup:
 ```javascript
-// mcp__claude-in-chrome__javascript_tool
-const html = `<ARTICLE_HTML>`;
-const dt = new DataTransfer();
-dt.setData('text/html', html);
-dt.setData('text/plain', html.replace(/<[^>]*>/g, ''));
-const editors = [...document.querySelectorAll('[contenteditable="true"]')];
-const editor = editors.find(el => el.getBoundingClientRect().height > 50);
-if (editor) {
-  editor.focus();
-  const sel = window.getSelection();
-  const range = document.createRange();
-  range.selectNodeContents(editor);
-  range.collapse(false);
-  sel.removeAllRanges();
-  sel.addRange(range);
-  const evt = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
-  editor.dispatchEvent(evt);
-  'PASTE_OK';
-}
+const editor = [...document.querySelectorAll('[contenteditable="true"]')].find(el => el.querySelectorAll('p').length > 0);
+const figs = [...editor.querySelectorAll('figure')];
+const emptyH3Count = figs.filter(f => {
+  const prev = f.parentElement.children[[...f.parentElement.children].indexOf(f) - 1];
+  return prev && prev.tagName === 'H3' && !prev.textContent.trim();
+}).length;
+const saveIndicator = [...document.querySelectorAll('*')].find(e => e.textContent === 'Saved' || e.textContent === 'Saving...' || e.textContent === 'Draft')?.textContent;
+({ emptyH3Count, figCount: figs.length, saveIndicator });
 ```
+Expect `emptyH3Count: 0` and `saveIndicator: "Saved"`.
 
-**IMPORTANT — Quote formatting:** Medium's editor does NOT support `<br>` inside blockquotes for post-paste editing (causes "cannot save your story" errors). If you need authors on separate lines within blockquotes, either:
-- Include `<br>` before the author attribution in the initial paste HTML (e.g. `<blockquote>"Quote text"<br>— Author</blockquote>`) — this works during initial paste
-- Or have the user manually edit quotes after paste via handoff
+**Step 5b — Caption paragraphs from beehiiv (optional cleanup):**
 
-Do NOT use Shift+Enter or direct DOM manipulation on blockquotes after paste — it breaks Medium's save mechanism.
+beehiiv's image captions come through as regular `<p>` elements immediately after each figure. They display as body text rather than proper Medium captions. Options:
+- **Leave them** — they read fine as italic-styled body text below each image
+- **Move them to native Medium figcaptions** — complex: Medium's `<figcaption>` has a `<span class="defaultValue">Type caption for image (optional)</span>` placeholder that resists both `execCommand('insertText')` and direct textContent assignment. Would need real mouse clicks + keyboard typing. Not worth the automation risk.
+- **Skip** — if the user pastes cleanly once, don't touch anything else. Every post-paste DOM edit risks triggering save errors.
 
-**Step 5 — Upload images inline:**
-For each image, position cursor after the correct paragraph, then:
-1. Click the "+" button that appears on empty lines to reveal the toolbar
-2. Click the image icon (first icon in the toolbar)
-3. This opens a native file dialog and creates a file input. Upload via JS:
+**Recommended approach:** Leave captions as inline paragraphs. If the user wants them in the figure, they can do it manually (~30 seconds).
+
+**IMPORTANT — Avoid post-paste DOM manipulation:**
+
+Medium's editor is very sensitive to programmatic DOM changes. Specifically:
+- `element.remove()` on headings/paragraphs adjacent to figures → triggers "Something is wrong and we cannot save your story"
+- Setting `figcaption.textContent = "..."` → ignored (Draft.js overwrites)
+- `execCommand('insertText')` on figcaption → doesn't clear the `defaultValue` placeholder
+- Shift+Enter / Backspace inside blockquotes → often breaks save state
+
+The safe operations are:
+- Real mouse clicks at coordinates
+- Keyboard input (type, Backspace, Enter) after a real click
+- Reading state via JS (safe)
+- The initial paste (safe)
+
+**Quote formatting note:** Medium's editor does NOT support `<br>` inside blockquotes for post-paste editing. Include `<br>` before the author attribution in the source HTML — this works during the initial paste. Or, if captions come from beehiiv paste, they'll be correctly formatted already.
+
+**Step 5c — Heading and space normalization on paste:**
+
+Medium's paste sanitizer does two things:
+- Converts `<h2>` to `<h3>` (same as LinkedIn — document this when matching headings)
+- Replaces some spaces with non-breaking spaces (U+00A0 = char code 160) in heading text
+
+When searching for headings programmatically, normalize text before comparison:
 ```javascript
-// mcp__claude-in-chrome__javascript_tool
-new Promise((resolve) => {
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.onload = () => {
-    const canvas = document.createElement('canvas');
-    const maxW = 800;
-    const scale = Math.min(1, maxW / img.naturalWidth);
-    canvas.width = img.naturalWidth * scale;
-    canvas.height = img.naturalHeight * scale;
-    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-    canvas.toBlob((blob) => {
-      const file = new File([blob], 'image.jpg', { type: 'image/jpeg' });
-      const input = document.querySelector('input[type="file"]');
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      input.files = dt.files;
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-      resolve('UPLOADED: ' + file.size + ' bytes');
-    }, 'image/jpeg', 0.8);
-  };
-  img.onerror = () => resolve('IMG_LOAD_FAILED');
-  img.src = '<IMAGE_URL>';
-});
+const norm = s => s.replace(/\u00a0/g, ' ').trim();
+const bb = headings.find(h => norm(h.textContent) === 'The Black Belt');
 ```
-Note: Direct `fetch()` is CORS-blocked on Medium. The Image+canvas approach works because `crossOrigin = 'anonymous'` allows cross-origin image loading for canvas rendering. Keep images under 800px width to avoid timeouts.
 
 **Step 6 — Set canonical URL:**
 Navigate to story settings via the "..." menu → "More settings" → "Advanced Settings":
@@ -967,6 +1016,30 @@ ProseMirror clipboard paste preserves text formatting but strips `<img>` tags. *
 
 ### Substack duplicate title fields
 The editor has both sidebar metadata fields and visible textarea fields. `$B fill` may target the wrong one. **Workaround:** use JS to find textareas by placeholder text and set `.value` directly.
+
+### Medium naive copy-paste from beehiiv preserves images
+The simplest way to get a beehiiv article into Medium with images is: open the beehiiv article in a second Claude in Chrome tab, select `.dream-post-content-doc`, Cmd+C, switch to Medium tab, Cmd+V. This preserves text, formatting, headings, AND fetches all images through Medium's normal paste handler. Avoids the Image+canvas upload trick (which is CORS-constrained, timeout-prone, and requires per-image cursor positioning).
+
+### Medium detects DOM automation and blocks saves
+Any post-paste DOM manipulation — `.remove()`, setting `textContent`, `innerHTML` assignments, etc. — can trigger Medium's "Something is wrong and we cannot save your story" error. Once this error appears, the only recovery is to discard the draft (navigate away with `window.onbeforeunload = null; location.href = ...`) and start fresh. **Workaround:** use only real mouse clicks at coordinates and keyboard input (type, Backspace, Enter) after a click. Read state via JS is safe, but don't mutate.
+
+### Medium paste leaves empty `<h3>` before each figure
+After copy-pasting from beehiiv, each figure has an empty `<h3>` sibling immediately before it, rendering as extra vertical whitespace between a section heading and its image. **Workaround:** for each figure, scroll the empty H3 into view, get its coordinates via `getBoundingClientRect()`, real-click inside it, and press Backspace. Do NOT use `.remove()` — it trips the save-error automation detection.
+
+### Medium figcaption resists programmatic text entry
+Each `<figure>` has a `<figcaption class="imageCaption">` containing a `<span class="defaultValue">Type caption for image (optional)</span>` placeholder. Setting `figcaption.textContent = "..."` is ignored; `document.execCommand('insertText', false, ...)` after selecting the figcaption also doesn't clear the placeholder. Real mouse clicks + keyboard typing would likely work but add automation-detection risk. **Recommendation:** leave beehiiv-extracted captions as inline `<p>` elements after each image (they came through the paste that way), or have the user manually set captions via Medium's UI.
+
+### Medium converts h2 to h3 and replaces spaces with NBSPs on paste
+Medium's paste sanitizer:
+- Converts all `<h2>` headings to `<h3>`
+- Replaces some spaces inside heading text with non-breaking spaces (U+00A0, char code 160)
+
+When matching headings programmatically, query `h3` (not `h2`) and normalize whitespace before comparing:
+```javascript
+const norm = s => s.replace(/\u00a0/g, ' ').trim();
+const bb = headings.find(h => norm(h.textContent) === 'The Black Belt');
+```
+Strict `=== 'The Black Belt'` silently fails because of the NBSP.
 
 ### Medium requires Claude in Chrome
 Medium returns HTTP 403 from Cloudflare for headless Chromium browsers (gstack browse). User agent spoofing does not reliably work — may get through initially but gets blocked on subsequent page loads. **Workaround:** use Claude in Chrome extension (`mcp__claude-in-chrome__*` tools) which operates through the user's real Chrome browser and bypasses Cloudflare entirely.
