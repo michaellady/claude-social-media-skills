@@ -16,6 +16,25 @@ If a platform offers the option to send the article as an email to subscribers, 
 
 `/crosspost-newsletter <beehiiv-post-url>` or `/crosspost-newsletter latest`
 
+## Before You Begin — Run in a Dedicated Claude Instance
+
+This skill executes **hundreds of tool calls** (content extraction, image uploads, multi-step browser automation, per-subreddit submissions). Approving each permission prompt interactively is painfully slow and breaks flow.
+
+**Recommended:** open a dedicated Claude Code instance in a fresh terminal with permissions pre-approved:
+
+```bash
+claude --dangerously-skip-permissions
+```
+
+Then invoke `/crosspost-newsletter` inside that instance. The flag grants blanket permission for tool calls in that session — combined with this skill's built-in user review gates (Phase 5 per-platform approval before each publish), you retain control over what gets posted without approving each individual Bash/JS call.
+
+**When NOT to use `--dangerously-skip-permissions`:**
+- If you haven't read and understood what the skill does end-to-end
+- If you're running the skill against an account you don't fully control
+- If your environment has secrets the skill could accidentally expose
+
+For a quick one-platform test run, the normal permission flow is fine. For a full 5-platform cross-post, the dedicated-instance approach is strongly recommended.
+
 ## Process
 
 ### Phase 1 — Fetch Full Newsletter Content
