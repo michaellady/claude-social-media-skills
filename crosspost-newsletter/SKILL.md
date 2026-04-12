@@ -25,7 +25,7 @@ Use `WebFetch` with the beehiiv post URL to get metadata (title, subtitle, date)
 
 **IMPORTANT: beehiiv renders article content dynamically.** WebFetch and the RSS feed may return empty blockquotes and miss dynamically-loaded content. To get the complete article:
 
-1. First, fetch the RSS feed via `WebFetch`: `https://rss.beehiiv.com/feeds/9AbhG8CTgD.xml` to get the article HTML body. This gives you most text, headings, and links, but blockquotes may be empty and images may use beehiiv CDN URLs.
+1. First, fetch the beehiiv RSS feed via `WebFetch` to get the article HTML body. The user's feed URL will be provided or stored in their settings; it has the form `https://rss.beehiiv.com/feeds/<feed-id>.xml`. This gives you most text, headings, and links, but blockquotes may be empty and images may use beehiiv CDN URLs.
 
 2. Then, use the browser to extract blockquotes, cover image, and body images + captions from the rendered page. beehiiv renders content client-side in these DOM structures (current as of 2026):
    - `.dream-post-content-doc` — article body root
@@ -77,7 +77,7 @@ Fetch the RSS feed, list recent articles, ask the user which one, then follow th
 **Content preparation:**
 1. **Strip beehiiv boilerplate** — remove tracking pixels, analytics images, newsletter signup forms, footer, "View in browser" links, beehiiv-specific CSS classes/inline styles, UTM parameters from links
 2. **Keep semantic HTML only** — h1-h6, p, strong, em, a, ul/ol/li, blockquote, pre/code (do NOT include img tags — images are uploaded separately)
-3. **PRESERVE EXACT ELEMENT ORDER from source** — walk the beehiiv DOM (`.dream-post-content-doc` children) in document order and emit elements in the same order. Do NOT reorder, group, or guess positions. Blockquotes, footnotes, and mid-article callouts are easy to misplace when hand-constructing the HTML — the Sun Tzu blockquote in "3 Lessons in AI Agents from a Black Belt" belongs as the VERY LAST element after both footnotes, not before them. Use this extraction JS to get everything in correct order:
+3. **PRESERVE EXACT ELEMENT ORDER from source** — walk the beehiiv DOM (`.dream-post-content-doc` children) in document order and emit elements in the same order. Do NOT reorder, group, or guess positions. Blockquotes, footnotes, and mid-article callouts are easy to misplace when hand-constructing the HTML — watch especially for quotes that appear AFTER footnotes in the source but feel like they belong with the main body. Use this extraction JS to get everything in correct order:
    ```bash
    $B js "
      const body = document.querySelector('.dream-post-content-doc');
@@ -300,13 +300,13 @@ $B js "
   const figures = [...editor.querySelectorAll('figure')];
   const headings = [...editor.querySelectorAll('h3')];
 
-  // targets: pair each upload-order figure with its target heading text
-  // (populate from Phase 1 bodyImages + section anchors you identified)
+  // targets: pair each upload-order figure with the text of the heading
+  // it should appear under. Populate this from Phase 1 — for each body
+  // image, record the heading that precedes it in the source article.
   const targets = [
-    { headingText: 'The Black Belt', figIdx: 0 },
-    { headingText: 'The Dream',      figIdx: 1 },
-    { headingText: 'The PhD',        figIdx: 2 },
-    { headingText: 'The Business License', figIdx: 3 }
+    { headingText: '<heading text before image 1>', figIdx: 0 },
+    { headingText: '<heading text before image 2>', figIdx: 1 },
+    // ...one entry per body image...
   ];
 
   for (const { headingText, figIdx } of targets) {
@@ -331,11 +331,11 @@ Each LinkedIn figure has a `<textarea class="article-editor-figure-caption">` fo
 $B js "
   const figures = [...document.querySelectorAll('[aria-label=\"Article editor content\"] figure')];
   // captions in upload order; empty string = no caption
+  // Populate from Phase 1 bodyImages[].caption extraction
   const captions = [
-    '',  // e.g. Black Belt ceremony — no caption in beehiiv
-    'First (?) White Belt Tournament, Circa Early 2013',
-    'Blue Belt, Circa Late 2013',
-    'This is just an excuse for me to post all of my Jiu-Jitsu pictures where I look cool'
+    '<caption for image 1, or empty string>',
+    '<caption for image 2, or empty string>',
+    // ...one entry per body image...
   ];
   let filled = 0;
   figures.forEach((fig, i) => {
@@ -382,7 +382,7 @@ The published URL will be in format: `https://www.linkedin.com/pulse/<slug>/`
 ```bash
 $B goto https://substack.com/account/settings
 $B click @eN  # Dashboard button
-$B url  # URL contains subdomain, e.g. enterprisevibecode.substack.com
+$B url  # URL contains subdomain, e.g. <publication>.substack.com
 ```
 
 **Step 2 — Navigate to post editor:**
@@ -805,7 +805,7 @@ If any submissions were rate-limited, silently killed, or required CAPTCHA, note
 ## Known Issues & Workarounds
 
 ### Hand-constructed HTML drifts from source order
-When manually composing `/tmp/article-body.html` from beehiiv extraction output, it is easy to misplace blockquotes, footnotes, and mid-article callouts — they end up in the wrong position relative to surrounding paragraphs. The Sun Tzu blockquote in "3 Lessons in AI Agents from a Black Belt" belongs as the LAST element after both footnotes, but was initially placed before footnote [1]. **Workaround:** walk the beehiiv DOM with the extractor JS in Phase 1 Step 3, preserve document order, and verify element counts + neighbor-check each blockquote before saving the HTML file. Because the HTML is pasted verbatim into every platform, any ordering mistake propagates to all of them.
+When manually composing `/tmp/article-body.html` from beehiiv extraction output, it is easy to misplace blockquotes, footnotes, and mid-article callouts — they end up in the wrong position relative to surrounding paragraphs. A particularly common trap: a closing-thought blockquote that appears AFTER footnotes in the source, but which "feels like" it belongs with the main body — ends up placed mid-article. **Workaround:** walk the beehiiv DOM with the extractor JS in Phase 1 Step 3, preserve document order exactly, and verify element counts + neighbor-check each blockquote against source before saving the HTML file. Because the HTML is pasted verbatim into every platform, any ordering mistake propagates to all of them.
 
 ### LinkedIn image toolbar ignores cursor position
 Setting a selection range (e.g. `range.setStartAfter(heading)`) before clicking the image toolbar button has no effect — images consistently land at a cached/default position, regardless of where you put the cursor. **Workaround:** batch-upload all body images in order, accept that they'll all clump together in the wrong spot, then move each `<figure>` to its target heading via `parentNode.insertBefore(figure, heading.nextSibling)` followed by dispatching an `input` event on the editor.

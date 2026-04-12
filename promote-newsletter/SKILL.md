@@ -23,7 +23,7 @@ Use `WebFetch` with the beehiiv post URL. Extract:
 - All image URLs (hero image, inline images, any visuals in the article)
 
 **If "latest" or no URL:**
-Fetch the RSS feed via `WebFetch`: `https://rss.beehiiv.com/feeds/9AbhG8CTgD.xml`
+Fetch the beehiiv RSS feed via `WebFetch` (URL of the form `https://rss.beehiiv.com/feeds/<feed-id>.xml` — the feed ID is specific to the user's publication and will be provided in their settings or first message).
 List recent articles with titles and dates. Ask the user which one to promote, then fetch that article's URL.
 
 ### Phase 2 — Identify Candidate Snippets & Media
