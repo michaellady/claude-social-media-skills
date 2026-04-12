@@ -232,7 +232,14 @@ The user can:
 
 1. Call `mcp__buffer__get_account` to get the organization ID and timezone. If multiple orgs, ask the user which one.
 2. Call `mcp__buffer__list_channels` with the org ID. Never guess channel IDs.
-3. For each approved post, call `mcp__buffer__create_post` with:
+3. **Filter out disconnected and locked channels before composing or posting.** Each channel has `isDisconnected` and `isLocked` booleans — skip any where either is `true`. Also skip `service: "startPage"` (not a social channel).
+   ```
+   const usable = channels.filter(c =>
+     !c.isDisconnected && !c.isLocked && c.service !== 'startPage'
+   );
+   ```
+   Silently omitting disconnected channels prevents wasted API calls and avoids posting to channels the user can't actually see.
+4. For each approved post, call `mcp__buffer__create_post` with:
    - `channelId`: exact ID from `list_channels`
    - `text`: the composed post text (impact statement + GitHub link)
    - `mode`: `"direct"`
@@ -243,8 +250,8 @@ The user can:
      - **Instagram**: `metadata.instagram.type: "post"`, `metadata.instagram.shouldShareToFeed: true`
      - **Pinterest**: `metadata.pinterest.boardServiceId` (get from `get_channel` response, under `metadata.boards[].serviceId`)
      - **LinkedIn, Twitter, Threads, Bluesky, Mastodon**: no extra metadata required
-4. **Rate limiting:** Buffer's API enforces rate limits (HTTP 429). When rate limited:
+5. **Rate limiting:** Buffer's API enforces rate limits (HTTP 429). When rate limited:
    - Stop immediately — do not retry in a loop.
    - Save all remaining posts (post text, channel IDs, image URLs if any) to `remaining-posts.md` in the project directory so they can be posted in a later session.
    - Report to the user which posts succeeded and which are saved for later.
-5. Report results per channel: success or error message.
+6. Report results per channel: success or error message.

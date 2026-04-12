@@ -123,7 +123,8 @@ The user can:
 
 1. Call `mcp__buffer__get_account` to get the organization ID and timezone. If multiple orgs, ask the user which one.
 2. Call `mcp__buffer__list_channels` with the org ID. Never guess channel IDs.
-3. For each approved post, call `mcp__buffer__create_post` with:
+3. **Filter out disconnected/locked channels before composing or posting.** Each channel has `isDisconnected` and `isLocked` booleans — skip any where either is `true`. Also skip `service: "startPage"` (not a social channel). Silently omit them to avoid wasted API calls and dead posts.
+4. For each approved post, call `mcp__buffer__create_post` with:
    - `channelId`: exact ID from `list_channels`
    - `text`: the composed post text (snippet + CTA)
    - `mode`: `"addToQueue"`
