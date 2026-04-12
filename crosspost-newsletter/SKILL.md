@@ -1,12 +1,16 @@
 ---
 name: crosspost-newsletter
-description: Use when user wants to cross-post a beehiiv newsletter article as a full long-form post on LinkedIn, Substack, or Medium using browser automation — "crosspost this article", "cross-post newsletter", "publish to Medium", "post full article to LinkedIn", "syndicate newsletter", "crosspost to substack".
+description: Use when user wants to cross-post a beehiiv newsletter article on LinkedIn, Substack, Medium, Hacker News, or Reddit using browser automation — "crosspost this article", "cross-post newsletter", "publish to Medium", "post to hacker news", "submit to reddit", "share on HN", "crosspost to substack", "syndicate newsletter".
 user_invocable: true
 ---
 
 # crosspost-newsletter
 
-Cross-post a full beehiiv newsletter article to LinkedIn (native article), Substack, and/or Medium. Uses gstack browse for LinkedIn and Substack, and Claude in Chrome (mcp__claude-in-chrome__*) for Medium (which blocks headless browsers via Cloudflare). Preserves rich formatting, headings, images, and sets canonical URL back to the original beehiiv post. If a platform offers the option to send the article as an email to subscribers, always enable it.
+Cross-post a beehiiv newsletter article across five platforms in two modes:
+- **Full-article syndication** to LinkedIn (native article), Substack, and Medium — preserves rich formatting, headings, images, and sets canonical URL back to the beehiiv original. Uses gstack browse for LinkedIn/Substack, Claude in Chrome for Medium (which blocks headless browsers).
+- **Link submission** to Hacker News and Reddit — submits the beehiiv URL with the article title. Uses Claude in Chrome for both (neither platform has a workable public posting API). For Reddit, submits to one or more subreddits chosen by the user.
+
+If a platform offers the option to send the article as an email to subscribers, always enable it.
 
 ## Usage
 
@@ -72,15 +76,20 @@ URL: <beehiiv URL>
 
 ### Phase 2 — Platform Selection
 
-Ask the user which platforms to cross-post to:
-- **A)** LinkedIn (native long-form article)
-- **B)** Substack
-- **C)** Medium (note: may be blocked by Cloudflare)
-- **D)** All three
+Ask the user which platforms to cross-post to (**multi-select** — any combination is valid):
+
+**Full-article syndication (paste entire body with formatting + images):**
+- **A)** LinkedIn — native long-form article (gstack browse)
+- **B)** Substack — full post (gstack browse)
+- **C)** Medium — full story (Claude in Chrome; bypasses Cloudflare)
+
+**Link submission (title + URL only, no article body):**
+- **D)** Hacker News — submit to `news.ycombinator.com` (Claude in Chrome)
+- **E)** Reddit — submit as a Link post to one or more subreddits (Claude in Chrome)
 
 **Wait for user input before proceeding.**
 
-Platforms are processed one at a time, sequentially.
+Platforms are processed one at a time, sequentially. Full-article platforms run first (they need the article body prepared in Phase 1), then link submissions.
 
 ### Phase 3 — Browser Setup & Authentication
 
@@ -447,23 +456,187 @@ if (canonical) { canonical.click(); 'CHECKED: ' + canonical.checked; }
 
 ---
 
+#### Platform: Hacker News (Link Submission)
+
+HN has no workable public posting API (the official Firebase API at `github.com/HackerNews/API` is entirely read-only). Use Claude in Chrome browser automation. The user must be logged in to `news.ycombinator.com` in their real Chrome browser.
+
+**Content pattern:** title + URL only. HN link submissions do NOT support a text body — if URL is filled, the text field must be empty.
+
+**Step 1 — Navigate to submit page:**
+```
+mcp__claude-in-chrome__navigate (url: "https://news.ycombinator.com/submit", tabId: <tabId>)
+```
+
+**Step 2 — Verify login:**
+```
+mcp__claude-in-chrome__read_page (tabId: <tabId>, filter: "interactive")
+```
+Logged in = page shows `textbox` elements named `title`, `url`, `text` and a `submit` button. Not logged in = "please log in" message with a login form. If not logged in, handoff to user:
+```
+mcp__claude-in-chrome__computer (action: "screenshot", tabId: <tabId>)
+```
+Ask the user to log in, then wait for confirmation and re-check.
+
+**Step 3 — Prepare HN-appropriate title:**
+Before submitting, adapt the title per HN culture:
+- Trim to ≤80 characters (HN enforces this)
+- Strip clickbait prefixes ("How to", "You won't believe", "N things that...")
+- Remove editorial framing — HN prefers descriptive titles
+- **Do NOT add "Show HN:" prefix** unless the article is a genuine demo of original work (misusing this gets the submission killed)
+
+Present the adapted title to the user for approval before proceeding.
+
+**Step 4 — Fill title and URL:**
+```
+mcp__claude-in-chrome__find (tabId: <tabId>, query: "title textbox")
+mcp__claude-in-chrome__computer (action: "left_click", ref: <title ref>)
+mcp__claude-in-chrome__computer (action: "type", text: "<HN-adapted title>")
+
+mcp__claude-in-chrome__find (tabId: <tabId>, query: "url textbox")
+mcp__claude-in-chrome__computer (action: "left_click", ref: <url ref>)
+mcp__claude-in-chrome__computer (action: "type", text: "<beehiiv URL>")
+```
+Leave the **text** field empty — HN rejects submissions that have both a URL and text.
+
+**Step 5 — Screenshot for review:**
+```
+mcp__claude-in-chrome__computer (action: "screenshot", tabId: <tabId>)
+```
+Show screenshot to user (Phase 5).
+
+**Step 6 — Submit:**
+```
+mcp__claude-in-chrome__find (tabId: <tabId>, query: "submit button")
+mcp__claude-in-chrome__computer (action: "left_click", ref: <submit ref>)
+```
+
+**Step 7 — Capture result:**
+After submit, the URL changes to `news.ycombinator.com/item?id=<N>`. If HN redirects to a rate-limit warning ("You're posting too fast") or a validation error, capture that instead and report to the user. Also watch for the "[dead]" state — HN silently kills flagged submissions, which appear successful but never show on `/newest`.
+
+---
+
+#### Platform: Reddit (Link Submission)
+
+Reddit has an OAuth2 write API, but it requires creating a Reddit app and managing tokens. Browser automation via Claude in Chrome is simpler and consistent with the rest of the skill. The user must be logged in to `reddit.com` in their real Chrome browser.
+
+**Step 1 — Select subreddits:**
+
+Present the default subreddit list and let the user multi-select (with an option to add custom subs):
+
+Default list:
+- `r/programming`
+- `r/webdev`
+- `r/ClaudeAI`
+- `r/ArtificialIntelligence`
+- `r/artificial`
+- `r/LocalLLaMA`
+- `r/SaaS`
+- `r/Entrepreneur`
+- `r/devops`
+
+If the user selects more than 5 subs, warn them about Reddit's 9:1 self-promotion rule and confirm.
+
+**Step 2 — For each selected subreddit, repeat Steps 3–8:**
+
+**Step 3 — Navigate to submit page:**
+```
+mcp__claude-in-chrome__navigate (url: "https://www.reddit.com/r/<subreddit>/submit", tabId: <tabId>)
+```
+
+**Step 4 — Verify login:**
+```
+mcp__claude-in-chrome__read_page (tabId: <tabId>, filter: "interactive")
+```
+Logged in = page shows "Post", "Images & Video", "Link", "Poll" tabs and a title textbox. Not logged in = login prompt. Handoff if not logged in.
+
+**Step 5 — Select "Link" post type:**
+Reddit's new UI defaults to text "Post". Click the "Link" tab:
+```
+mcp__claude-in-chrome__find (tabId: <tabId>, query: "Link tab in post type selector")
+mcp__claude-in-chrome__computer (action: "left_click", ref: <Link tab ref>)
+```
+
+**Step 6 — Fill title and URL:**
+```
+mcp__claude-in-chrome__find (tabId: <tabId>, query: "Title textbox")
+mcp__claude-in-chrome__computer (action: "left_click", ref: <title ref>)
+mcp__claude-in-chrome__computer (action: "type", text: "<article title>")
+
+mcp__claude-in-chrome__find (tabId: <tabId>, query: "Link URL textbox")
+mcp__claude-in-chrome__computer (action: "left_click", ref: <url ref>)
+mcp__claude-in-chrome__computer (action: "type", text: "<beehiiv URL>")
+```
+
+**Step 7 — Handle subreddit-specific required fields:**
+
+- **Flair:** Check the page for a "Flair" or "Add flair" button. If required, present available flairs to the user and let them pick. Some subs won't allow Post without a flair.
+- **Rules acknowledgment:** Some subs show a modal with rules that must be accepted.
+- **Community questions:** Some subs (especially r/SaaS, r/Entrepreneur) ask additional questions. Handoff if detected.
+
+Use `read_page` to detect these states and handle each as needed. If anything requires user judgment, handoff.
+
+**Step 8 — Screenshot, review, and submit:**
+```
+mcp__claude-in-chrome__computer (action: "screenshot", tabId: <tabId>)
+```
+Show to user (Phase 5). On approval:
+```
+mcp__claude-in-chrome__find (tabId: <tabId>, query: "Post button")
+mcp__claude-in-chrome__computer (action: "left_click", ref: <post ref>)
+```
+
+**Step 9 — CAPTCHA check:**
+After clicking Post, screenshot the page. If a CAPTCHA appears, handoff:
+```
+mcp__claude-in-chrome__computer (action: "screenshot", tabId: <tabId>)
+```
+Ask the user to solve the CAPTCHA, then wait for them to click Post manually.
+
+**Step 10 — Capture result URL and rate-limit pause:**
+After successful submission, the URL changes to `reddit.com/r/<sub>/comments/<id>/<slug>/`. Capture it.
+
+**Between subreddit submissions, wait at least 90 seconds** (Reddit anti-spam). Use:
+```
+mcp__claude-in-chrome__computer (action: "wait", duration: 90, tabId: <tabId>)
+```
+or inform the user and pause via handoff.
+
+---
+
 ### Phase 5 — User Review (per platform)
 
-After completing content injection for each platform, show a screenshot and ask:
+After preparing each platform, show a screenshot and ask. The template differs by content mode:
 
+**For full-article platforms (LinkedIn, Substack, Medium):**
 ```
 <Platform> article is ready for review.
 
 Title: "<Article Title>"
 Body: ~<word count> words injected
 Images: <count> uploaded inline
-Canonical URL: not available on this platform
+Canonical URL: <set | not available on this platform>
 
 Options:
 A) Publish now
 B) Let me review in browser first (handoff)
 C) Skip this platform
 D) Abort all remaining platforms
+```
+
+**For link-submission platforms (Hacker News, Reddit):**
+```
+<Platform> submission ready for review.
+
+Target: <hacker news | r/<subreddit>>
+Title: "<title being submitted>"
+URL:   <beehiiv URL>
+<additional field notes, e.g. "Flair: <selected flair>" for Reddit>
+
+Options:
+A) Submit now
+B) Let me review in browser first (handoff)
+C) Skip this <platform | subreddit>
+D) Abort all remaining submissions
 ```
 
 **Wait for user input.**
@@ -474,15 +647,22 @@ See platform-specific publish steps above (LinkedIn Step 6, Substack Step 8).
 
 ### Phase 7 — Summary
 
+One row per platform, with a `Target` column for Reddit (one row per subreddit):
+
 ```
 Cross-post complete!
 
-| Platform  | Status    | URL                          | Email sent |
-|-----------|-----------|------------------------------|------------|
-| LinkedIn  | Published | <url>                        | N/A        |
-| Substack  | Published | <url>                        | Yes        |
-| Medium    | Skipped   | Cloudflare blocked           | —          |
+| Platform  | Target         | Status    | URL                                         |
+|-----------|----------------|-----------|---------------------------------------------|
+| LinkedIn  | —              | Published | https://www.linkedin.com/pulse/...          |
+| Substack  | —              | Published | https://<sub>.substack.com/p/...            |
+| Medium    | —              | Published | https://medium.com/p/...                    |
+| HN        | —              | Submitted | https://news.ycombinator.com/item?id=...    |
+| Reddit    | r/programming  | Submitted | https://reddit.com/r/programming/comments/… |
+| Reddit    | r/ClaudeAI     | Submitted | https://reddit.com/r/ClaudeAI/comments/…    |
 ```
+
+If any submissions were rate-limited, silently killed, or required CAPTCHA, note it in the status column.
 
 ## Known Issues & Workarounds
 
@@ -506,6 +686,27 @@ Direct `fetch()` is CORS-blocked on Medium's domain. **Workaround:** use `new Im
 
 ### Medium canonical URL
 Available under Story Settings → Advanced Settings → "Customize Canonical Link" → check "This story was originally published elsewhere". Use JS `click()` on the checkbox (not `form_input`) as the UI checkbox can be finicky. After checking, the "Edit canonical link" button reveals a URL input field.
+
+### Hacker News has no posting API
+The official HN Firebase API (`github.com/HackerNews/API`) is entirely read-only — every endpoint is GET. There is no authenticated write access. **Workaround:** browser automation via Claude in Chrome against `news.ycombinator.com/submit`. User must be logged in in their real Chrome browser.
+
+### Hacker News rate limits and shadow-killing
+HN enforces strict per-user rate limits — submitting multiple stories quickly triggers "You're posting too fast." HN also silently kills ("[dead]") submissions flagged by their anti-spam filter; the submit looks successful but the story never appears on `/newest`. **Workaround:** submit one at a time, space submissions by at least 5 minutes, and check `/newest` after submitting to confirm the story is visible. If shadow-killed, the user must contact HN moderators — no automated recovery.
+
+### Hacker News title rules
+HN culture expects descriptive titles. No editorialization, no clickbait ("How to X", "You won't believe"), no "N things" listicles. Under 80 characters. "Show HN:" prefix is reserved for actual original work demos — misuse gets the submission killed. **Workaround:** adapt the beehiiv title for HN before submitting; present adapted title to the user for approval.
+
+### Reddit has a write API but browser automation is simpler
+Reddit's OAuth2 API supports submissions via PRAW but requires creating a Reddit app and managing tokens — a second auth flow. Browser automation via Claude in Chrome uses the user's existing Reddit login and is consistent with the rest of the skill. **Trade-off:** browser automation is slightly more fragile (UI changes) but needs no setup.
+
+### Reddit self-promotion and rate limits
+Reddit enforces a sitewide 9:1 rule — 9 community contributions for every 1 self-promotion. Posting the same newsletter to many subs in quick succession flags the account. **Workaround:** the skill enforces a 90-second delay between subreddit submissions. If the user selects >5 subs in a session, warn them first.
+
+### Reddit subreddit-specific rules
+Each sub has different rules: required flairs, karma minimums, self-promotion bans, mandatory community questions. The skill cannot enumerate every rule — it handles whatever the submit form presents (flair dropdowns, rule acknowledgment modals, community questions) and reports the error if a submission is rejected. **Workaround:** use `read_page` to detect required fields before submitting; handoff if community questions appear.
+
+### Reddit CAPTCHA
+Reddit occasionally shows a CAPTCHA on submit, especially for newer accounts or rapid posting. Claude in Chrome cannot solve CAPTCHAs. **Workaround:** screenshot after clicking Post, detect CAPTCHA visually, handoff to user with clear instructions, resume after they solve it.
 
 ### gstack browse command reference
 - `$B type` — type text into focused element (NOT `type_text`)

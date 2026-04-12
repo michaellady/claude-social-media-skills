@@ -26,7 +26,10 @@ Fetch your public GitHub contributions (merged PRs, commits, releases) and compo
 
 ### `/crosspost-newsletter`
 
-Cross-post a full [beehiiv](https://beehiiv.com) newsletter article as a native long-form post on LinkedIn, Substack, and/or Medium. Uses browser automation to preserve rich formatting, headings, and images. Sets canonical URL back to the original post.
+Cross-post a [beehiiv](https://beehiiv.com) newsletter article across five platforms in two modes:
+
+- **Full-article syndication** to LinkedIn (native article), Substack, and Medium — preserves rich formatting, headings, and images. Sets canonical URL back to the original post.
+- **Link submission** to Hacker News and Reddit — submits the beehiiv URL with the article title. For Reddit, picks one or more subreddits from a configurable default list.
 
 ```
 /crosspost-newsletter https://www.example.com/p/my-post
