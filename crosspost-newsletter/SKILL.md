@@ -27,26 +27,49 @@ Use `WebFetch` with the beehiiv post URL to get metadata (title, subtitle, date)
 
 1. First, fetch the RSS feed via `WebFetch`: `https://rss.beehiiv.com/feeds/9AbhG8CTgD.xml` to get the article HTML body. This gives you most text, headings, and links, but blockquotes may be empty and images may use beehiiv CDN URLs.
 
-2. Then, use the browser to extract blockquotes and verify images from the rendered page:
+2. Then, use the browser to extract blockquotes, cover image, and body images + captions from the rendered page. beehiiv renders content client-side in these DOM structures (current as of 2026):
+   - `.dream-post-content-doc` — article body root
+   - `.dream-post-content-paragraph` — paragraph text (inside a `div.j6zgbu0` wrapper)
+   - `.dream-post-content-imageBlock` — image with optional caption in a `figcaption`
+   - Section headings in divs whose class starts with `hynlcx`
+   - Cover/hero image is NOT inside the body — it's in `<meta property="og:image">`
+
    ```bash
    $B goto <beehiiv-post-url>
    $B js "
-     const quotes = [...document.querySelectorAll('blockquote, .blockquote, [class*=blockquote]')]
-       .map(q => q.textContent.trim()).filter(q => q.length > 0);
-     const imgs = [...document.querySelectorAll('img')]
-       .filter(i => i.src.includes('beehiiv') && i.naturalWidth > 200)
-       .map(i => ({ src: i.src, alt: i.alt }));
-     JSON.stringify({ quotes, imgs }, null, 2);
+     const quotes = [...document.querySelectorAll('blockquote, [class*=blockquote]')]
+       .map(q => q.textContent.trim().replace(/^❝/, '').trim())
+       .filter(q => q.length > 0);
+
+     // Cover image is separate — from og:image meta tag
+     const coverImageUrl = document.querySelector('meta[property=\"og:image\"]')?.content;
+
+     // Body images with captions, in article order
+     const imageBlocks = [...document.querySelectorAll('.dream-post-content-imageBlock')];
+     const bodyImages = imageBlocks.map(block => {
+       const img = block.querySelector('img');
+       const cap = block.querySelector('figcaption, [class*=caption]');
+       return { src: img?.src, caption: cap?.textContent?.trim() || '' };
+     });
+
+     JSON.stringify({ quotes, coverImageUrl, bodyImages }, null, 2);
    "
    ```
 
 3. Merge the blockquote text into the RSS HTML body, replacing empty `<blockquote>` tags.
 
-4. Download all article images locally for upload:
+4. Download cover + body images locally (cover and body are separate):
    ```bash
-   curl -sL "<image-url>" -o /tmp/image-name.jpg
+   # Cover image (for LinkedIn cover slot, Substack/Medium cover where applicable)
+   curl -sL "<coverImageUrl>" -o /tmp/bb-cover.png
+
+   # Body images in article order (these get inserted inline)
+   curl -sL "<bodyImages[0].src>" -o /tmp/bb-img1.jpg
+   curl -sL "<bodyImages[1].src>" -o /tmp/bb-img2.jpg
+   # ...
    ```
    Images must be uploaded separately per platform — they cannot be pasted via HTML.
+   **Preserve each body image's caption** for Step 4d of each platform's inline-image flow.
 
 **If "latest" or no URL:**
 Fetch the RSS feed, list recent articles, ask the user which one, then follow the above process.
@@ -172,52 +195,138 @@ $B js "
 ```
 Verify with `$B screenshot`. Text, headings, links, and blockquotes should appear. Images will NOT be in the paste — they must be uploaded separately.
 
-**Step 4 — Upload images inline:**
+**IMPORTANT — heading conversion:** LinkedIn's editor converts pasted `<h2>` tags to `<h3>`. When subsequent steps query headings (to anchor figure positioning), use `h3` (or the wildcard `h1,h2,h3,h4,h5,h6`) — do not assume the tag matches your source HTML.
 
-LinkedIn has a toolbar with icon buttons. Identify the image button:
+**Step 4 — Set cover image + upload and position body images:**
+
+The reliable pattern is: (a) set the cover image first, (b) batch-upload all body images to wherever LinkedIn drops them, (c) move each `<figure>` to its target heading via DOM, (d) set captions.
+
+**The image toolbar ignores cursor position.** Setting `range.setStartAfter(heading)` before clicking the toolbar has no effect — images land at a cached/default position regardless. Don't bother setting the cursor; fix placement by moving figures after upload.
+
+**Step 4a — Set the cover image (separate from body images):**
+
+The cover image is the article's hero image from beehiiv's `og:image` meta (downloaded as `/tmp/bb-cover.png` in Phase 1). The LinkedIn cover slot is the `.article-editor-cover-media` element at the top of the editor.
+
+Scroll to top and check cover state:
+```bash
+$B js "
+  window.scrollTo(0, 0);
+  const cover = document.querySelector('.article-editor-cover-media');
+  ({
+    hasImg: !!cover?.querySelector('img'),
+    placeholderVisible: !!cover?.querySelector('.article-editor-cover-media__placeholder')
+  });
+"
+```
+
+- If placeholder is visible: click the "Upload from computer" button inside the placeholder (from the initial snapshot, typically `[button] "Upload from computer"`).
+- If the cover already has the wrong image (e.g. you want to replace it): click the "Delete" button inside the cover (aria-label contains "remove the cover image"). Then the placeholder returns — click "Upload from computer".
+
+Upload:
+```bash
+$B upload "#media-editor-file-selector__file-input" /tmp/bb-cover.png
+```
+
+The cover modal overlay appears (`[button] "Dismiss"`, `[button] "Edit"`, `[button] "Delete"`). **Handoff to user** to click the article body to dismiss it — the modal cannot be escaped programmatically.
+
+**Step 4b — Identify the body image toolbar button (once):**
 ```bash
 $B js "
   const buttons = [...document.querySelectorAll('.scaffold-formatted-text-editor-icon-button')];
   buttons.map((b, i) => {
     const svg = b.querySelector('svg use');
     return { index: i, href: svg?.getAttribute('href') };
-  });
+  }).filter(x => x.href && x.href.includes('image'));
 "
 ```
 The image button has `href: '#image-medium'` (typically index 9).
 
-**IMPORTANT — Cover image behavior:** If no cover image is set, the first image upload via the toolbar button will go to the cover image slot instead of inline. The cover image creates a persistent modal overlay that blocks the editor. To handle this:
+**Step 4c — Batch upload all body images in article order:**
+For each body image (in the order they appear in the article):
+```bash
+# Click the image toolbar button via JS (cursor position is ignored — don't try to set it)
+$B js "
+  const buttons = [...document.querySelectorAll('.scaffold-formatted-text-editor-icon-button')];
+  buttons[9].click();
+  'clicked';
+"
 
-1. First, position cursor in the body where the first image should go.
-2. Click the image toolbar button via JS: `buttons[9].click()`
-3. Find and upload to the file input:
-   ```bash
-   $B upload "#media-editor-file-selector__file-input" /tmp/image.jpg
-   ```
-4. If it goes to the cover slot (you'll see `[button] "Dismiss"`, `[button] "Edit"`, `[button] "Delete"` in snapshot), **handoff to the user** to dismiss the cover overlay by clicking on the article body. The cover modal is truly persistent and cannot be escaped programmatically.
-5. After handoff/resume, with a cover now set, subsequent image uploads via the toolbar button will go inline.
+# Upload the image
+$B upload "#media-editor-file-selector__file-input" /tmp/bb-imgN.jpg
 
-For each inline image:
-1. Position cursor at the correct location using JS:
-   ```bash
-   $B js "
-     const editor = document.querySelector('[aria-label=\"Article editor content\"]');
-     const paras = [...editor.querySelectorAll('p')];
-     const targetP = paras.find(p => p.textContent.includes('<unique text near image>'));
-     if (targetP) {
-       const range = document.createRange();
-       range.setStartAfter(targetP);
-       range.collapse(true);
-       const sel = window.getSelection();
-       sel.removeAllRanges();
-       sel.addRange(range);
-       'CURSOR_SET';
-     }
-   "
-   ```
-2. Click the image toolbar button: `buttons[9].click()`
-3. Upload: `$B upload "#media-editor-file-selector__file-input" /tmp/image.jpg`
-4. An image overlay will appear — handoff to user to click the article body to dismiss it.
+# Handoff to user to dismiss the image overlay by clicking the article body
+$B handoff "Image N uploaded. Please click the article body to dismiss the overlay."
+# (resume after user confirms)
+```
+
+After all body images are uploaded, they will all be clumped together in the wrong spot. That's fine — the next step fixes it.
+
+**Step 4d — Move each figure to its correct heading via DOM:**
+
+Walk the editor, find each heading, find each figure (in upload order), and use `parentNode.insertBefore` to place each figure right after its target heading:
+
+```bash
+$B js "
+  const editor = document.querySelector('[aria-label=\"Article editor content\"]');
+  const figures = [...editor.querySelectorAll('figure')];
+  const headings = [...editor.querySelectorAll('h3')];
+
+  // targets: pair each upload-order figure with its target heading text
+  // (populate from Phase 1 bodyImages + section anchors you identified)
+  const targets = [
+    { headingText: 'The Black Belt', figIdx: 0 },
+    { headingText: 'The Dream',      figIdx: 1 },
+    { headingText: 'The PhD',        figIdx: 2 },
+    { headingText: 'The Business License', figIdx: 3 }
+  ];
+
+  for (const { headingText, figIdx } of targets) {
+    const h = headings.find(h => h.textContent.trim() === headingText);
+    const fig = figures[figIdx];
+    if (h && fig) h.parentNode.insertBefore(fig, h.nextSibling);
+  }
+  editor.dispatchEvent(new Event('input', { bubbles: true }));
+  'MOVED ' + targets.length + ' figures';
+"
+```
+
+**This DOM manipulation is safe on LinkedIn** — `<figure>` moves do not break the editor's save state. (This is different from Medium, where post-paste DOM edits break save.)
+
+Verify with a follow-up query that walks the editor and reports heading+image order.
+
+**Step 4e — Set image captions (from Phase 1 extraction):**
+
+Each LinkedIn figure has a `<textarea class="article-editor-figure-caption">` for captions. React ignores direct `textarea.value = "..."` assignment — use the native setter pattern:
+
+```bash
+$B js "
+  const figures = [...document.querySelectorAll('[aria-label=\"Article editor content\"] figure')];
+  // captions in upload order; empty string = no caption
+  const captions = [
+    '',  // e.g. Black Belt ceremony — no caption in beehiiv
+    'First (?) White Belt Tournament, Circa Early 2013',
+    'Blue Belt, Circa Late 2013',
+    'This is just an excuse for me to post all of my Jiu-Jitsu pictures where I look cool'
+  ];
+  let filled = 0;
+  figures.forEach((fig, i) => {
+    if (!captions[i]) return;
+    const ta = fig.querySelector('textarea.article-editor-figure-caption');
+    if (!ta) return;
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+    setter.call(ta, captions[i]);
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    ta.dispatchEvent(new Event('change', { bubbles: true }));
+    filled++;
+  });
+  'FILLED ' + filled + ' captions';
+"
+```
+
+Verify captions persist with:
+```bash
+$B js "[...document.querySelectorAll('[aria-label=\"Article editor content\"] figure')].map(f => f.querySelector('textarea.article-editor-figure-caption')?.value)"
+```
 
 **Step 5 — Canonical URL:**
 LinkedIn does NOT have a canonical URL field in the article editor UI. Skip this step.
@@ -666,8 +775,26 @@ If any submissions were rate-limited, silently killed, or required CAPTCHA, note
 
 ## Known Issues & Workarounds
 
-### LinkedIn cover image modal
-After uploading an image, LinkedIn shows a persistent modal overlay with "Dismiss", "Edit", "Delete" buttons. Clicking "Dismiss" triggers a discard confirmation. This modal blocks all editor interaction. **Workaround:** handoff to user to click the article body below the overlay.
+### LinkedIn image toolbar ignores cursor position
+Setting a selection range (e.g. `range.setStartAfter(heading)`) before clicking the image toolbar button has no effect — images consistently land at a cached/default position, regardless of where you put the cursor. **Workaround:** batch-upload all body images in order, accept that they'll all clump together in the wrong spot, then move each `<figure>` to its target heading via `parentNode.insertBefore(figure, heading.nextSibling)` followed by dispatching an `input` event on the editor.
+
+### LinkedIn DOM figure moves are safe
+Unlike Medium (where post-paste DOM manipulation breaks the editor's save state), LinkedIn's article editor handles moving `<figure>` elements cleanly. You can freely reorder figures with `parentNode.insertBefore` — the editor re-syncs on the `input` event and saves fine.
+
+### LinkedIn cover image modal is persistent
+After uploading an image (cover or inline), LinkedIn shows a persistent modal overlay with "Dismiss", "Edit", "Delete" buttons. Clicking "Dismiss" triggers a discard confirmation. This modal blocks all editor interaction. **Workaround:** handoff to user to click the article body below the overlay — the overlay dismisses on a body click but not programmatic focus.
+
+### LinkedIn figure captions require React-native setter
+Each figure has a `<textarea class="article-editor-figure-caption">` for captions. Direct `textarea.value = "..."` is silently reverted by React. **Workaround:** use the native setter:
+```js
+const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+setter.call(ta, captionText);
+ta.dispatchEvent(new Event('input', { bubbles: true }));
+ta.dispatchEvent(new Event('change', { bubbles: true }));
+```
+
+### LinkedIn converts `<h2>` to `<h3>` on paste
+LinkedIn's paste sanitizer downgrades all `<h2>` headings to `<h3>`. When anchoring operations to headings (moving figures, inserting anchors), query `h3` (or the wildcard `h1,h2,h3,h4,h5,h6`) — not the tag from your source HTML.
 
 ### Substack strips images on paste
 ProseMirror clipboard paste preserves text formatting but strips `<img>` tags. **Workaround:** upload images separately via the toolbar Image button after pasting text.
@@ -709,6 +836,8 @@ Each sub has different rules: required flairs, karma minimums, self-promotion ba
 Reddit occasionally shows a CAPTCHA on submit, especially for newer accounts or rapid posting. Claude in Chrome cannot solve CAPTCHAs. **Workaround:** screenshot after clicking Post, detect CAPTCHA visually, handoff to user with clear instructions, resume after they solve it.
 
 ### gstack browse command reference
+- `$B goto <URL>` — navigate to URL (reports HTTP status, e.g. `Navigated to ... (200)`)
+- `$B url` — print current tab's URL (useful for capturing the published article URL after publish)
 - `$B type` — type text into focused element (NOT `type_text`)
 - `$B fill @ref "text"` — fill a specific input
 - `$B click @ref` — click an element
@@ -717,6 +846,8 @@ Reddit occasionally shows a CAPTCHA on submit, especially for newer accounts or 
 - `$B js "code"` — execute JavaScript
 - `$B snapshot -i` — get interactive elements with @e refs
 - `$B screenshot /path.png` — capture screenshot
+- `$B tab <n>` / `$B tabs` / `$B newtab` — switch/list/open browser tabs
+- `$B viewport <WxH>` — resize viewport (e.g. `$B viewport 1280x900`)
 - `$B handoff "message"` — hand control to user
 - `$B resume` — resume after handoff
 - `$B cookie-import-browser chrome domain.com` — import cookies (syntax: browser then domain, no `--domain` flag)
