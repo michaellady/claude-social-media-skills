@@ -483,6 +483,28 @@ For each image, position cursor and use the toolbar Image button:
    ```
 7. For subsequent images, the `data-img-upload` attribute may already exist. Use a unique attribute each time or find the latest `.heic` input.
 
+8. **Remove empty paragraphs around figures.** Pressing Enter after each heading (to position cursor for image upload) leaves an empty `<p>` either before or after each figure in the final DOM. Clean them up with:
+   ```bash
+   $B js "
+     const editor = document.querySelector('.ProseMirror[contenteditable=\"true\"]');
+     const kids = [...editor.children];
+     const emptyPs = [];
+     kids.forEach((c, i) => {
+       const isFigureContainer = c.tagName === 'DIV' && c.querySelector('figure');
+       if (isFigureContainer) {
+         const next = kids[i + 1];
+         if (next && next.tagName === 'P' && !next.textContent.trim()) emptyPs.push(next);
+         const prev = kids[i - 1];
+         if (prev && prev.tagName === 'P' && !prev.textContent.trim()) emptyPs.push(prev);
+       }
+     });
+     emptyPs.forEach(el => el.remove());
+     editor.dispatchEvent(new Event('input', { bubbles: true }));
+     'REMOVED ' + emptyPs.length + ' empty paragraphs';
+   "
+   ```
+   ProseMirror tolerates this DOM removal cleanly — Substack's autosave continues working. Confirm via snapshot that the save indicator reads "Saved" (not "Saving..." stuck).
+
 **Step 7 — Add image captions (from Phase 1 extraction):**
 
 Substack exposes a three-dot menu on each image that contains an "Edit caption" action. The menu only surfaces when the image is properly selected via real mouse events — a simple `.click()` is not enough. Dispatch the full pointer+mouse event sequence with exact coordinates, then click the "Edit caption" action, then fill the `<figcaption class="image-caption">` via `document.execCommand('insertText')`.
