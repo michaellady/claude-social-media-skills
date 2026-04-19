@@ -1,0 +1,12 @@
+{
+  "comment": "Override any of these in config.local.json (gitignored). The skill reads config.local.json first if present, then falls back to this file.",
+  "profile_handle": "mikelady",
+  "profile_url": "https://www.linkedin.com/in/mikelady/",
+  "company_slug": "enterprisevibecode",
+  "company_url": "https://www.linkedin.com/company/enterprisevibecode/",
+  "newsletter_slug": "enterprise-vibe-code",
+  "newsletter_url": "https://www.linkedin.com/newsletters/enterprise-vibe-code-7285014015923306497/",
+  "creator_analytics_url": "https://www.linkedin.com/creator/dashboard/",
+  "post_limit": 5,
+  "delta_window_days": 7
+}
