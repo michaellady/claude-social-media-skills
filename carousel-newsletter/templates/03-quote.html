@@ -1,0 +1,42 @@
+<!doctype html>
+<!--
+  EVC carousel — Slide 03 QUOTE (verbatim quote from the newsletter)
+  Placeholders:
+    {{QUOTE}}          — the direct quote text, NO surrounding quotation marks (the template adds them visually)
+    {{ATTRIBUTION}}    — article title, prefixed with em dash in output (e.g., "Enterprise Vibe Code — The Real Problem")
+    {{PAGE_CURRENT}}
+    {{PAGE_TOTAL}}
+
+  Pick a quote ≤180 characters for best fit. If longer, the template will shrink fonts naturally via the shared scale;
+  quotes >260 chars should go on a section slide instead.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="shared.css">
+  <title>EVC Slide — Quote</title>
+</head>
+<body>
+<!--SVG_SPRITE-->
+<section class="slide">
+  <!-- oversized opening quote mark -->
+  <svg style="position:absolute; left: 80px; top: 120px; width: 200px; height: 160px; z-index: 1;" aria-hidden="true">
+    <use href="#quote-open" width="200" height="160"/>
+  </svg>
+
+  <div class="stack" style="gap: 48px; padding-top: 300px; max-width: 920px;">
+    <blockquote class="t-quote">{{QUOTE}}</blockquote>
+    <div class="t-attr">— {{ATTRIBUTION}}</div>
+  </div>
+
+  <!-- Small accent illustration bottom-right -->
+  <svg class="illus bottom-right" width="360" height="220" aria-hidden="true">
+    <use href="#rail" x="0" y="150" width="360" height="70"/>
+    <use href="#wrench" x="60" y="40" width="260" height="80"/>
+  </svg>
+
+  <div class="page-pill">{{PAGE_CURRENT}}<span class="sep">/</span>{{PAGE_TOTAL}}</div>
+  <svg class="mark" aria-hidden="true"><use href="#mark-evc" /></svg>
+</section>
+</body>
+</html>
