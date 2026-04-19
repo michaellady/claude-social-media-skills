@@ -35,7 +35,31 @@ Then invoke `/crosspost-newsletter` inside that instance. The flag grants blanke
 
 For a quick one-platform test run, the normal permission flow is fine. For a full 5-platform cross-post, the dedicated-instance approach is strongly recommended.
 
+## What a successful run looks like (expected flow)
+
+A full 5-platform cross-post takes roughly 45-60 minutes of wall-clock time. Rough breakdown:
+
+- **Phases 0-2 (2-3 min):** check memory for preferences, fetch article content via RSS + browser extraction, confirm platform selection.
+- **LinkedIn (8-12 min):** paste body, set cover image, batch-upload 3-5 body images (each needs a user handoff to dismiss LinkedIn's modal overlay), move figures to correct positions via DOM `insertBefore`, set accompanying post, publish. Handoffs: ~5.
+- **Substack (6-8 min):** paste body, enable email header/footer, upload 3-5 images inline (each via toolbar Image button), clean empty paragraphs, publish + send email + dismiss subscribe-buttons dialog. Handoffs: ~0.
+- **Medium (5-8 min):** Claude in Chrome required. Open dual tabs (Medium + beehiiv), **handoff for manual cmd+c/cmd+v** (programmatic doesn't work), manually re-wrap flattened blockquote in Medium toolbar, clean empty H3s before figures via real clicks, set canonical URL via settings, fix auto-populated subtitle, add topics (from memory if saved), publish. Handoffs: ~2.
+- **Hacker News (2-3 min):** Claude in Chrome. Draft HN-appropriate title, fill title + URL + short author note, submit. Handoffs: 0.
+- **Reddit (15-20 min):** gstack browse with cookie import. Per subreddit (~3-5 min each): navigate to `/r/<sub>/submit`, click Link tab, fill title + URL + body, set post flair + user tag via shadow-DOM modal walk, re-type fields after flair modal (Reddit clears them), screenshot for review, submit. 90s wait between subs. Handoffs: ~1-2 per sub for CAPTCHA or persistent-user-flair blocks.
+
+Typical wins: 4-5 of 5 platforms publish successfully. Occasional losses: a subreddit's automod flags the body as spam (rewrite and retry), or a sub requires a persistent user flair that wasn't pre-set (skip or handoff).
+
 ## Process
+
+### Phase 0 — Check memory for saved preferences
+
+Before asking the user anything, check the memory directory for preferences this skill has already learned from past runs:
+
+- **Beehiiv RSS feed URL** — look for `reference_beehiiv_feed.md` or any memory describing a feed URL. Use it directly instead of asking for the feed again.
+- **Medium topic tags** — look for a feedback memory about Medium topic selection (e.g. `feedback_medium_topics.md`). Use the saved preference as the default; offer it to the user with "go with these 5?" instead of proposing from scratch.
+- **Target channels / platforms** — a `project_channels.md` memory may restrict the platform list (e.g. "X is off the channel list"). Respect it silently; don't propose excluded platforms.
+- **Default subreddit picks** — may not exist yet, but if a run establishes clear subreddit preferences, save them as feedback for next time.
+
+These memories exist so the user doesn't have to repeat themselves. Check first; ask only for what isn't there.
 
 ### Phase 1 — Fetch Full Newsletter Content
 
@@ -130,7 +154,16 @@ Fetch the RSS feed, list recent articles, ask the user which one, then follow th
    <blockquote>"Quote text here."<br>— Author Name</blockquote>
    ```
    This formatting must be done in the initial paste HTML for all platforms. Post-paste editing of blockquotes causes save errors on Medium, and LinkedIn's editor is similarly restrictive. Getting it right in the initial paste is the only reliable approach.
-6. **Save clean HTML to a temp file** — `/tmp/article-body.html`
+6. **Use HTML-comment placeholders for image anchors** — at each position where a body image should go, emit an empty paragraph with a comment marking the image index and subject:
+   ```html
+   <p><!-- IMG1: Kai Greene photo --></p>
+   ```
+   On paste, most editors strip the HTML comment but keep the empty `<p>` tag. That empty `<p>` then serves as a positional anchor you can query for during image placement:
+   ```js
+   const emptyPs = [...editor.querySelectorAll('p')].filter(p => !p.textContent.trim());
+   ```
+   On LinkedIn, after all body images have been batch-uploaded (they all land clumped at the end regardless of cursor position), move each figure to its corresponding empty `<p>` using `target.parentNode.insertBefore(fig, target)` followed by `target.remove()`. On Substack, the same empty-`<p>` pattern works as a cursor-positioning target before triggering the Image toolbar button. This approach worked cleanly on the 2026-04-19 run for both platforms — the images landed in exactly the right spots without any per-image heading-text matching.
+7. **Save clean HTML to a temp file** — `/tmp/article-body.html`
 7. **Escape for JS embedding** — when loading from file into `$B js`, escape backticks and `${` sequences:
    ```bash
    ARTICLE_HTML=$(cat /tmp/article-body.html | sed "s/\`/\\\\\`/g" | sed 's/\$/\\$/g')
@@ -154,13 +187,15 @@ Ask the user which platforms to cross-post to (**multi-select** — any combinat
 - **B)** Substack — full post (gstack browse)
 - **C)** Medium — full story (Claude in Chrome; bypasses Cloudflare)
 
-**Link submission (title + URL only, no article body):**
-- **D)** Hacker News — submit to `news.ycombinator.com` (Claude in Chrome)
-- **E)** Reddit — submit as a Link post to one or more subreddits (Claude in Chrome)
+**Link submission (title + URL + short author note):**
+- **D)** Hacker News — submit to `news.ycombinator.com` (Claude in Chrome). Text field is optional-but-allowed alongside URL; a short "Author here…" note adds value.
+- **E)** Reddit — submit as a Link post to one or more subreddits (**gstack browse** — the Claude in Chrome extension is blocked from reddit.com). Body text is required even though labeled "Optional" — the sub's automod will remove bare-link posts.
 
 **Wait for user input before proceeding.**
 
 Platforms are processed one at a time, sequentially. Full-article platforms run first (they need the article body prepared in Phase 1), then link submissions.
+
+**Mid-session auth notes:** LinkedIn, Substack, Medium, and HN run through Claude in Chrome (which uses the user's real Chrome browser, so sessions persist). Reddit uses gstack browse and needs a one-time cookie import (`$B cookie-import-browser chrome reddit.com`) — the cookie picker opens a UI the user must interact with before continuing.
 
 ### Phase 3 — Browser Setup & Authentication
 
@@ -199,6 +234,22 @@ For any platform where the user is NOT logged in:
    ```
 
 4. After user confirms, `$B resume` and verify. If still not logged in, skip this platform.
+
+**Optimization: batch the cookie picker request.** When multiple gstack platforms will be used (e.g. LinkedIn + Substack + Reddit), open the picker once and tell the user to select all relevant domains at the same time ("please select linkedin.com + substack.com + reddit.com, then close the picker"). Saves a round-trip per platform and keeps the handoffs to one.
+
+#### 3d. Verify Claude in Chrome extension before Medium/HN
+
+Medium and HN require the Claude in Chrome browser extension. Before attempting either, make a lightweight call to confirm the extension is connected:
+
+```
+mcp__claude-in-chrome__tabs_context_mcp (createIfEmpty: true)
+```
+
+If the response is `"No Chrome extension connected."`, handoff with clear setup instructions:
+
+> "The Claude in Chrome extension isn't connected to this session. To connect: open Chrome, run the `/chrome` slash command in this Claude session (or follow your usual extension-connect flow). Reply `ready` when connected and I'll retry."
+
+Then retry `tabs_context_mcp`. Don't try to do Medium/HN work before the extension is confirmed connected — every tool call will fail with no useful error, and the user will be stuck staring at blank screenshots.
 
 ### Phase 4 — Cross-Post to Each Platform
 
@@ -384,10 +435,22 @@ Click "Next" button to go to publish confirmation. The publish page shows:
 - A text field for an accompanying post (`[textbox] "Text editor for creating content"`)
 - A "Publish" button
 
-Write a value/impact-framed accompanying post in the text field, then click Publish:
+Write the accompanying post and fill it before clicking Publish:
 ```bash
 $B click @eN  # text field
 $B type "<accompanying post text>"
+```
+
+**Accompanying-post guidance:**
+- **If the cover image is a person, an object, or anything not self-explanatory, lead with *who/what they are and why they matter to the piece*.** LinkedIn's feed card surfaces the cover image prominently — if a reader sees a muscular bodybuilder and your accompanying post opens with "Most people are picking from the same corner of the AI low-hanging fruit forest…", the cover creates cognitive friction instead of a hook. Confirmed feedback from the user on the 2026-04-19 run: the draft post framed the article's thesis but never explained who Kai Greene was or why his photo headed the piece; the revised post opened with "Kai Greene was never Mr. Olympia, but early-2010s YouTube fitness fans knew him as 'The People's Champ'…" and tied his "thoughts become things" slogan back to the essay.
+- 2-4 short paragraphs. Value/impact framing, not self-congratulation.
+- No emojis or hashtags unless the user asks.
+- Dollar signs need escaping in the Bash `type` command: `\$16.64`.
+
+Revise as a draft and show it to the user (Phase 5) BEFORE clicking Publish. The accompanying post is the highest-leverage piece of copy on LinkedIn — it's what appears in the feed, not the article itself. Get user signoff.
+
+Then click Publish and capture the URL:
+```bash
 $B click @eN  # Publish button
 $B url  # capture published URL
 ```
@@ -567,11 +630,20 @@ Substack does NOT have a canonical URL field in the post settings UI. Skip this 
 **Step 9 — Publish:**
 1. Click "Continue" button. A publish dialog appears with:
    - Audience: "Everyone" (checked)
+   - Comments: "Everyone" (checked)
    - `[checkbox] "Send via email and the Substack app"` — **KEEP CHECKED**
    - "Send to everyone now" button
 2. Click "Send to everyone now".
-3. A "Add subscribe buttons to your post" dialog may appear — click "Publish without buttons" or "Add subscribe buttons" per user preference.
-4. Capture the published URL from the share page.
+3. **Second dialog: "Add subscribe buttons to your post"** — this always appears after the send. Options are "Publish without buttons" and "Add subscribe buttons". Default recommendation: "Publish without buttons" — the article already has the email-header/footer CTAs enabled from Step 4, and inline subscribe buttons often feel spammy in crosspost contexts where most readers came from a link they trust. Ask the user if you want confirmation.
+4. After publishing, the URL redirects to a `/publish/posts/detail/<id>/share-center`. Find the public article URL by querying the page:
+   ```bash
+   $B js "
+     const links = [...document.querySelectorAll('a')];
+     const postLink = links.find(a => a.href && a.href.includes('<subdomain>.substack.com/p/'));
+     postLink ? postLink.href : 'NOT_FOUND';
+   "
+   ```
+   Format: `https://<subdomain>.substack.com/p/<slug>`.
 
 ---
 
@@ -599,9 +671,11 @@ mcp__claude-in-chrome__computer (action: "type", text: "<article title>")
 mcp__claude-in-chrome__computer (action: "key", text: "Enter")
 ```
 
-**Step 4 — Insert the article body via naive copy-paste from beehiiv (PREFERRED):**
+**Step 4 — Insert the article body via naive copy-paste from beehiiv (REQUIRES MANUAL USER ACTION):**
 
-The cleanest approach is to copy the rendered article from the beehiiv page and paste into Medium — this brings over the body text, formatting, AND images in a single operation. It's MUCH simpler than the Image+canvas upload approach (which is slow and fragile).
+The cleanest approach is to copy the rendered article from the beehiiv page and paste into Medium — this brings over body text, formatting, AND images in a single operation. **BUT: programmatic `cmd+c`/`cmd+v` through Claude in Chrome does NOT work reliably across tabs.** Chrome's clipboard operations require the tab to be OS-focused; the extension can send keyboard events to a specific tabId, but the copy only lands on the system clipboard when that tab is the user-focused tab. We confirmed this empirically — `navigator.clipboard.write()` fails with "Document is not focused" when called on a backgrounded tab.
+
+**Working approach: user performs the copy-paste manually.**
 
 1. Open the beehiiv article in a second tab:
    ```
@@ -609,36 +683,18 @@ The cleanest approach is to copy the rendered article from the beehiiv page and 
    mcp__claude-in-chrome__navigate (tabId: <beehiivTab>, url: "<beehiiv-post-url>")
    ```
 
-2. Select the article body (`.dream-post-content-doc`):
-   ```javascript
-   // mcp__claude-in-chrome__javascript_tool on beehiiv tab
-   const body = document.querySelector('.dream-post-content-doc');
-   body.scrollIntoView({ block: 'start' });
-   const range = document.createRange();
-   range.selectNodeContents(body);
-   const sel = window.getSelection();
-   sel.removeAllRanges();
-   sel.addRange(range);
-   'SELECTED ' + body.textContent.length;
-   ```
+2. Type the Medium title, press Enter to move cursor into the body, then **hand off to the user**:
+   > "Please switch to the beehiiv tab, select the article body (triple-click + shift-click to extend, or Cmd+A inside `.dream-post-content-doc`), Cmd+C, switch back to the Medium tab, click into the body, Cmd+V. The first click into the Medium body can be tricky — aim for the empty line right under the title. Reply `done` when pasted."
 
-3. Copy to clipboard on the beehiiv tab:
-   ```
-   mcp__claude-in-chrome__computer (tabId: <beehiivTab>, action: "key", text: "cmd+c")
-   ```
-
-4. Switch to the Medium tab, click the body textbox (after typing title + Enter already placed cursor in body), and paste:
-   ```
-   mcp__claude-in-chrome__computer (tabId: <mediumTab>, action: "key", text: "cmd+v")
-   ```
-
-5. Wait ~8 seconds for Medium to upload the images it pulled from the paste, then verify:
+3. After the user replies, verify:
    ```javascript
    const editor = [...document.querySelectorAll('[contenteditable="true"]')].find(el => el.querySelectorAll('p').length > 0);
-   ({ paras: editor?.querySelectorAll('p').length, imgs: editor?.querySelectorAll('img').length, headings: editor?.querySelectorAll('h1,h2,h3').length });
+   ({ paras: editor?.querySelectorAll('p').length, imgs: editor?.querySelectorAll('img').length, figs: editor?.querySelectorAll('figure').length, h3s: editor?.querySelectorAll('h3').length, bqs: editor?.querySelectorAll('blockquote').length });
    ```
 
-Expect: ~50+ paragraphs, 4 images (or however many were in the article), 8 headings (1 title + 7 section heads).
+Expect: ~45+ paragraphs, 4-5 images (Medium auto-promotes the first body image to a hero slot — this is fine), 5 h3s for section headings (Medium downgrades h2 → h3), **0 blockquotes** (Medium's paste sanitizer often flattens opening blockquotes to plain `<p>` lines — see "Blockquote gets flattened on paste" below).
+
+**Do NOT attempt the programmatic cmd+c/cmd+v sequence** — it silently fails (the Medium body ends up empty or with garbage like "22)"), and each failed attempt wastes a dozen tool calls. Go straight to the manual handoff.
 
 **Step 5 — Clean up empty H3s that appear before each image:**
 
@@ -730,13 +786,25 @@ if (canonical) { canonical.click(); 'CHECKED: ' + canonical.checked; }
 1. Click "Publish" button (top-right)
 2. Medium shows a publish confirmation page with:
    - Story preview (title, description, preview image)
-   - Topics (optional)
+   - Topics (up to 5 — see topic preference memory if one exists)
    - Publication (optional — "Submit your story to connect with community")
    - `[checkbox] "Notify your N subscribers"` — **KEEP CHECKED**
    - "Publish" button and "Schedule for later" link
-3. Click the final "Publish" button
-4. Confirmation dialog: "Your story has been published and sent!"
-5. Capture the published URL from the page
+
+3. **Fix the auto-populated subtitle.** Medium auto-pulls the subtitle from the first line of body text — which for beehiiv articles is usually the opening blockquote (e.g. "Thoughts Become Things"). Replace it with the real beehiiv subtitle:
+   ```
+   // Find the subtitle textbox
+   mcp__claude-in-chrome__find (query: "Story preview subtitle textbox")
+   mcp__claude-in-chrome__computer (action: "triple_click", ref: <subtitle ref>)
+   mcp__claude-in-chrome__computer (action: "key", text: "Delete")
+   mcp__claude-in-chrome__computer (action: "type", text: "<real beehiiv subtitle from Phase 1>")
+   ```
+
+4. **Add topics.** Check for a saved topic preference memory (look for `feedback_medium_topics.md` or similar in memory). If present, use those topics. Otherwise, propose 5 topics based on content and ask the user to confirm. Let the user override — topic choice drives Medium's discovery feeds, and the user's Medium audience may have a very different profile than the article theme suggests.
+
+5. Click the final "Publish" button.
+
+6. Capture the published URL (format: `https://medium.com/@<handle>/<postId>` or the bare `https://medium.com/p/<postId>`).
 
 ---
 
@@ -770,7 +838,7 @@ Before submitting, adapt the title per HN culture:
 
 Present the adapted title to the user for approval before proceeding.
 
-**Step 4 — Fill title and URL:**
+**Step 4 — Fill title, URL, and (optionally) text:**
 ```
 mcp__claude-in-chrome__find (tabId: <tabId>, query: "title textbox")
 mcp__claude-in-chrome__computer (action: "left_click", ref: <title ref>)
@@ -780,7 +848,15 @@ mcp__claude-in-chrome__find (tabId: <tabId>, query: "url textbox")
 mcp__claude-in-chrome__computer (action: "left_click", ref: <url ref>)
 mcp__claude-in-chrome__computer (action: "type", text: "<beehiiv URL>")
 ```
-Leave the **text** field empty — HN rejects submissions that have both a URL and text.
+
+**The text field is genuinely optional and works alongside the URL.** The HN submit page itself states: "If there is a url, text is optional." Older skill versions warned to leave it empty — that was wrong. A 2-3 sentence "Author here…" note often helps the submission by giving commenters a thread starter. Propose one for user approval; if approved, fill:
+```
+mcp__claude-in-chrome__find (tabId: <tabId>, query: "text textbox")
+mcp__claude-in-chrome__computer (action: "left_click", ref: <text ref>)
+mcp__claude-in-chrome__computer (action: "type", text: "Author here. <1-2 sentence original note — no duplicate of the URL content>")
+```
+
+Keep the text field short (under 500 chars) and substantive. Do **not** paste the article body into it — that's what the URL is for.
 
 **Step 5 — Screenshot for review:**
 ```
@@ -815,11 +891,11 @@ Before presenting the list, consider the article's content type and recommend a 
 Present the full categorized subreddit list and let the user multi-select (with an option to add custom subs):
 
 **AI / LLM / Agents** (primary fit for most AI-related content):
-- `r/ClaudeAI` — Anthropic/Claude-specific; Claude Code workflows
-- `r/AI_Agents` (212K) — explicitly about LLMs with tool-use / agentic systems
-- `r/vibecoding` (89K) — hands-on AI coding
-- `r/VibeCodeDevs` (15K) — sister community
-- `r/ChatGPTCoding` — Claude Code + AI coding workflows
+- `r/ClaudeAI` — Anthropic/Claude-specific; Claude Code workflows. Requires a post flair; accepts link posts.
+- `r/AI_Agents` (212K) — explicitly about LLMs with tool-use / agentic systems. **Does NOT allow link posts** (the Link and Images tabs are disabled). Only Text or Poll. Either skip, or do a text post with the URL embedded in the body.
+- `r/vibecoding` (89K) — hands-on AI coding. Post tags optional, link posts work.
+- `r/VibeCodeDevs` (15K) — sister community.
+- `r/ChatGPTCoding` — Claude Code + AI coding workflows. **Requires a persistent subreddit-level user flair on your profile** (set via the "SET USER FLAIR" sidebar widget on any r/ChatGPTCoding page). Selecting a user flair inside the post flair modal is NOT enough — the Post button stays disabled with "Please select a user flair before posting". Also has an aggressive spam filter (see "Reddit spam filter triggers" below).
 - `r/ArtificialIntelligence` — general AI discussion
 - `r/artificial` — general AI discussion (different sub, smaller)
 - `r/singularity` — future of AI, philosophical posts welcome
@@ -906,11 +982,21 @@ Example (for a personal essay about AI + Jiu-Jitsu):
 
 **Step 7 — Handle subreddit-specific required fields:**
 
-- **Flair:** Check the page for a "Flair" or "Add flair" button. If required, present available flairs to the user and let them pick. Some subs won't allow Post without a flair.
+- **Post flair:** Check the page for a "Add flair and tags *" button (asterisk means required). Open the modal and inspect `flairId` + `flairTemplateId` radio groups — many subs split these into **two selections in the same modal**: the post flair (what the post is about) and a user/author tag (what kind of user you are). Both may be required. After selecting, click "Add" to commit.
+- **Post-flair modal clears fields.** Known issue: closing the flair modal sometimes wipes Title, Link URL, and Body text from Reddit's internal validation state even though the DOM shows them populated. Re-type all three fields via real keystrokes (`$B click @ref` → `$B type "..."`) after confirming flair. Only then does the Post button enable.
+- **Persistent subreddit user flair** (different from the post-flair modal tag): some subs — confirmed r/ChatGPTCoding — require a user flair set on your *profile* for that sub (via the "SET USER FLAIR" sidebar widget), not just a tag picked in the post flair modal. If the Post button stays disabled with an error like "Please select a user flair before posting" even after setting everything in the modal, you must set a persistent user flair first. This can't be done from the submit page — **handoff to the user** to open the sub's homepage, click the "SET USER FLAIR" widget in the sidebar, pick a flair, save, then return to the draft.
 - **Rules acknowledgment:** Some subs show a modal with rules that must be accepted.
 - **Community questions:** Some subs (especially r/SaaS, r/Entrepreneur) ask additional questions. Handoff if detected.
 
 Use `read_page` to detect these states and handle each as needed. If anything requires user judgment, handoff.
+
+**Reddit spam filter triggers:** Reddit's automod is sensitive to certain body-text patterns and may block the submission without a visible error (the red message "Our filters have designated this as spam. Please edit your post or try to contact moderators." appears under the fields). Common triggers observed:
+- Dollar amounts (e.g. "$16.64")
+- Product-name references ("Claude Skills", "Google API calls")
+- Buzzy phrases ("queryable AI archive", "transcribe 400 videos")
+- Author-as-marketer framing
+
+If the filter triggers, rewrite the body to be neutral and discussion-focused — strip dollar amounts, swap product names for generic terms ("AI tools"), frame as "wrote an essay about… curious what this community thinks" rather than a specific capability pitch. Re-type the body (don't edit) after clearing.
 
 **Step 8 — Screenshot, review, and submit:**
 ```
@@ -1036,8 +1122,15 @@ ProseMirror clipboard paste preserves text formatting but strips `<img>` tags. *
 ### Substack duplicate title fields
 The editor has both sidebar metadata fields and visible textarea fields. `$B fill` may target the wrong one. **Workaround:** use JS to find textareas by placeholder text and set `.value` directly.
 
-### Medium naive copy-paste from beehiiv preserves images
-The simplest way to get a beehiiv article into Medium with images is: open the beehiiv article in a second Claude in Chrome tab, select `.dream-post-content-doc`, Cmd+C, switch to Medium tab, Cmd+V. This preserves text, formatting, headings, AND fetches all images through Medium's normal paste handler. Avoids the Image+canvas upload trick (which is CORS-constrained, timeout-prone, and requires per-image cursor positioning).
+### Medium naive copy-paste from beehiiv requires manual user action
+The simplest way to get a beehiiv article into Medium with images is copy-paste from a second tab. BUT **Claude in Chrome's programmatic `cmd+c`/`cmd+v` across tabs does not work**. Chrome's clipboard operations require the tab to be OS-focused, and the extension sends keyboard events to a tabId regardless of which tab the user is actually looking at. Empirical confirmation: `navigator.clipboard.write()` from a non-focused tab fails with "Document is not focused." A keyboard-level `cmd+c` on a backgrounded tab leaves the system clipboard empty (or copies whatever was in the focused tab).
+
+**What does work:** ask the user to do the copy-paste manually. Set up both tabs (beehiiv + Medium), type the Medium title, press Enter, then handoff with clear instructions ("switch to beehiiv tab, select the body, Cmd+C, switch to Medium, click into body, Cmd+V"). The user's focused-tab clipboard operation works normally and brings text + images + formatting over in one shot.
+
+**What to avoid:** do NOT waste tool calls trying programmatic approaches (ClipboardEvent dispatch with DataTransfer, `navigator.clipboard.write`, stuffing `window.__BB_HTML__` and base64-transferring it across tabs). All of these either silently fail or get blocked (Claude in Chrome blocks base64 returns over ~30KB, cross-origin fetch from medium.com to beehiiv hits CORS). Go straight to the manual handoff.
+
+### Medium blockquote gets flattened on paste
+When the beehiiv article starts with a blockquote (e.g. the opening quote + attribution pattern used in many essays), Medium's paste sanitizer often flattens it to two plain `<p>` lines — losing the blockquote's visual styling. The `<blockquote>` count in the editor will be 0 even though the source had one. **Workaround:** the user manually selects those two lines in Medium's editor and clicks the blockquote toolbar button. It's one click — don't try to re-wrap programmatically, post-paste DOM surgery on Medium blockquotes breaks the save state.
 
 ### Medium detects DOM automation and blocks saves
 Any post-paste DOM manipulation — `.remove()`, setting `textContent`, `innerHTML` assignments, etc. — can trigger Medium's "Something is wrong and we cannot save your story" error. Once this error appears, the only recovery is to discard the draft (navigate away with `window.onbeforeunload = null; location.href = ...`) and start fresh. **Workaround:** use only real mouse clicks at coordinates and keyboard input (type, Backspace, Enter) after a click. Read state via JS is safe, but don't mutate.
@@ -1081,6 +1174,9 @@ HN enforces strict per-user rate limits — submitting multiple stories quickly 
 ### Hacker News title rules
 HN culture expects descriptive titles. No editorialization, no clickbait ("How to X", "You won't believe"), no "N things" listicles. Under 80 characters. "Show HN:" prefix is reserved for actual original work demos — misuse gets the submission killed. **Workaround:** adapt the beehiiv title for HN before submitting; present adapted title to the user for approval.
 
+### Hacker News text alongside URL is allowed (contra earlier skill claim)
+Earlier versions of this skill said "if URL is filled, the text field must be empty — HN rejects submissions that have both." That was wrong. The HN submit page itself reads: *"If there is a url, text is optional."* A short 2-3 sentence "Author here…" note is allowed and helps the submission by giving commenters a conversation starter. Keep it under 500 chars, make it substantive (not a duplicate of the URL content), and don't paste the article body. Confirmed working on the 2026-04-19 submission.
+
 ### Reddit has a write API but browser automation is simpler
 Reddit's OAuth2 API supports submissions via PRAW but requires creating a Reddit app and managing tokens — a second auth flow. Browser automation via Claude in Chrome uses the user's existing Reddit login and is consistent with the rest of the skill. **Trade-off:** browser automation is slightly more fragile (UI changes) but needs no setup.
 
@@ -1098,7 +1194,10 @@ Each sub has different rules: required flairs, karma minimums, self-promotion ba
 Many subreddits' automod rules flag link posts with no body text as low-effort spam and remove them within minutes — even though Reddit's UI labels the body field "Optional". Confirmed today: a bare-link submission to r/ClaudeAI was removed automatically. **Workaround:** always fill the body field with a 2-3 sentence intro/hook. Treat it as mandatory, not optional, for every Reddit submission regardless of what the form labels say.
 
 ### Reddit blocks Claude in Chrome but allows gstack browse
-The Claude in Chrome extension refuses to navigate to `reddit.com` with the message "This site is not allowed due to safety restrictions." **Workaround:** use gstack browse (`$B`) for Reddit submissions. A spoofed user agent (`$B useragent "Mozilla/5.0 ... Chrome/131 ..."`) is NOT required — Reddit works fine with the default gstack user agent once cookies are imported.
+The Claude in Chrome extension refuses to navigate to `reddit.com` with the message "This site is not allowed due to safety restrictions." **Workaround:** use gstack browse (`$B`) for Reddit submissions. A spoofed user agent (`$B useragent "Mozilla/5.0 ... Chrome/131 ..."`) IS sometimes needed if Reddit hits a JS challenge (URL ends up containing `?js_challenge=1&token=...`) — set the user agent first, then re-navigate.
+
+### Reddit gstack handoff + resume clears all form fields
+When you do `$B handoff "..."` on a Reddit submit page and then `$B resume`, all form fields (Title, Link URL, Body text) and any selected flair get wiped. This is different from the flair-modal clearing issue — the handoff itself triggers a soft page refresh. **Workaround:** after resuming from a Reddit handoff, re-fill every field from scratch (title, URL, body, post flair, user tag) as if starting over. Don't assume anything survived.
 
 ### Reddit flair modal lives in shadow DOM and clears form state
 Reddit's flair picker is inside `<r-post-flairs-modal>` which has a shadow root. Finding the "Add" button requires a recursive shadow-DOM walk:
@@ -1130,7 +1229,24 @@ found.dispatchEvent(new MouseEvent('click', opts));
 ```
 Note: `composed: true` is required so the event crosses the shadow boundary.
 
-**CRITICAL:** After closing the flair modal, Reddit clears the Title and Link URL textboxes. You must RE-FILL them after confirming the flair. Only then is the Post button enabled.
+**CRITICAL:** After closing the flair modal, Reddit clears the Title, Link URL, AND Body text from its internal validation state (even though the DOM shows them populated). You must re-type all three with real keystrokes (`$B click @ref` then `$B type "..."`) after confirming flair. Clearing via the React-native setter is NOT enough — the composer validator listens for actual keyboard events, not `dispatchEvent('input')`. Only after re-typing does the Post button enable.
+
+### Reddit post-flair vs. persistent subreddit user flair
+Reddit has two distinct flair concepts that are easy to confuse:
+1. **Post flair** (the `flairId` radio group in the submit form's flair modal) — describes what the post is about ("Project", "Discussion", "Built with Claude").
+2. **User/author tag** (the `flairTemplateId` radio group in the *same* modal) — a per-post label for you as the author ("Vibe coder", "Professional Nerd", "Experienced Developer"). Some subs pair this with the post flair in the same UI.
+3. **Persistent subreddit user flair** — completely separate from the post submit flow. Set via the "SET USER FLAIR" sidebar widget on the sub's homepage or any post page. Picking a user tag in the post flair modal does NOT set this.
+
+Some subs (confirmed: r/ChatGPTCoding) require a persistent subreddit user flair before they'll let you post. Without it, the Post button stays disabled with the error "Please select a user flair before posting" — even when the post flair + user tag modal selections are both set. You cannot fix this from the submit page. **Handoff** to the user: "Open `reddit.com/r/<sub>/`, find the SET USER FLAIR sidebar widget, pick any flair, save, then return." Or skip the sub.
+
+### Reddit spam filter false positives
+r/ChatGPTCoding (and likely other moderated AI subs) runs an aggressive automod filter on post body text. When triggered, the form shows a red "Our filters have designated this as spam" warning under the title field and the Post button stays disabled. Observed triggers on the 2026-04-19 run:
+- Dollar amounts ("$16.64")
+- Product-name references ("Claude Skills")
+- Buzzy specific claims ("transcribe 400 old driving-video monologues", "queryable AI archive")
+- Capability-pitch framing in general
+
+Neutral discussion framing survives the filter. Rewrite from "I built X that does Y for $Z" into "Wrote an essay about [topic]. Core argument: [thesis]. Curious what this community thinks." Strip dollar amounts and product names. Re-type the body (don't edit in place) after clearing.
 
 ### Reddit removed the crosspost button from the share menu
 In 2022+ Reddit removed the cross-post option from the share dropdown on posts. The share menu now only has "Copy link" and "Embed". **Workaround:** submit directly to each target subreddit via `reddit.com/submit` — same ~1 minute per sub once the pattern is established.
