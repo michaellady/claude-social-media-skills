@@ -1,0 +1,49 @@
+{
+  "_instructions": "This file is intentionally empty-skeleton. Before the opus-clips skill can run, a one-time Claude-in-Chrome exploration session must capture the real DOM selectors from app.opus.pro and fill in the values below. Selectors should prefer stable attributes (data-testid, aria-label) over brittle CSS nth-child chains. If a selector has no stable attribute, use a text-content or role-based anchor instead.",
+  "_captured_at": null,
+  "_opus_version_notes": null,
+
+  "upload_page": {
+    "url_pattern": "https://app.opus.pro/upload",
+    "dropzone": null,
+    "file_input": null,
+    "upload_progress_bar": null,
+    "processing_started_confirmation": null
+  },
+
+  "clip_library": {
+    "url_pattern": "https://app.opus.pro/project/:projectId",
+    "clip_grid_root": null,
+    "clip_card": null,
+    "clip_title": null,
+    "clip_duration": null,
+    "clip_viral_score": null,
+    "clip_card_click_target": null,
+    "processing_complete_indicator": null
+  },
+
+  "clip_detail_view": {
+    "enhancer_panel_toggle": null,
+    "remove_filler_words_toggle": null,
+    "remove_silences_toggle": null,
+    "apply_button": null,
+    "back_to_library_button": null
+  },
+
+  "scheduler": {
+    "schedule_button_on_clip": null,
+    "modal_root": null,
+    "platform_multi_select": null,
+    "platform_option_facebook": null,
+    "platform_option_instagram": null,
+    "platform_option_linkedin_page": null,
+    "platform_option_linkedin_profile": null,
+    "platform_option_tiktok": null,
+    "platform_option_youtube": null,
+    "date_picker": null,
+    "time_picker": null,
+    "confirm_schedule_button": null,
+    "success_toast": null,
+    "supports_multi_platform_in_one_modal": null
+  }
+}

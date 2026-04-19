@@ -1,0 +1,18 @@
+{
+  "timezone": "America/Los_Angeles",
+  "daily_time_slots": ["09:00", "12:00", "15:00", "18:00", "21:00"],
+  "channels": [
+    {"platform": "facebook",  "account": "Enterprise Vibe Code", "posts_per_day": 5},
+    {"platform": "instagram", "account": "Enterprise Vibe Code", "posts_per_day": 5},
+    {"platform": "linkedin",  "account": "Enterprise Vibe Code", "posts_per_day": 5, "type": "page"},
+    {"platform": "linkedin",  "account": "Mike Lady",            "posts_per_day": 5, "type": "profile"},
+    {"platform": "tiktok",    "account": "mikelady",             "posts_per_day": 5},
+    {"platform": "youtube",   "account": "Enterprise Vibe Code", "posts_per_day": 5}
+  ],
+  "viral_score_threshold": 70,
+  "enhancer_settings": {
+    "remove_filler_words": true,
+    "remove_silences": true
+  },
+  "notes": "Times are local to `timezone`. Opus's scheduler UI expects times in the user's Opus account timezone; confirm during UI exploration. `viral_score_threshold` auto-selects clips ≥ this score; lower to be less picky."
+}
