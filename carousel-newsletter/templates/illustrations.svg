@@ -1,126 +1,375 @@
 <!--
-  EVC illustration sprite sheet.
-  Templates reference primitives via <use href="./illustrations.svg#symbol-id" />.
-  All primitives share the same flat, outlined, isometric lego-construction language.
-  Colors are baked into fills but every outline uses `currentColor` so templates can tint.
+  EVC illustration sprite sheet — higher fidelity v2.
+  Templates reference primitives via <use href="#symbol-id" />.
+  Style: clean vector with isometric depth cues, bold 3px outlines, flat fills
+  plus a single shadow color per surface to communicate 3D.
+  Shadows / highlights baked in; outline is a dark navy-ink (#1B2A3D).
 -->
-<svg xmlns="http://www.w3.org/2000/svg" style="display:none" color="#1B2A3D">
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" color="#1B2A3D" stroke-linejoin="round" stroke-linecap="round">
 
-  <!-- EVC triangular watermark (same footprint as the banner bottom-right mark) -->
-  <symbol id="mark-evc" viewBox="0 0 52 52">
-    <path d="M26 4 L48 44 H4 Z" fill="#14386B" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
-    <path d="M26 18 L38 38 H14 Z" fill="#F5ECD7"/>
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       EVC triangular watermark — sharper, layered
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <symbol id="mark-evc" viewBox="0 0 56 56">
+    <path d="M28 4 L52 48 H4 Z" fill="#14386B" stroke="currentColor" stroke-width="3"/>
+    <path d="M28 20 L42 44 H14 Z" fill="#F5ECD7"/>
+    <path d="M28 30 L34 42 H22 Z" fill="#2D8A3E"/>
   </symbol>
 
-  <!-- Single gear, used in corners / backgrounds -->
-  <symbol id="gear" viewBox="0 0 140 140">
-    <g fill="#8894A3" stroke="currentColor" stroke-width="4" stroke-linejoin="round">
-      <path d="M70 8 l10 18 18-6 0 20 18 10 -10 18 6 18 -20 0 -10 18 -18 -10 -18 6 0 -20 -18 -10 10 -18 -6 -18 20 0 10 -18 18 10z"/>
-      <circle cx="70" cy="70" r="22" fill="#F5ECD7"/>
-      <circle cx="70" cy="70" r="8" fill="#14386B" stroke="none"/>
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       ISOMETRIC LEGO BRICKS
+       Internal geometry: front face + right side (darker) + top (lighter) +
+       cylindrical studs on top. Each brick is drawn at iso projection ~30°.
+       ═══════════════════════════════════════════════════════════════════════ -->
+
+  <!-- 2x2 brick, yellow -->
+  <symbol id="brick-2x2-yellow" viewBox="0 0 200 170">
+    <!-- Top face (parallelogram) -->
+    <path d="M20 58 L110 58 L180 28 L90 28 Z" fill="#F8CC3E" stroke="currentColor" stroke-width="3.5"/>
+    <!-- Right side (darker) -->
+    <path d="M110 58 L110 140 L180 110 L180 28 Z" fill="#C79204" stroke="currentColor" stroke-width="3.5"/>
+    <!-- Front face -->
+    <path d="M20 58 L110 58 L110 140 L20 140 Z" fill="#F2B705" stroke="currentColor" stroke-width="3.5"/>
+    <!-- Subtle front highlight strip -->
+    <path d="M26 64 L28 130 L32 130 L30 64 Z" fill="#F8CC3E" opacity="0.6"/>
+    <!-- 4 studs on top face (2 per row) -->
+    <!-- Stud positions: top face spans (20,58)→(110,58)→(180,28)→(90,28) -->
+    <!-- Grid stud centers in top-face space: row1/col1=(52,48), row1/col2=(110,33), row2/col1=(80,63), row2/col2=(138,48) -->
+    <g stroke="currentColor" stroke-width="3">
+      <!-- stud cylinders: side rect + top ellipse -->
+      <path d="M42 40 L42 52 A12 6 0 0 0 66 52 L66 40" fill="#C79204"/>
+      <ellipse cx="54" cy="40" rx="12" ry="6" fill="#F8CC3E"/>
+
+      <path d="M100 25 L100 37 A12 6 0 0 0 124 37 L124 25" fill="#C79204"/>
+      <ellipse cx="112" cy="25" rx="12" ry="6" fill="#F8CC3E"/>
+
+      <path d="M72 55 L72 67 A12 6 0 0 0 96 67 L96 55" fill="#C79204"/>
+      <ellipse cx="84" cy="55" rx="12" ry="6" fill="#F8CC3E"/>
+
+      <path d="M130 40 L130 52 A12 6 0 0 0 154 52 L154 40" fill="#C79204"/>
+      <ellipse cx="142" cy="40" rx="12" ry="6" fill="#F8CC3E"/>
     </g>
   </symbol>
 
-  <!-- Small gear accent -->
-  <symbol id="gear-sm" viewBox="0 0 80 80">
-    <g fill="#4A5663" stroke="currentColor" stroke-width="3" stroke-linejoin="round">
-      <path d="M40 4 l6 10 10 -4 0 12 10 6 -6 10 4 10 -12 0 -6 10 -10 -6 -10 4 0 -12 -10 -6 6 -10 -4 -10 12 0 6 -10z"/>
-      <circle cx="40" cy="40" r="12" fill="#F5ECD7"/>
+  <!-- 2x2 brick, blue -->
+  <symbol id="brick-2x2-blue" viewBox="0 0 200 170">
+    <path d="M20 58 L110 58 L180 28 L90 28 Z" fill="#3F85E0" stroke="currentColor" stroke-width="3.5"/>
+    <path d="M110 58 L110 140 L180 110 L180 28 Z" fill="#1F4F96" stroke="currentColor" stroke-width="3.5"/>
+    <path d="M20 58 L110 58 L110 140 L20 140 Z" fill="#2E6CC4" stroke="currentColor" stroke-width="3.5"/>
+    <path d="M26 64 L28 130 L32 130 L30 64 Z" fill="#3F85E0" opacity="0.6"/>
+    <g stroke="currentColor" stroke-width="3">
+      <path d="M42 40 L42 52 A12 6 0 0 0 66 52 L66 40" fill="#1F4F96"/>
+      <ellipse cx="54" cy="40" rx="12" ry="6" fill="#3F85E0"/>
+      <path d="M100 25 L100 37 A12 6 0 0 0 124 37 L124 25" fill="#1F4F96"/>
+      <ellipse cx="112" cy="25" rx="12" ry="6" fill="#3F85E0"/>
+      <path d="M72 55 L72 67 A12 6 0 0 0 96 67 L96 55" fill="#1F4F96"/>
+      <ellipse cx="84" cy="55" rx="12" ry="6" fill="#3F85E0"/>
+      <path d="M130 40 L130 52 A12 6 0 0 0 154 52 L154 40" fill="#1F4F96"/>
+      <ellipse cx="142" cy="40" rx="12" ry="6" fill="#3F85E0"/>
     </g>
   </symbol>
 
-  <!-- Wrench -->
-  <symbol id="wrench" viewBox="0 0 220 80">
-    <path d="M18 40 a22 22 0 0 1 22 -22 h4 l-6 12 6 12 -10 6 -12 0 z M44 28 h160 v24 h-160 z M204 18 h12 v44 h-12 z"
-      fill="#8894A3" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
-  </symbol>
-
-  <!-- Minecart with lego load (hero illustration, same silhouette as banner) -->
-  <symbol id="minecart" viewBox="0 0 360 240">
-    <!-- cart body -->
-    <path d="M30 120 h300 l-24 80 h-252 z" fill="#8894A3" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>
-    <rect x="50" y="130" width="260" height="20" fill="#4A5663"/>
-    <!-- wheels -->
-    <circle cx="90" cy="208" r="22" fill="#4A5663" stroke="currentColor" stroke-width="5"/>
-    <circle cx="270" cy="208" r="22" fill="#4A5663" stroke="currentColor" stroke-width="5"/>
-    <circle cx="90" cy="208" r="6" fill="#F5ECD7"/>
-    <circle cx="270" cy="208" r="6" fill="#F5ECD7"/>
-    <!-- lego load -->
-    <rect x="70" y="60" width="90" height="60" fill="#F2B705" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>
-    <circle cx="92" cy="60" r="10" fill="#C79204" stroke="currentColor" stroke-width="4"/>
-    <circle cx="138" cy="60" r="10" fill="#C79204" stroke="currentColor" stroke-width="4"/>
-    <rect x="165" y="30" width="70" height="90" fill="#2E6CC4" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>
-    <circle cx="182" cy="30" r="9" fill="#1F4F96" stroke="currentColor" stroke-width="4"/>
-    <circle cx="218" cy="30" r="9" fill="#1F4F96" stroke="currentColor" stroke-width="4"/>
-    <rect x="240" y="72" width="70" height="48" fill="#2D8A3E" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>
-    <circle cx="258" cy="72" r="8" fill="#1E6A2C" stroke="currentColor" stroke-width="4"/>
-    <circle cx="292" cy="72" r="8" fill="#1E6A2C" stroke="currentColor" stroke-width="4"/>
-  </symbol>
-
-  <!-- Rail track segment (horizontal) -->
-  <symbol id="rail" viewBox="0 0 400 80">
-    <rect x="0" y="18" width="400" height="10" fill="#4A5663" stroke="currentColor" stroke-width="3"/>
-    <rect x="0" y="52" width="400" height="10" fill="#4A5663" stroke="currentColor" stroke-width="3"/>
-    <g fill="#8B5A2B" stroke="currentColor" stroke-width="2">
-      <rect x="18" y="10" width="28" height="60"/>
-      <rect x="86" y="10" width="28" height="60"/>
-      <rect x="154" y="10" width="28" height="60"/>
-      <rect x="222" y="10" width="28" height="60"/>
-      <rect x="290" y="10" width="28" height="60"/>
-      <rect x="358" y="10" width="28" height="60"/>
+  <!-- 2x2 brick, green -->
+  <symbol id="brick-2x2-green" viewBox="0 0 200 170">
+    <path d="M20 58 L110 58 L180 28 L90 28 Z" fill="#3DAA50" stroke="currentColor" stroke-width="3.5"/>
+    <path d="M110 58 L110 140 L180 110 L180 28 Z" fill="#1E6A2C" stroke="currentColor" stroke-width="3.5"/>
+    <path d="M20 58 L110 58 L110 140 L20 140 Z" fill="#2D8A3E" stroke="currentColor" stroke-width="3.5"/>
+    <path d="M26 64 L28 130 L32 130 L30 64 Z" fill="#3DAA50" opacity="0.6"/>
+    <g stroke="currentColor" stroke-width="3">
+      <path d="M42 40 L42 52 A12 6 0 0 0 66 52 L66 40" fill="#1E6A2C"/>
+      <ellipse cx="54" cy="40" rx="12" ry="6" fill="#3DAA50"/>
+      <path d="M100 25 L100 37 A12 6 0 0 0 124 37 L124 25" fill="#1E6A2C"/>
+      <ellipse cx="112" cy="25" rx="12" ry="6" fill="#3DAA50"/>
+      <path d="M72 55 L72 67 A12 6 0 0 0 96 67 L96 55" fill="#1E6A2C"/>
+      <ellipse cx="84" cy="55" rx="12" ry="6" fill="#3DAA50"/>
+      <path d="M130 40 L130 52 A12 6 0 0 0 154 52 L154 40" fill="#1E6A2C"/>
+      <ellipse cx="142" cy="40" rx="12" ry="6" fill="#3DAA50"/>
     </g>
   </symbol>
 
-  <!-- Stylized robot — white suit, blue visor, holding a wrench. Simplified silhouette of banner character. -->
-  <symbol id="robot" viewBox="0 0 200 260">
-    <!-- body -->
-    <path d="M70 100 h60 q14 0 14 14 v100 q0 14 -14 14 h-60 q-14 0 -14 -14 v-100 q0 -14 14 -14 z"
-      fill="#FFFFFF" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>
-    <!-- helmet -->
-    <circle cx="100" cy="70" r="46" fill="#FFFFFF" stroke="currentColor" stroke-width="5"/>
-    <!-- visor -->
-    <path d="M68 64 q0 -18 32 -18 t32 18 v10 q0 10 -32 10 t-32 -10 z" fill="#2E6CC4" stroke="currentColor" stroke-width="4"/>
-    <circle cx="86" cy="66" r="3" fill="#F5ECD7"/>
-    <circle cx="114" cy="66" r="3" fill="#F5ECD7"/>
-    <!-- tie / neckpiece -->
-    <path d="M94 116 l6 10 6 -10 -2 24 -4 6 -4 -6 z" fill="#14386B" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
-    <!-- arm + wrench -->
-    <path d="M140 160 l40 16 -4 12 -40 -16 z" fill="#FFFFFF" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/>
-    <path d="M176 174 a10 10 0 1 0 10 14 l-6 -2 2 -8 -6 -4 z" fill="#8894A3" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
-    <!-- legs -->
-    <rect x="74" y="228" width="22" height="26" fill="#FFFFFF" stroke="currentColor" stroke-width="4"/>
-    <rect x="104" y="228" width="22" height="26" fill="#FFFFFF" stroke="currentColor" stroke-width="4"/>
-  </symbol>
-
-  <!-- Stacked bricks arrangement (for corner accents) -->
-  <symbol id="brick-stack" viewBox="0 0 200 180">
-    <!-- base yellow -->
-    <rect x="10" y="110" width="180" height="60" rx="6" fill="#F2B705" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>
-    <circle cx="44" cy="110" r="12" fill="#C79204" stroke="currentColor" stroke-width="4"/>
-    <circle cx="100" cy="110" r="12" fill="#C79204" stroke="currentColor" stroke-width="4"/>
-    <circle cx="156" cy="110" r="12" fill="#C79204" stroke="currentColor" stroke-width="4"/>
-    <!-- mid blue -->
-    <rect x="40" y="54" width="120" height="56" rx="6" fill="#2E6CC4" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>
-    <circle cx="70" cy="54" r="11" fill="#1F4F96" stroke="currentColor" stroke-width="4"/>
-    <circle cx="130" cy="54" r="11" fill="#1F4F96" stroke="currentColor" stroke-width="4"/>
-    <!-- top green -->
-    <rect x="66" y="6" width="68" height="48" rx="6" fill="#2D8A3E" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>
-    <circle cx="100" cy="6" r="9" fill="#1E6A2C" stroke="currentColor" stroke-width="4"/>
-  </symbol>
-
-  <!-- Swipe/chevron arrow for CTA slide -->
-  <symbol id="swipe-chevron" viewBox="0 0 120 60">
-    <g fill="none" stroke="#14386B" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M10 30 l24 -20 24 20"/>
-      <path d="M46 30 l24 -20 24 20" opacity="0.6"/>
-      <path d="M82 30 l24 -20 14 12" opacity="0.35"/>
+  <!-- 1x2 brick variants (narrower single-stud-column) for top-of-stack accents -->
+  <symbol id="brick-1x2-green" viewBox="0 0 140 160">
+    <path d="M20 58 L70 58 L125 28 L75 28 Z" fill="#3DAA50" stroke="currentColor" stroke-width="3.5"/>
+    <path d="M70 58 L70 130 L125 100 L125 28 Z" fill="#1E6A2C" stroke="currentColor" stroke-width="3.5"/>
+    <path d="M20 58 L70 58 L70 130 L20 130 Z" fill="#2D8A3E" stroke="currentColor" stroke-width="3.5"/>
+    <g stroke="currentColor" stroke-width="3">
+      <path d="M36 40 L36 52 A10 5 0 0 0 56 52 L56 40" fill="#1E6A2C"/>
+      <ellipse cx="46" cy="40" rx="10" ry="5" fill="#3DAA50"/>
+      <path d="M82 25 L82 37 A10 5 0 0 0 102 37 L102 25" fill="#1E6A2C"/>
+      <ellipse cx="92" cy="25" rx="10" ry="5" fill="#3DAA50"/>
     </g>
   </symbol>
 
-  <!-- Open quote glyph (alternative to the CSS " character for consistency) -->
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       Stacked brick arrangement (for corner accents)
+       Tower: yellow base (2x2) + blue mid (2x2) + green top (1x2)
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <symbol id="brick-stack" viewBox="0 0 220 380">
+    <!-- Ground shadow -->
+    <ellipse cx="110" cy="372" rx="88" ry="8" fill="currentColor" opacity="0.12"/>
+    <!-- Yellow 2x2 base at y=200 -->
+    <g transform="translate(10 210)">
+      <use href="#brick-2x2-yellow"/>
+    </g>
+    <!-- Blue 2x2 stacked at y=90 -->
+    <g transform="translate(10 100)">
+      <use href="#brick-2x2-blue"/>
+    </g>
+    <!-- Green 1x2 on top at y=0 -->
+    <g transform="translate(40 0)">
+      <use href="#brick-1x2-green"/>
+    </g>
+  </symbol>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       GEAR — proper tooth geometry with inner hub ring
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <symbol id="gear" viewBox="0 0 160 160">
+    <!-- Outer teeth: 12-tooth gear via two rotated squares -->
+    <g fill="#8894A3" stroke="currentColor" stroke-width="3.5">
+      <!-- Tooth ring (12 teeth) via path with notches -->
+      <path d="M80 8
+               L92 14 L100 8 L108 18 L118 16 L122 28
+               L134 30 L132 42 L142 50 L134 58 L140 70
+               L128 76 L130 88 L118 88 L114 100 L102 96
+               L94 106 L84 100 L74 108 L66 100 L54 104
+               L50 92 L38 92 L38 80 L26 76 L30 64
+               L20 56 L28 46 L24 34 L36 32 L40 20
+               L52 22 L58 12 L68 16 Z" />
+    </g>
+    <!-- Inner hub ring (darker background) -->
+    <circle cx="80" cy="80" r="32" fill="#F5ECD7" stroke="currentColor" stroke-width="3.5"/>
+    <!-- Inner bolt circle (accent) -->
+    <circle cx="80" cy="80" r="14" fill="#14386B" stroke="currentColor" stroke-width="3"/>
+    <circle cx="80" cy="80" r="5" fill="#F5ECD7"/>
+  </symbol>
+
+  <!-- Small gear accent (simpler 8-tooth) -->
+  <symbol id="gear-sm" viewBox="0 0 90 90">
+    <g fill="#4A5663" stroke="currentColor" stroke-width="3">
+      <path d="M45 6
+               L52 14 L60 8 L66 18 L76 18 L76 30
+               L84 38 L78 46 L82 58 L72 60 L68 70
+               L58 68 L52 76 L44 72 L36 80 L28 72
+               L20 74 L18 64 L8 60 L14 50 L10 40
+               L20 36 L22 26 L32 26 L34 14 L44 14 Z" />
+    </g>
+    <circle cx="45" cy="45" r="15" fill="#F5ECD7" stroke="currentColor" stroke-width="3"/>
+    <circle cx="45" cy="45" r="5" fill="#4A5663"/>
+  </symbol>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       WRENCH — 3D-ish with handle shading
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <symbol id="wrench" viewBox="0 0 280 90">
+    <!-- Wrench body (handle + jaw) -->
+    <path d="M18 45
+             a28 28 0 0 1 28 -28 h10 l-8 14 8 14 h8
+             L72 36 L260 36 L260 54 L72 54 L64 60 L56 60
+             l-8 14 -8 -14 h-10
+             a28 28 0 0 1 -28 -28 z
+             M 256 20 L 272 20 L 272 70 L 256 70 Z"
+          fill="#AEB7C3" stroke="currentColor" stroke-width="3.5"/>
+    <!-- Highlight along top edge of handle -->
+    <rect x="76" y="38" width="180" height="3" fill="#DDE2E8"/>
+    <!-- Darker shadow along bottom -->
+    <rect x="76" y="51" width="180" height="3" fill="#6E7785"/>
+    <!-- Jaw opening (inner cream) -->
+    <path d="M32 45 a16 16 0 0 1 16 -16 h4 l-5 9 5 7 h0 L32 45 z" fill="#F5ECD7"/>
+  </symbol>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       MINECART — isometric with visible front + right side + top load area
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <symbol id="minecart" viewBox="0 0 440 320">
+    <!-- Ground shadow -->
+    <ellipse cx="220" cy="300" rx="180" ry="10" fill="currentColor" opacity="0.12"/>
+
+    <!-- Far wheel (back) -->
+    <g stroke="currentColor" stroke-width="4">
+      <circle cx="340" cy="258" r="28" fill="#3C4450"/>
+      <circle cx="340" cy="258" r="18" fill="#6E7785"/>
+      <circle cx="340" cy="258" r="6" fill="#F5ECD7"/>
+    </g>
+
+    <!-- Cart body: iso box with front, right, top -->
+    <!-- Top opening (interior, darker) -->
+    <path d="M40 130 L280 130 L360 160 L120 160 Z"
+          fill="#2C333D" stroke="currentColor" stroke-width="4"/>
+    <!-- Inner rim highlight -->
+    <path d="M48 136 L272 136 L352 162" fill="none" stroke="#4A5663" stroke-width="2"/>
+
+    <!-- Right side panel (parallelogram) -->
+    <path d="M280 130 L360 160 L340 240 L260 210 Z"
+          fill="#6E7785" stroke="currentColor" stroke-width="4"/>
+    <!-- Right panel vertical slats -->
+    <line x1="300" y1="140" x2="282" y2="218" stroke="currentColor" stroke-width="2"/>
+    <line x1="320" y1="147" x2="302" y2="225" stroke="currentColor" stroke-width="2"/>
+
+    <!-- Front face -->
+    <path d="M40 130 L280 130 L260 210 L20 210 Z"
+          fill="#8894A3" stroke="currentColor" stroke-width="4"/>
+    <!-- Front face slats -->
+    <line x1="90" y1="135" x2="80" y2="205" stroke="currentColor" stroke-width="2"/>
+    <line x1="140" y1="135" x2="132" y2="205" stroke="currentColor" stroke-width="2"/>
+    <line x1="190" y1="135" x2="184" y2="205" stroke="currentColor" stroke-width="2"/>
+    <line x1="240" y1="135" x2="236" y2="205" stroke="currentColor" stroke-width="2"/>
+    <!-- Metal band along bottom -->
+    <path d="M20 200 L260 200 L258 212 L18 212 Z" fill="#4A5663" stroke="currentColor" stroke-width="3"/>
+
+    <!-- Front wheel -->
+    <g stroke="currentColor" stroke-width="4">
+      <circle cx="90" cy="258" r="32" fill="#3C4450"/>
+      <circle cx="90" cy="258" r="20" fill="#6E7785"/>
+      <circle cx="90" cy="258" r="6" fill="#F5ECD7"/>
+      <!-- spokes -->
+      <line x1="90" y1="238" x2="90" y2="278" stroke="currentColor" stroke-width="3"/>
+      <line x1="72" y1="250" x2="108" y2="266" stroke="currentColor" stroke-width="3"/>
+      <line x1="72" y1="266" x2="108" y2="250" stroke="currentColor" stroke-width="3"/>
+    </g>
+
+    <!-- Right/back wheel gets spokes too -->
+    <g stroke="currentColor" stroke-width="3">
+      <line x1="340" y1="242" x2="340" y2="274" stroke="currentColor"/>
+      <line x1="326" y1="250" x2="354" y2="266" stroke="currentColor"/>
+    </g>
+
+    <!-- Cargo: bricks poking out of top opening -->
+    <g transform="translate(40 0)">
+      <use href="#brick-2x2-yellow" x="10" y="30" width="130" height="110"/>
+    </g>
+    <g>
+      <use href="#brick-2x2-blue" x="140" y="-20" width="150" height="150"/>
+    </g>
+    <g>
+      <use href="#brick-1x2-green" x="230" y="50" width="110" height="110"/>
+    </g>
+  </symbol>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       RAIL — perspective track with ties + shadow
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <symbol id="rail" viewBox="0 0 560 90">
+    <!-- Ground gravel shadow -->
+    <rect x="0" y="70" width="560" height="12" fill="currentColor" opacity="0.08"/>
+    <!-- Wooden ties with subtle perspective (slight trapezoids) -->
+    <g fill="#8B5A2B" stroke="currentColor" stroke-width="2.5">
+      <path d="M10 18 h36 l-2 58 h-32 z"/>
+      <path d="M80 18 h36 l-2 58 h-32 z"/>
+      <path d="M150 18 h36 l-2 58 h-32 z"/>
+      <path d="M220 18 h36 l-2 58 h-32 z"/>
+      <path d="M290 18 h36 l-2 58 h-32 z"/>
+      <path d="M360 18 h36 l-2 58 h-32 z"/>
+      <path d="M430 18 h36 l-2 58 h-32 z"/>
+      <path d="M500 18 h36 l-2 58 h-32 z"/>
+    </g>
+    <!-- Tie highlight (top edge) -->
+    <g fill="#B8793F">
+      <rect x="10" y="18" width="36" height="4"/>
+      <rect x="80" y="18" width="36" height="4"/>
+      <rect x="150" y="18" width="36" height="4"/>
+      <rect x="220" y="18" width="36" height="4"/>
+      <rect x="290" y="18" width="36" height="4"/>
+      <rect x="360" y="18" width="36" height="4"/>
+      <rect x="430" y="18" width="36" height="4"/>
+      <rect x="500" y="18" width="36" height="4"/>
+    </g>
+    <!-- Two metal rails -->
+    <rect x="0" y="14" width="560" height="10" fill="#4A5663" stroke="currentColor" stroke-width="2.5"/>
+    <rect x="0" y="14" width="560" height="3" fill="#8894A3"/>
+    <rect x="0" y="66" width="560" height="12" fill="#4A5663" stroke="currentColor" stroke-width="2.5"/>
+    <rect x="0" y="66" width="560" height="3" fill="#8894A3"/>
+  </symbol>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       ROBOT — astronaut-style with white suit + blue visor, more character
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <symbol id="robot" viewBox="0 0 220 300">
+    <!-- Ground shadow -->
+    <ellipse cx="110" cy="290" rx="66" ry="8" fill="currentColor" opacity="0.14"/>
+
+    <!-- Legs -->
+    <g stroke="currentColor" stroke-width="4">
+      <rect x="74" y="238" width="24" height="44" rx="4" fill="#FFFFFF"/>
+      <rect x="74" y="272" width="28" height="12" rx="3" fill="#2C333D"/>
+      <rect x="118" y="238" width="24" height="44" rx="4" fill="#FFFFFF"/>
+      <rect x="118" y="272" width="28" height="12" rx="3" fill="#2C333D"/>
+      <!-- Leg shadow / inside highlight -->
+      <rect x="78" y="242" width="4" height="30" fill="#E8EDF3"/>
+      <rect x="122" y="242" width="4" height="30" fill="#E8EDF3"/>
+    </g>
+
+    <!-- Body / suit -->
+    <path d="M64 130
+             q0 -8 8 -12 l30 -8 q8 -2 16 0 l30 8 q8 4 8 12
+             v90 q0 14 -14 14 h-64 q-14 0 -14 -14 z"
+          fill="#FFFFFF" stroke="currentColor" stroke-width="4.5"/>
+    <!-- Body side shadow -->
+    <path d="M140 136 L150 140 L150 224 Q150 232 144 234 L144 138 Z"
+          fill="#E8EDF3"/>
+    <!-- Body highlight -->
+    <path d="M76 138 L82 136 L82 232 L76 228 Z" fill="#FFFFFF"/>
+    <!-- Tie / lanyard (navy) -->
+    <path d="M102 118 l8 10 8 -10 -3 38 -5 8 -5 -8 z"
+          fill="#14386B" stroke="currentColor" stroke-width="2.5"/>
+    <!-- Suit control panel (3 little buttons) -->
+    <g stroke="currentColor" stroke-width="2">
+      <circle cx="100" cy="180" r="5" fill="#F2B705"/>
+      <circle cx="115" cy="180" r="5" fill="#2D8A3E"/>
+      <circle cx="130" cy="180" r="5" fill="#2E6CC4"/>
+    </g>
+
+    <!-- Helmet: sphere with visor -->
+    <!-- Back/shadow edge -->
+    <circle cx="110" cy="72" r="52" fill="#E8EDF3" stroke="currentColor" stroke-width="4.5"/>
+    <!-- Front helmet -->
+    <circle cx="108" cy="70" r="48" fill="#FFFFFF" stroke="currentColor" stroke-width="4"/>
+    <!-- Visor (rounded rectangle shape) -->
+    <path d="M74 58
+             q0 -20 34 -20 t34 20
+             v16 q0 14 -34 14 t-34 -14 z"
+          fill="#2E6CC4" stroke="currentColor" stroke-width="3.5"/>
+    <!-- Visor reflection highlight -->
+    <path d="M82 52 q4 -8 14 -10 q8 0 6 6 q-6 2 -10 6 q-4 4 -10 -2 z"
+          fill="#7BA9E0" opacity="0.7"/>
+    <!-- Visor eyes (small cream dots) -->
+    <circle cx="94" cy="66" r="3.5" fill="#F5ECD7"/>
+    <circle cx="122" cy="66" r="3.5" fill="#F5ECD7"/>
+    <!-- Helmet antenna -->
+    <line x1="108" y1="22" x2="108" y2="10" stroke="currentColor" stroke-width="3"/>
+    <circle cx="108" cy="8" r="4" fill="#F2B705" stroke="currentColor" stroke-width="2"/>
+
+    <!-- Right arm + wrench (reaching out to the right) -->
+    <!-- Upper arm -->
+    <path d="M148 150 L186 160 L192 176 L154 168 Z"
+          fill="#FFFFFF" stroke="currentColor" stroke-width="4"/>
+    <!-- Forearm + glove -->
+    <path d="M186 160 L212 172 L212 188 L190 178 Z"
+          fill="#FFFFFF" stroke="currentColor" stroke-width="4"/>
+    <circle cx="212" cy="180" r="10" fill="#FFFFFF" stroke="currentColor" stroke-width="3"/>
+    <!-- Tiny wrench in hand -->
+    <path d="M212 176 l16 4 4 8 -12 4 z M 228 178 l12 0 l0 10 l-12 0 z"
+          fill="#AEB7C3" stroke="currentColor" stroke-width="2.5"/>
+  </symbol>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       SWIPE CHEVRON — slightly richer, triple chevron
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <symbol id="swipe-chevron" viewBox="0 0 140 70">
+    <g fill="none" stroke="#14386B" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 40 l22 -22 22 22"/>
+      <path d="M50 40 l22 -22 22 22" opacity="0.62"/>
+      <path d="M90 40 l22 -22 22 22" opacity="0.32"/>
+    </g>
+  </symbol>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       QUOTE GLYPH — kept simple, green accent
+       ═══════════════════════════════════════════════════════════════════════ -->
   <symbol id="quote-open" viewBox="0 0 120 96">
-    <path d="M10 86 V52 q0 -34 36 -42 v16 q-16 6 -16 26 h16 v34 z M68 86 V52 q0 -34 36 -42 v16 q-16 6 -16 26 h16 v34 z"
-      fill="#2D8A3E"/>
+    <path d="M10 86 V52 q0 -34 36 -42 v16 q-16 6 -16 26 h16 v34 z
+             M68 86 V52 q0 -34 36 -42 v16 q-16 6 -16 26 h16 v34 z"
+          fill="#2D8A3E"/>
   </symbol>
 
 </svg>

@@ -46,8 +46,33 @@ html, body {
   isolation: isolate;
 }
 
-/* Construction grid — subtle cream-on-cream lines, same as banner backdrop */
-.slide::before {
+/* Two-zone layout: text zone (solid cream) + illustration zone (generated img).
+   The generated image fills ONLY the .illus-zone box — it does not bleed into
+   the text area, so we don't rely on prompt-based region constraints (which
+   Nano Banana ignores). */
+.zone-illus {
+  position: absolute;
+  overflow: hidden;
+  background: var(--evc-cream);
+  z-index: 1;
+}
+.zone-illus > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+}
+
+.zone-text {
+  position: absolute;
+  background: var(--evc-cream);
+  z-index: 2;
+  padding: 80px;
+}
+
+/* Subtle grid behind the text zone so it matches the generated image's grid */
+.zone-text::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -55,13 +80,27 @@ html, body {
     linear-gradient(to right, var(--evc-cream-line) 1px, transparent 1px),
     linear-gradient(to bottom, var(--evc-cream-line) 1px, transparent 1px);
   background-size: 60px 60px;
-  opacity: 0.55;
+  opacity: 0.4;
   z-index: 0;
   pointer-events: none;
 }
+.zone-text > * { position: relative; z-index: 1; }
 
-/* Every element inside sits above the grid */
-.slide > * { position: relative; z-index: 1; }
+/* Per-template zone sizes (absolute positioned within the 1080×1350 slide) */
+.split-hook .zone-text  { top: 0;    left: 0; right: 0; height: 540px; }
+.split-hook .zone-illus { bottom: 0; left: 0; right: 0; height: 810px; }
+
+.split-section .zone-text  { top: 0; left: 0; bottom: 0; width: 700px; }
+.split-section .zone-illus { top: 0; right: 0; bottom: 0; width: 380px; }
+
+.split-quote .zone-text  { top: 0;    left: 0; right: 0; height: 1080px; }
+.split-quote .zone-illus { bottom: 0; left: 0; right: 0; height: 270px; }
+
+.split-stat .zone-text  { top: 0; left: 0; bottom: 0; width: 650px; }
+.split-stat .zone-illus { top: 0; right: 0; bottom: 0; width: 430px; }
+
+.split-cta .zone-text  { top: 0; left: 0; bottom: 0; width: 640px; }
+.split-cta .zone-illus { top: 0; right: 0; bottom: 0; width: 440px; }
 
 /* Typography scale */
 .t-hook {

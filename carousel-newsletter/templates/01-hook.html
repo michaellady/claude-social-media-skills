@@ -1,12 +1,11 @@
 <!doctype html>
 <!--
-  EVC carousel — Slide 01 HOOK
-  Placeholders (replace before render):
-    {{LINE_1}}         — first line of title, usually "ENTERPRISE"-length word
-    {{LINE_2}}         — accent line, green ("VIBE CODE"-shape)
-    {{TEASE}}          — ≤12-word teaser under the title
-    {{PAGE_CURRENT}}   — "1"
-    {{PAGE_TOTAL}}     — "10"
+  EVC carousel — Slide 01 HOOK (text top 40%, illustration bottom 60%)
+  Placeholders:
+    {{ILLUS_IMG}}      — 1080×810 scene (generate at aspect 4:3)
+    {{LINE_1}}         · {{LINE_2}}
+    {{TEASE}}
+    {{PAGE_CURRENT}}   · {{PAGE_TOTAL}}
 -->
 <html lang="en">
 <head>
@@ -15,44 +14,26 @@
   <title>EVC Slide 01 — Hook</title>
 </head>
 <body>
-<!--SVG_SPRITE-->
-
-<section class="slide slide--hook">
-  <!-- Title block — top third -->
-  <div class="stack" style="gap: 40px; padding-top: 20px;">
-    <h1 class="t-hook">
-      {{LINE_1}}
-      <span class="accent">{{LINE_2}}</span>
-    </h1>
-    <p class="t-body" style="max-width: 840px; font-weight: 600; color: var(--evc-navy-ink);">
-      {{TEASE}}
-    </p>
+<section class="slide split-hook">
+  <div class="zone-text">
+    <div class="stack" style="gap: 24px; padding-top: 10px;">
+      <h1 class="t-hook" style="font-size: 132px;">
+        {{LINE_1}}
+        <span class="accent">{{LINE_2}}</span>
+      </h1>
+      <p class="t-body" style="max-width: 900px; font-weight: 700; color: var(--evc-navy-ink);">
+        {{TEASE}}
+      </p>
+    </div>
   </div>
-
-  <!-- Hero scene — bottom half. Minecart on rails, robot mechanic, brick stack flanks. -->
-  <svg class="illus" style="left: 0; right: 0; bottom: 170px; width: 1080px; height: 440px;" viewBox="0 0 1080 440" aria-hidden="true">
-    <!-- rail spans full width -->
-    <use href="#rail" x="0" y="340" width="1080" height="80"/>
-    <!-- left brick stack -->
-    <use href="#brick-stack" x="20" y="170" width="200" height="180"/>
-    <!-- background gear behind brick stack -->
-    <use href="#gear" x="140" y="60" width="140" height="140"/>
-    <!-- minecart center-left -->
-    <use href="#minecart" x="250" y="100" width="420" height="260"/>
-    <!-- robot right-center with wrench -->
-    <use href="#robot" x="700" y="100" width="200" height="260"/>
-    <!-- small gear top-right -->
-    <use href="#gear-sm" x="940" y="50" width="90" height="90"/>
-  </svg>
-
-  <!-- Swipe hint — bottom right corner -->
-  <div class="swipe-arrow">
+  <div class="zone-illus">
+    <img src="{{ILLUS_IMG}}" alt="">
+  </div>
+  <div class="swipe-arrow" style="z-index: 3;">
     SWIPE
     <span style="display: inline-block; font-size: 38px; transform: translateY(-1px);">→</span>
   </div>
-
-  <div class="page-pill">{{PAGE_CURRENT}}<span class="sep">/</span>{{PAGE_TOTAL}}</div>
-  <svg class="mark" aria-hidden="true"><use href="#mark-evc" /></svg>
+  <div class="page-pill" style="z-index: 3;">{{PAGE_CURRENT}}<span class="sep">/</span>{{PAGE_TOTAL}}</div>
 </section>
 </body>
 </html>

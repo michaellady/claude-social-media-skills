@@ -1,13 +1,11 @@
 <!doctype html>
 <!--
-  EVC carousel — Slide 04 STAT (big-number insight card)
+  EVC carousel — Slide 04 STAT (text left 60%, illustration right 40%)
   Placeholders:
-    {{STAT_NUMBER}}    — the headline number (e.g., "87", "10x", "$4M")
-    {{STAT_UNIT}}      — optional unit/suffix that renders smaller + green (e.g., "%", "hrs/wk", ""). Leave empty string "" to omit.
-    {{STAT_LABEL_1}}   — first line of the explanation
-    {{STAT_LABEL_2}}   — second line (optional; leave "" to omit)
-    {{PAGE_CURRENT}}
-    {{PAGE_TOTAL}}
+    {{ILLUS_IMG}}      — 430×1350 narrow portrait (generate at 9:16)
+    {{STAT_NUMBER}}    · {{STAT_UNIT}}
+    {{STAT_LABEL_1}}   · {{STAT_LABEL_2}}
+    {{PAGE_CURRENT}}   · {{PAGE_TOTAL}}
 -->
 <html lang="en">
 <head>
@@ -16,29 +14,21 @@
   <title>EVC Slide — Stat</title>
 </head>
 <body>
-<!--SVG_SPRITE-->
-<section class="slide">
-  <div class="stack" style="gap: 56px; padding-top: 140px;">
-    <div class="t-stat-num">
-      {{STAT_NUMBER}}<span class="unit">{{STAT_UNIT}}</span>
-    </div>
-    <div class="t-stat-label">
-      {{STAT_LABEL_1}}<br>{{STAT_LABEL_2}}
+<section class="slide split-stat">
+  <div class="zone-text">
+    <div class="stack" style="gap: 48px; padding-top: 200px; max-width: 560px;">
+      <div class="t-stat-num" style="font-size: 300px;">
+        {{STAT_NUMBER}}<span class="unit">{{STAT_UNIT}}</span>
+      </div>
+      <div class="t-stat-label" style="font-size: 46px;">
+        {{STAT_LABEL_1}}<br>{{STAT_LABEL_2}}
+      </div>
     </div>
   </div>
-
-  <!-- Gear + brick accents, corners -->
-  <svg class="illus top-right" width="200" height="200" aria-hidden="true">
-    <use href="#gear" width="180" height="180" x="10" y="10"/>
-  </svg>
-
-  <svg class="illus bottom-right" width="420" height="220" aria-hidden="true">
-    <use href="#brick-stack" x="200" y="10" width="200" height="180"/>
-    <use href="#gear-sm" x="80" y="100" width="80" height="80"/>
-  </svg>
-
-  <div class="page-pill">{{PAGE_CURRENT}}<span class="sep">/</span>{{PAGE_TOTAL}}</div>
-  <svg class="mark" aria-hidden="true"><use href="#mark-evc" /></svg>
+  <div class="zone-illus">
+    <img src="{{ILLUS_IMG}}" alt="">
+  </div>
+  <div class="page-pill" style="z-index: 3;">{{PAGE_CURRENT}}<span class="sep">/</span>{{PAGE_TOTAL}}</div>
 </section>
 </body>
 </html>

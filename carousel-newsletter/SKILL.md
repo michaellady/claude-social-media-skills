@@ -1,14 +1,14 @@
 ---
 name: carousel-newsletter
-description: Use when user wants to promote a beehiiv newsletter as a 10-slide illustrated carousel to Buffer for Instagram, LinkedIn, Facebook, Threads — "carousel the newsletter", "swipe post", "newsletter carousel", "10-slide post". Generates on-brand EVC slides and schedules them with a "comment 'newsletter'" CTA.
+description: Use when user wants to promote a beehiiv newsletter as a 10-slide illustrated carousel to Buffer for Instagram, LinkedIn, Facebook, Threads — "carousel the newsletter", "swipe post", "newsletter carousel", "10-slide post". Generates on-brand EVC slides with AI-generated illustrations (Gemini 2.5 Flash Image / Nano Banana) and schedules them with a "comment 'newsletter'" CTA.
 user_invocable: true
 ---
 
 # carousel-newsletter
 
-Promote a beehiiv newsletter post as a **10-slide illustrated carousel** on every Buffer-connected channel (Instagram, LinkedIn, Facebook, Threads). The carousel summarizes the newsletter using **direct quotes** and drives a `comment "newsletter"` CTA that routes into the user's existing Comment-to-DM funnel.
+Promote a beehiiv newsletter post as a **10-slide illustrated carousel** on every Buffer-connected channel (Instagram, LinkedIn, Facebook, Threads). The carousel summarizes the newsletter using **direct quotes** and drives a `comment "newsletter"` CTA that routes into the Comment-to-DM funnel.
 
-This skill locks the visual system to the **Enterprise Vibe Code (EVC)** brand: cream bg + isometric lego/robot illustrations + navy/green/yellow/blue palette. Use the templates in `templates/` — do **not** invent new aesthetics per post.
+The visual system: **two-zone slides** — a cream text zone + a dedicated illustration zone filled by a Gemini-generated image. The Enterprise Vibe Code (EVC) banner is attached as a style reference on every generation, locking palette / character design / illustration language.
 
 ## When to run
 
@@ -16,200 +16,179 @@ User says things like:
 - "carousel my latest newsletter"
 - "make a swipe post for the EVC article"
 - "10-slide post of this newsletter"
-- "post the newsletter as a carousel"
 
-If the user wants a **single-image snippet post**, use `promote-newsletter` instead. If the user wants to **republish the full article** on LinkedIn/Medium/HN, use `crosspost-newsletter`.
+If they want a **single-image snippet**, use `promote-newsletter`. If they want to **republish the full article**, use `crosspost-newsletter`.
 
 ## Prerequisites
 
-- macOS with Google Chrome installed at `/Applications/Google Chrome.app` (required for headless rendering).
-- `python3` on PATH (for placeholder substitution inside the renderer).
-- `sips` on PATH (macOS built-in image tool; used to crop the render).
-- A publicly accessible host for the rendered PNGs. **Default strategy:** commit the rendered images to this repo under `generated/<YYYY-MM-DD>-<slug>/slide-NN.png`, push to GitHub, and use `https://raw.githubusercontent.com/<owner>/<repo>/main/generated/<...>` URLs. Buffer's `create_post` requires publicly reachable image URLs — local paths will be rejected.
+**Auth (one-time):** Google Cloud Application Default Credentials.
+```bash
+brew install --cask gcloud-cli
+gcloud auth application-default login
+gcloud config set project gen-lang-client-0527845499
+```
+
+**Python deps (one-time):** `pip3 install --user --break-system-packages google-genai`
+
+**Runtime requirements:**
+- Google Chrome at `/Applications/Google Chrome.app` (headless render).
+- `sips` on PATH (macOS built-in).
+- `python3` ≥ 3.10.
+- EVC banner reference image at `~/Pictures/evc_banner2.png` (used as style reference for every image-gen call).
+- Public hosting for the rendered PNGs — default flow commits them to this repo under `generated/<YYYY-MM-DD>-<slug>/` and serves via GitHub raw URLs. Buffer needs publicly reachable URLs.
 
 ## Key files
 
-- `templates/shared.css` — brand tokens (palette, typography, frame, pill, mark). Do not edit per post.
-- `templates/illustrations.svg` — SVG sprite sheet (robot, minecart, rail, bricks, gears, wrench, EVC triangle mark, quote glyph, swipe chevron). Referenced inline by templates.
-- `templates/01-hook.html` — cover slide. Big navy+green headline, hero scene (minecart+robot+bricks), swipe hint.
-- `templates/02-section.html` — kicker + 2-line headline + body. Use for stage-setters, transitions, payoffs.
-- `templates/03-quote.html` — oversized green open-quote + verbatim newsletter quote + attribution.
-- `templates/04-stat.html` — giant number + short label. Unit renders green, number renders navy.
-- `templates/05-cta.html` — final CTA slide with accent trigger word.
-- `templates/render.sh` — HTML → 1080×1350 PNG. Inlines the sprite, compensates for Chrome's 87px window-chrome reservation, crops the result. Usage: `render.sh input.html output.png`.
-- `examples/sample-deck/slide-01.png` … `slide-10.png` — reference deck rendered from a synthetic EVC post; use to sanity-check aesthetic drift.
+- `templates/shared.css` — brand tokens + two-zone layout classes (`.split-hook`, `.split-section`, `.split-quote`, `.split-stat`, `.split-cta`). Each `.split-*` class sets the absolute positioning of the `.zone-text` and `.zone-illus` boxes for that slide type.
+- `templates/01-hook.html` — cover slide (text 40% top, illus 60% bottom, 4:3 scene).
+- `templates/02-section.html` — kicker + headline + body (text left 65%, illus right 35%, 9:16 narrow scene).
+- `templates/03-quote.html` — verbatim quote (text top 80%, illus bottom 20% wide strip, 16:9 scene).
+- `templates/04-stat.html` — big number + label (text left 60%, illus right 40%, 9:16 scene).
+- `templates/05-cta.html` — "Comment 'newsletter'" CTA (text left 60%, illus right 40%, 9:16 scene).
+- `templates/gen_illustration.py` — image-gen helper. Calls Gemini 2.5 Flash Image via Vertex AI with the EVC banner as style reference + master brand prompt + per-slide scene prompt. Usage: `gen_illustration.py "<scene>" <output.png> --aspect <ratio>`.
+- `templates/render.sh` — HTML → 1080×1350 PNG. Headless Chrome with viewport-chrome compensation + `sips` crop. Usage: `render.sh <filled.html> <output.png>`.
+- `templates/illustrations.svg` — **legacy** SVG sprite from the v1 hand-drawn approach. Retained for backward compat (render.sh still inlines it if `<!--SVG_SPRITE-->` marker present) but no longer used by the current templates.
+- `examples/sample-deck/` — reference 10-slide rendered deck (pre-image-gen era; visually outdated but shows the structural layout).
 
-## Related skills — read before diving in
+## Related skills to read first
 
-- `../promote-newsletter/SKILL.md` — beehiiv RSS fetch pattern, Buffer channel filter (connected + unlocked), CTA copy, rate-limit/remaining-posts logic, per-platform metadata. **Reuse these patterns verbatim; do not reimplement.**
-- `../crosspost-newsletter/SKILL.md` — richer beehiiv DOM extraction (blockquotes, captions, cover meta) if you need quote candidates beyond what RSS exposes.
+- `../promote-newsletter/SKILL.md` — beehiiv RSS fetch, Buffer channel filter (connected + unlocked), CTA copy, rate-limit/remaining-posts pattern.
+- `../crosspost-newsletter/SKILL.md` — richer beehiiv DOM extraction if you need quote candidates beyond what RSS exposes.
 
 ## Workflow
 
 ### Phase 1 — Fetch the newsletter
 
-Ask the user for the beehiiv post URL. If they say "latest" or don't specify, fetch the RSS feed and take item[0]:
-- RSS: `https://rss.beehiiv.com/feeds/<pub-slug>.xml` (see `../promote-newsletter/SKILL.md` for the exact feed URL pattern currently in use)
-- `WebFetch` the resolved post URL.
+Same pattern as `promote-newsletter`. WebFetch the beehiiv RSS feed (or the URL the user provides). Extract: title, subtitle, H2 section headings, body paragraphs, blockquotes, stat-shaped phrases, hero image URL (for reference, not used in the deck). Save to `/tmp/carousel-<slug>/source.json`.
 
-Extract:
-- **title**
-- **subtitle / dek** (if present)
-- **section headings** (H2, H3) — becomes slide kickers + section headlines
-- **body paragraphs** — source of insights
-- **pull-quotes** (`<blockquote>`) — strongest candidates for Quote slides
-- **stat-shaped phrases** — regex for `\d+%`, `\d+x`, `\$\d`, `\d+ (minutes|hours|days|weeks)`, or any large bolded number
-- **hero image URL** (for reference only; we do not use it in the deck)
+### Phase 2 — Draft the 10-slide script  ← USER REVIEW GATE (COPY)
 
-Save to `/tmp/carousel-<slug>/source.json` as a structured record so later phases don't refetch.
-
-### Phase 2 — Draft the 10-slide script  ← USER REVIEW GATE
-
-Produce **plain text**, no rendering. Fixed slide structure:
+Plain text outline, no rendering yet. Fixed structure:
 
 | # | Template | Purpose |
 |---|---|---|
-| 1 | `01-hook.html` | Title + 1-line tease. Pull the title verbatim; split into 2 lines where the break reads naturally. |
-| 2 | `02-section.html` | Stage-setter. "Here's the real problem" / "Why this matters". ≤220 chars body. |
-| 3 | `03-quote.html` | Strongest verbatim quote. |
-| 4 | `04-stat.html` | A stat or big number from the article. If the article has no real stat, invent a directional one only if it's anchored in the article's thesis AND flag it for user approval. |
+| 1 | `01-hook.html` | Title + 1-line tease. `LINE_1` + `LINE_2` ≤ ~26 chars combined for clean 2-line wrap. `TEASE` ≤ 120 chars. |
+| 2 | `02-section.html` | Stage-setter. Body ≤ 220 chars. |
+| 3 | `03-quote.html` | Strongest verbatim quote (≤260 chars). Attribution = `<Article Title> — Enterprise Vibe Code`. |
+| 4 | `04-stat.html` | Stat or big number from the article. |
 | 5 | `03-quote.html` | Second verbatim quote. |
-| 6 | `02-section.html` | The "sharper frame" / key insight. |
+| 6 | `02-section.html` | Key insight / "the shift". |
 | 7 | `03-quote.html` | Third verbatim quote. |
-| 8 | `04-stat.html` OR `02-section.html` | Supporting point. Use stat if article has a second stat; otherwise another section slide. |
-| 9 | `02-section.html` | The payoff / what to do about it. |
-| 10 | `05-cta.html` | Fixed CTA — accent word **"newsletter"** (match existing Comment-to-DM trigger). |
+| 8 | `04-stat.html` OR `02-section.html` | Supporting point. |
+| 9 | `02-section.html` | Payoff / what to do. |
+| 10 | `05-cta.html` | Fixed CTA, accent word = `newsletter` (verbatim; must match Comment-to-DM trigger). |
 
-**Quote rules**
-- Verbatim from the newsletter. No paraphrasing. Include the opening and closing punctuation as it appears in the source.
-- ≤260 chars. If a great quote is longer, trim from the ends only (ellipsis allowed); never rewrite internal words.
-- Attribution is always `<Article Title> — Enterprise Vibe Code`.
+Surface this outline and **stop for user approval** before generating illustrations (which cost ~$0.04 each and hit rate limits).
 
-**Hook rules**
-- `{{LINE_1}}` + `{{LINE_2}}` together should mirror the article title, split where the eye naturally breaks. If the title is >2 display lines at 148px, pick a 2–6 word hook derived from the title, not the full title.
-- `{{TEASE}}` ≤120 chars.
+### Phase 3 — Generate per-slide illustrations
 
-**CTA copy (slide 10, never change)**
-- Headline: `Want the full article?`
-- Accent word: `newsletter` (lowercase, with quotes in the template)
-- Body: `Comment "newsletter" below and I'll DM you the full Enterprise Vibe Code post — free, every week.`
+For each slide, compose a **scene prompt** that describes what fills the illustration zone. Key rules:
 
-Surface the full script as a numbered list with template assignment and **stop for user approval**. The user can:
-- Edit any slide's copy
-- Swap a template (`03-quote` ↔ `04-stat` ↔ `02-section`)
-- Drop a slide (rare — the deck is meant to be exactly 10 to match IG carousel cap)
+1. **Describe a scene that FILLS the entire frame edge-to-edge.** Don't say "leave empty" — Nano Banana ignores region constraints. Composition is guaranteed by the two-zone HTML layout, not by the prompt.
+2. **Tie the scene to the slide's meaning.** The robot, bricks, and tracks should *do something relevant to the slide's text* — a robot meditating on a stat slide about patience, a robot running on tracks for a "velocity" slide, a robot carefully stacking bricks for a "build slowly" slide. Generic scenes feel boring after a few decks.
+3. **Match the aspect to the zone:**
+   - Hook → `--aspect 4:3`
+   - Section → `--aspect 9:16`
+   - Quote → `--aspect 16:9`
+   - Stat → `--aspect 9:16`
+   - CTA → `--aspect 9:16`
 
-Do not proceed to rendering until the user says "looks good" / "render it" / "ship it".
+**Example scene prompts (contextual):**
 
-### Phase 3 — Render HTML → PNG
+| Slide concept | Scene |
+|---|---|
+| Hook: "3 Lessons from Black Belt" | Horizontal scene: robot on rail tracks with wrench, minecart of bricks, 3-brick tower, large gear, small gear accent. |
+| Section: "Train so you can train tomorrow" | Narrow portrait: robot patiently placing one brick on a 2-brick base — showing careful incremental work. |
+| Quote about sustainability | Wide strip: robot seated on a rail tie next to a water-jug-shaped brick, relaxed posture. |
+| Stat: "14 yrs" | Narrow portrait: tall 4-tier brick tower with tiny gear at top, robot looking up at it. |
+| Section: "Democratized knowing and doing" | Narrow portrait: robot handing a wrench to a second smaller robot — teaching/enabling. |
+| CTA | Narrow portrait: cheerful robot waving, celebratory brick tower, confetti-like gears floating. |
 
-For each approved slide:
+**Call pattern:**
+```bash
+python3 templates/gen_illustration.py "<scene>" /tmp/carousel-<slug>/illustrations/slide-NN.png --aspect <ratio>
+```
 
-1. Copy the template into `/tmp/carousel-<slug>/slide-NN.html`
-2. Substitute placeholders via Python (safe for arbitrary user text):
+**Rate limiting:** Nano Banana defaults to ~5 req/min on a new project. Sleep ~15s between calls, OR wrap each call in a retry loop with 30s backoff on 429. A full 10-slide deck takes ~3–5 min wall-clock including backoff.
+
+**Cost:** ~$0.04/image = ~$0.40 per 10-slide deck in steady state. Billed to the `gen-lang-client-0527845499` project.
+
+**Auth model:** `gen_illustration.py` uses `GOOGLE_GENAI_USE_VERTEXAI=true` + ADC. If you see `google.auth.exceptions.DefaultCredentialsError`, the user needs to re-run `gcloud auth application-default login`.
+
+### Phase 4 — Render HTML → PNG
+
+For each slide:
+1. Copy the template, substitute placeholders:
    ```python
-   for k, v in placeholders.items():
+   html = html.replace('{{ILLUS_IMG}}', f'file://{illus_path}')
+   for k, v in copy.items():
        html = html.replace('{{' + k + '}}', v)
    ```
-3. Run `templates/render.sh slide-NN.html /tmp/carousel-<slug>/slide-NN.png`
-4. Verify each output is exactly `1080 x 1350` (the render script checks this).
+2. `templates/render.sh <filled.html> <output.png>` — always produces exactly 1080×1350.
 
-**Do not** invent your own render path. `render.sh` handles sprite inlining, viewport chrome compensation (Chrome reserves 87px, script oversizes window to 1450 and crops with `sips`), and dimension verification.
+The render script handles Chrome's 87px window-chrome offset and crops via `sips`. Don't reinvent it.
 
-If Chrome is not installed at the default path, surface this as a blocker — do not try to fall back to `mcp__chrome-devtools__take_screenshot` unless the user explicitly asks, because that tool depends on a live browser tab and is lossy for batch rendering.
+### Phase 5 — User review gate (IMAGES)
 
-### Phase 4 — Image review gate
-
-Generate a quick preview HTML:
+Open a preview grid:
 ```bash
-cd /tmp/carousel-<slug>
-python3 -c "print('<html><body style=\"background:#222;padding:20px\">' + ''.join(f'<img src=\"slide-{i:02d}.png\" style=\"width:300px;margin:8px;border:2px solid #fff;vertical-align:top\">' for i in range(1,11)) + '</body></html>')" > preview.html
-open preview.html
+python3 -c "..." > /tmp/carousel-<slug>/preview.html && open /tmp/carousel-<slug>/preview.html
 ```
+Let the user approve or request regenerations. **Single-slide regen is cheap** (~$0.04), so encourage iteration on slides that missed.
 
-Tell the user the path. If they want changes:
-- **Copy-only** edits → back to Phase 2, re-render the single changed slide.
-- **Template swap** → re-render just that slide.
-- **Palette/layout tweak** → edit `templates/shared.css` (this affects ALL future decks; flag the tradeoff) and re-render everything.
+Common failure modes to watch for:
+- Illustration went off-palette (teal/orange snuck in) → regenerate with stronger palette emphasis in the scene prompt.
+- Text from the article accidentally appeared in the illustration → regenerate (model sometimes draws words).
+- Zone cropping cut off a key element → shift the scene prompt to position the subject where the zone crops it well (center, left, right).
 
-Do not auto-loop. Explicit user approval required before continuing.
+### Phase 6 — Host publicly
 
-### Phase 5 — Host the images publicly
-
-Buffer requires publicly reachable URLs. Default flow:
-
+Buffer requires public URLs. Default flow:
 ```bash
-# From repo root
 mkdir -p generated/<YYYY-MM-DD>-<slug>/
 cp /tmp/carousel-<slug>/slide-*.png generated/<YYYY-MM-DD>-<slug>/
-git add generated/<YYYY-MM-DD>-<slug>/
-git commit -m "Add carousel assets: <article-title>"
-git push origin main
+git add generated/<YYYY-MM-DD>-<slug>/ && git commit -m "Add carousel assets: <title>" && git push
 ```
+Raw URL: `https://raw.githubusercontent.com/<owner>/<repo>/main/generated/<YYYY-MM-DD>-<slug>/slide-NN.png`
 
-Construct URLs as:
-`https://raw.githubusercontent.com/<owner>/<repo>/main/generated/<YYYY-MM-DD>-<slug>/slide-NN.png`
+### Phase 7 — Post to Buffer
 
-If the user prefers a different host (S3, Cloudflare R2, beehiiv uploads) — ask first; fall back to the GitHub raw pattern only when they haven't stated a preference.
+Reuse patterns from `../promote-newsletter/SKILL.md`. Filter `list_channels` to `isDisconnected=false AND isLocked=false`. Per-channel:
 
-### Phase 6 — Post to Buffer
-
-Reuse the channel-filter and CTA patterns from `../promote-newsletter/SKILL.md`. Core flow:
-
-1. `mcp__buffer__get_account` → organization ID.
-2. `mcp__buffer__list_channels` → filter to `isDisconnected=false AND isLocked=false`.
-3. For each channel, compose and schedule:
-
-| Platform | `metadata` | `assets.images` | Caption body |
+| Platform | `metadata` | `assets.images` | Caption |
 |---|---|---|---|
-| Instagram | `{ instagram: { type: "carousel", shouldShareToFeed: true } }` | All 10 PNG URLs, in order. | `"<strongest quote>"\n\nComment "newsletter" to get my latest post, "<Article Title>".` |
-| LinkedIn | `{ linkedin: {} }` (no `type` — LinkedIn metadata doesn't accept one) | All 10 PNG URLs | Same as IG. If Buffer rejects multi-image, fall back to slide-01 only + article URL in text. |
-| Facebook | `{ facebook: { type: "post" } }` (`PostTypeFacebook` has no carousel — multi-image posts as a slideshow automatically) | All 10 PNG URLs | Same as IG. |
-| Threads | `{ threads: { type: "post" } }` | All 10 PNG URLs (Threads caps at 20) | Same as IG. |
+| Instagram | `{ instagram: { type: "carousel", shouldShareToFeed: true } }` | All 10 PNG URLs | `"<strongest quote>"\n\nComment "newsletter" to get my latest post, "<Title>".` |
+| LinkedIn | `{ linkedin: {} }` | All 10 PNG URLs | Same as IG. |
+| Facebook | `{ facebook: { type: "post" } }` | All 10 PNG URLs | Same as IG. |
+| Threads | `{ threads: { type: "post" } }` | All 10 PNG URLs (max 20) | Same as IG. |
 
-**Note:** Buffer's `PostType` enum includes `carousel`, `AssetsInput.images` accepts an array, and `InstagramPostMetadataInput.type` accepts `carousel`. Verified via `introspect_schema` during skill authorship. If a channel rejects the carousel payload, log the error and continue to the next channel — do not abort the whole run.
+`mode: "addToQueue"`, `schedulingType: "automatic"`. Verified via `introspect_schema`: `PostType.carousel` exists, `AssetsInput.images` is an array, `InstagramPostMetadataInput.type` accepts `carousel`.
 
-**Scheduling**: `mode: "addToQueue"`, `schedulingType: "automatic"` (same as `promote-newsletter`).
+If a channel rejects the carousel payload, log and continue — do not abort the whole run. Channels not targeted: X/Twitter (not connected), TikTok/YouTube (need video).
 
-**Duplicate-URL guard**: Buffer duplicate-detects image URLs across posts. Each slide PNG has a unique path (slide-01..slide-10) and each deck lives at a unique date-slug dir, so duplicate detection should not fire. If it does, suffix URLs with `?v=<timestamp>`.
+### Phase 8 — Summary
 
-**Rate limiting**: Match `promote-newsletter`. After ~40 `create_post` calls in rapid succession, stop and save remaining channels to `remaining-posts.md`.
+Print a table: Platform | Channel | Status | Buffer queue URL. Report path to local PNGs and the GitHub raw URL prefix. Confirm the CTA accent word is literally `newsletter`.
 
-### Phase 7 — Summary
+## The master brand prompt
 
-Print a table:
-
-| Platform | Channel | Status | Queued post URL |
-|---|---|---|---|
-
-Also report:
-- Path to the 10 local PNGs
-- The GitHub raw URL prefix used for hosting
-- The accent word in the CTA (should be `newsletter` — if you used a different word, flag it so the user can check the Comment-to-DM automation matches)
-
-## Copy voice
-
-Match the EVC voice already in `promote-newsletter`:
-- Direct, confident, slightly dry
-- No hype-words ("incredible", "game-changer", "mind-blowing")
-- No emoji in headlines or body — keep it typographic. Emoji only in the caption CTA if it matches the existing skill.
-- Prefer full sentences on section slides. Quotes keep the newsletter's punctuation verbatim.
+Locked in `gen_illustration.py` as the `BRAND_PROMPT` constant. It covers: illustration style, strict palette (navy / green / yellow / blue / gray / brown / white / cream), robot character design, lego brick rules, gears, rails, minecart, composition rules (no text in images, small navy triangle watermark bottom-right). Every image-gen call prepends this prompt before the per-slide scene description. Do not tweak it per-post — consistency across decks is the point.
 
 ## Gotchas
 
-- **Font fidelity**: templates assume `Inter` (system fallback `Helvetica Neue`). On systems without Inter, rendering still works but the display weight may feel lighter. Don't ship a deck without previewing it — the sample deck at `examples/sample-deck/` is the reference.
-- **Long quotes wrap awkwardly** on the quote template. If a quote is >260 chars, either trim or split across two sequential quote slides (replace a stat slide to keep the 10-slide total).
-- **Chrome version drift**: the 87px window-chrome reservation in `render.sh` is based on Chrome 147. If rendering produces elements clipped at the bottom, measure the actual viewport with a debug page and update the `--window-size` oversize in `render.sh`.
-- **Slide 10 accent word**: MUST be `newsletter` verbatim. The Comment-to-DM automation listens for this exact trigger; any variation breaks the funnel.
-- **X/Twitter**: not a target. Do not include it even if the channel list returns a connected Twitter account.
+- **ADC expiry:** the creds file at `~/.config/gcloud/application_default_credentials.json` is long-lived but tied to the user's Google account. Revoking Google access or `gcloud auth application-default revoke` breaks the skill.
+- **Banner size:** the full `evc_banner2.png` is ~4.9 MB; Vertex silently drops attachments that large. `gen_illustration.py` caches a downscaled 1024px version at `/tmp/evc-banner-1024.png`.
+- **Slide 10 accent word:** MUST be `newsletter` verbatim — the Comment-to-DM automation listens for this exact trigger.
+- **Inter font fallback:** templates assume Inter with `Helvetica Neue` fallback. If Inter isn't installed, the display weight reads a little lighter but still on-brand.
+- **Chrome version drift:** the 87-px window-chrome reservation in `render.sh` is based on Chrome 147. If elements clip at the bottom, measure the actual viewport and bump the `--window-size` value.
 
 ## Verification checklist before shipping
 
-- [ ] All 10 PNGs exist at exactly 1080×1350
-- [ ] Slide 10 accent word is literally `newsletter`
-- [ ] Every quote slide uses a verbatim quote from the newsletter (diff-check against the source)
-- [ ] Attribution on every quote slide = `<Article Title> — Enterprise Vibe Code`
-- [ ] Hook slide's LINE_1 + LINE_2 together do not exceed ~26 characters (else display scale breaks)
-- [ ] Images are committed + pushed (and raw URLs return HTTP 200 — spot-check slide-01)
-- [ ] Preview deck visually matches `examples/sample-deck/` palette/scale
-- [ ] Buffer `create_post` returned success (not `InvalidInputError`) for every scheduled channel
+- [ ] All 10 PNGs exist at exactly 1080×1350.
+- [ ] Slide 10 accent word is literally `newsletter`.
+- [ ] Every quote slide uses a verbatim quote (diff-check against source).
+- [ ] Every illustration is on-palette (no teal/orange/red).
+- [ ] No stray text in any illustration (model occasionally draws words).
+- [ ] Scene per slide is *related to the slide's copy*, not a generic EVC tableau.
+- [ ] Images committed + pushed; spot-check slide-01 raw URL returns HTTP 200.
+- [ ] Buffer `create_post` returned success (not `InvalidInputError`) for every scheduled channel.

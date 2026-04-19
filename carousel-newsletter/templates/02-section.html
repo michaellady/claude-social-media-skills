@@ -1,13 +1,11 @@
 <!doctype html>
 <!--
-  EVC carousel — Slide 02 SECTION (headline + short body, use for stage-setters, transitions, summaries)
+  EVC carousel — Slide 02 SECTION (text left 65%, illustration right 35%)
   Placeholders:
-    {{KICKER}}         — short uppercase label above headline (e.g., "THE REAL PROBLEM")
-    {{HEADLINE_1}}     — first line of navy headline
-    {{HEADLINE_ACCENT}}— accented (green) word/phrase, inline with headline
-    {{BODY}}           — 2-3 short sentences elaborating, max ~220 chars
-    {{PAGE_CURRENT}}   — e.g., "2"
-    {{PAGE_TOTAL}}     — "10"
+    {{ILLUS_IMG}}       — 380×1350 narrow portrait scene (generate at 9:16)
+    {{KICKER}}          · {{HEADLINE_1}} + {{HEADLINE_ACCENT}}
+    {{BODY}}
+    {{PAGE_CURRENT}}    · {{PAGE_TOTAL}}
 -->
 <html lang="en">
 <head>
@@ -16,32 +14,23 @@
   <title>EVC Slide — Section</title>
 </head>
 <body>
-<!--SVG_SPRITE-->
-<section class="slide">
-  <div class="stack" style="gap: 48px; padding-top: 60px; max-width: 920px;">
-    <span class="t-kicker">{{KICKER}}</span>
-    <h2 class="t-headline">
-      {{HEADLINE_1}}
-      <span class="accent">{{HEADLINE_ACCENT}}</span>
-    </h2>
-    <p class="t-body" style="max-width: 880px;">
-      {{BODY}}
-    </p>
+<section class="slide split-section">
+  <div class="zone-text">
+    <div class="stack" style="gap: 48px; padding-top: 80px; max-width: 560px;">
+      <span class="t-kicker">{{KICKER}}</span>
+      <h2 class="t-headline" style="font-size: 92px;">
+        {{HEADLINE_1}}
+        <span class="accent">{{HEADLINE_ACCENT}}</span>
+      </h2>
+      <p class="t-body" style="max-width: 540px; font-weight: 600;">
+        {{BODY}}
+      </p>
+    </div>
   </div>
-
-  <!-- Gear accent, top-right -->
-  <svg class="illus top-right" width="220" height="220" aria-hidden="true">
-    <use href="#gear" width="200" height="200" x="10" y="10"/>
-  </svg>
-
-  <!-- Rail + brick stack, bottom-right corner -->
-  <svg class="illus bottom-right" width="560" height="260" aria-hidden="true">
-    <use href="#rail" x="0" y="180" width="560" height="80"/>
-    <use href="#brick-stack" x="340" y="0" width="220" height="200"/>
-  </svg>
-
-  <div class="page-pill">{{PAGE_CURRENT}}<span class="sep">/</span>{{PAGE_TOTAL}}</div>
-  <svg class="mark" aria-hidden="true"><use href="#mark-evc" /></svg>
+  <div class="zone-illus">
+    <img src="{{ILLUS_IMG}}" alt="">
+  </div>
+  <div class="page-pill" style="z-index: 3;">{{PAGE_CURRENT}}<span class="sep">/</span>{{PAGE_TOTAL}}</div>
 </section>
 </body>
 </html>

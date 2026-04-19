@@ -29,19 +29,17 @@ trap 'rm -rf "$WORK"' EXIT
 # Copy the CSS alongside so relative link resolves
 cp "${SCRIPT_DIR}/shared.css" "${WORK}/shared.css"
 
-# Inline the sprite in place of the marker (using Python for reliable multi-line handling).
-# Falls back to injecting right after <body> if marker is absent.
+# If the template still contains the legacy <!--SVG_SPRITE--> marker, inline
+# the sprite. New templates use generated <img> backgrounds and don't need it.
 TMP_HTML="${WORK}/$(basename "$IN")"
 SPRITE="$SPRITE" IN="$IN" OUT="$TMP_HTML" python3 <<'PY'
-import os, re
-with open(os.environ['SPRITE'], 'r') as f:
-    sprite = f.read()
+import os
 with open(os.environ['IN'], 'r') as f:
     html = f.read()
 if '<!--SVG_SPRITE-->' in html:
+    with open(os.environ['SPRITE'], 'r') as f:
+        sprite = f.read()
     html = html.replace('<!--SVG_SPRITE-->', sprite, 1)
-else:
-    html = re.sub(r'(<body[^>]*>)', r'\1\n' + sprite, html, count=1)
 with open(os.environ['OUT'], 'w') as f:
     f.write(html)
 PY

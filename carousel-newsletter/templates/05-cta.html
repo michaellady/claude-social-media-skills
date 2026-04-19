@@ -1,14 +1,12 @@
 <!doctype html>
 <!--
-  EVC carousel — Slide 05 CTA (final "comment 'newsletter'" slide)
+  EVC carousel — Slide 05 CTA (text left 60%, illustration right 40%)
   Placeholders:
-    {{HEADLINE_1}}     — "Want the full article?" (navy)
-    {{ACCENT_WORD}}    — the trigger word in green, verbatim: "newsletter"
-    {{BODY}}           — instructions: "Comment '{word}' below and I'll DM you the full EVC post — free, every week."
-    {{PAGE_CURRENT}}   — "10"
-    {{PAGE_TOTAL}}     — "10"
-
-  Copy note: keep the CTA keyword identical to promote-newsletter's Comment-to-DM trigger so the automation fires.
+    {{ILLUS_IMG}}      — 440×1350 narrow portrait (generate at 9:16)
+    {{HEADLINE_1}}     — "Want the full article?"
+    {{ACCENT_WORD}}    — "newsletter" (must match Comment-to-DM trigger)
+    {{BODY}}
+    {{PAGE_CURRENT}}   · {{PAGE_TOTAL}}
 -->
 <html lang="en">
 <head>
@@ -17,39 +15,25 @@
   <title>EVC Slide — CTA</title>
 </head>
 <body>
-<!--SVG_SPRITE-->
-<section class="slide">
-  <div class="stack" style="gap: 44px; padding-top: 140px; max-width: 920px;">
-    <span class="t-kicker">GET THE FULL DEAL</span>
-    <h2 class="t-headline">
-      {{HEADLINE_1}}
-    </h2>
-    <p class="t-quote" style="font-size: 88px;">
-      Comment <span style="color: var(--evc-green);">"{{ACCENT_WORD}}"</span>
-    </p>
-    <p class="t-body" style="max-width: 880px;">
-      {{BODY}}
-    </p>
+<section class="slide split-cta">
+  <div class="zone-text">
+    <div class="stack" style="gap: 40px; padding-top: 140px; max-width: 580px;">
+      <span class="t-kicker">GET THE FULL DEAL</span>
+      <h2 class="t-headline" style="font-size: 90px;">
+        {{HEADLINE_1}}
+      </h2>
+      <p class="t-quote" style="font-size: 82px; font-weight: 900;">
+        Comment <span style="color: var(--evc-green);">&ldquo;{{ACCENT_WORD}}&rdquo;</span>
+      </p>
+      <p class="t-body" style="max-width: 560px; font-weight: 600;">
+        {{BODY}}
+      </p>
+    </div>
   </div>
-
-  <!-- Downward chevron cluster pointing at the comment bar -->
-  <div style="position: absolute; left: 50%; bottom: 180px; transform: translateX(-50%); z-index: 3;">
-    <svg width="240" height="140" aria-hidden="true">
-      <use href="#swipe-chevron" x="0" y="10" width="240" height="120"/>
-    </svg>
+  <div class="zone-illus">
+    <img src="{{ILLUS_IMG}}" alt="">
   </div>
-
-  <!-- Celebratory corner illustrations -->
-  <svg class="illus bottom-left" width="280" height="240" aria-hidden="true">
-    <use href="#brick-stack" x="30" y="40" width="220" height="200"/>
-  </svg>
-
-  <svg class="illus top-right" width="240" height="260" aria-hidden="true">
-    <use href="#robot" x="20" y="20" width="200" height="240"/>
-  </svg>
-
-  <div class="page-pill">{{PAGE_CURRENT}}<span class="sep">/</span>{{PAGE_TOTAL}}</div>
-  <svg class="mark" aria-hidden="true"><use href="#mark-evc" /></svg>
+  <div class="page-pill" style="z-index: 3;">{{PAGE_CURRENT}}<span class="sep">/</span>{{PAGE_TOTAL}}</div>
 </section>
 </body>
 </html>
