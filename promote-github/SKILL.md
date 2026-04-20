@@ -138,33 +138,50 @@ Releases:
 
 If no contributions are found, tell the user and suggest a wider date range.
 
-**Before presenting the list, check the Buffer queue for duplicates.**
+**Before presenting the list, check BOTH the Buffer queue AND recently-sent posts for duplicates.**
 
-Users often run this skill on a regular cadence; re-promoting the same work within a few days is noisy. Annotate each contribution with whether it's already covered by a scheduled post so the user can skip duplicates.
+Users often run this skill on a regular cadence. Two failure modes to prevent:
+1. **Queue overlap** — re-promoting something already in the Buffer queue → noisy double-post.
+2. **Recently-sent overlap** — re-promoting something that just went out in the last few days → looks like you're padding the feed.
 
-1. Call `mcp__buffer__get_account` to get the organization ID. If Buffer MCP is unreachable, skip this check and warn the user at the top of the list: *"Buffer queue check skipped — unable to reach Buffer MCP. Existing queue may overlap."* Then proceed without annotations.
-2. Call `mcp__buffer__list_posts` with:
+Annotate each contribution with its status so the user can skip duplicates.
+
+1. Call `mcp__buffer__get_account` to get the organization ID. If Buffer MCP is unreachable, skip this check and warn the user at the top of the list: *"Buffer duplicate check skipped — unable to reach Buffer MCP. Queue and recent posts may overlap."* Then proceed without annotations.
+
+2. **Queue check** — call `mcp__buffer__list_posts` with:
    - `organizationId`: from step 1
    - `status`: `["scheduled", "needs_approval", "draft"]`
    - `first: 100`
    - `sort: [{field: "dueAt", direction: "asc"}]`
-3. If the response exceeds the tool-result size limit, save-to-file is automatic — use `jq` to extract only `{dueAt, channelService, text}` per post. You're scanning text, not rendering the full payload.
-4. For each GitHub contribution in the list, match against queued post text (case-insensitive substring) using:
+
+3. **Recently-sent check** — call `mcp__buffer__list_posts` with:
+   - `organizationId`: from step 1
+   - `status`: `["sent"]`
+   - `first: 100`
+   - `sort: [{field: "dueAt", direction: "desc"}]`
+   - `dueAt`: `{start: <7 days ago ISO>, end: <now ISO>}` — scoped window prevents scanning years of history. 7 days is the default "still feels recent" window; widen if the user explicitly asks.
+
+4. For each call: if the response exceeds the tool-result size limit, save-to-file is automatic — use `jq` to extract only `{dueAt, channelService, text}` per post. You're scanning text, not rendering the full payload.
+
+5. For each GitHub contribution in the list, match against both sets using the same substring rules:
    - The **repo slug** (e.g., `beehiiv-mcp`, `claude-social-media-skills`)
    - The **release tag** (e.g., `v0.0.2`) if this contribution is a release
    - A **distinctive phrase** from the contribution — skill name (`linkedin-stats`, `/flywheel`), PR number, or a unique noun phrase from the title/commit message
    - Be specific — don't flag on common words like "shipped" or "skill" alone.
-5. Annotate each line in the list with a status tag:
-   - `✅ new` — zero matching queued posts
-   - `⚠️ queued Nx (earliest YYYY-MM-DD)` — N matching posts; show the soonest `dueAt`
-   - `⚠️ partially queued — <note>` — a related item is queued but this specific variant isn't (e.g., *v0.0.1 launch queued, but v0.0.2 release not*). Keep the note short.
+
+6. Annotate each line in the list with a status tag. **Recent-sent overlap takes precedence over queue overlap** (sent is more final than queued):
+   - `✅ new` — zero matching queued or recent-sent posts
+   - `⚠️ sent Nx (most recent: YYYY-MM-DD)` — N matching posts went out within the last 7 days; show the most recent `dueAt`
+   - `⚠️ queued Nx (earliest YYYY-MM-DD)` — N matching queued posts; show the soonest `dueAt`
+   - `⚠️ sent + queued` — both; combine the counts and show both dates
+   - `⚠️ partially queued — <note>` — a related item is queued/sent but this specific variant isn't (e.g., *v0.0.1 launch posted, but v0.0.2 release is new*). Keep the note short.
 
 ### Phase 3 — User Selection and Post Mode
 
 Ask the user two questions:
 
 1. **Which contributions to promote?** (by number, e.g., "1, 3, 4" or "all")
-   **Default recommendation: only `✅ new` items.** For `⚠️ queued` items, state the recommendation to skip and explain the overlap — only include them if the user explicitly opts in with a fresh angle that distinguishes the new post from what's already scheduled.
+   **Default recommendation: only `✅ new` items.** For `⚠️ sent` items, strongly recommend skipping — the audience just saw this. For `⚠️ queued` items, recommend skipping unless the user opts in with a fresh angle. Only include `⚠️` items when the user explicitly confirms a distinguishing angle vs. what's already out or scheduled.
 2. **Post mode:**
    - **Batch** — one summary post covering all selected contributions
    - **Individual** — one separate post per contribution
@@ -242,7 +259,7 @@ https://github.com/user/repo/pull/42
 ---
 ```
 
-Repeat for each channel. Ask: **"Ready to post these to Buffer?"**
+Repeat for each channel. Ask: **"Ready to publish these now?"** (Default is instant-publish via `shareNow`. If the user wants to queue instead, they can say "queue them" — then use `addToQueue` in Phase 6.)
 
 The user can:
 - Approve all
@@ -264,8 +281,9 @@ The user can:
 4. For each approved post, call `mcp__buffer__create_post` with:
    - `channelId`: exact ID from `list_channels`
    - `text`: the composed post text (impact statement + GitHub link)
-   - `mode`: `"direct"`
-   - `schedulingType`: `"direct"`
+   - `mode`: `"shareNow"` — **publishes immediately** (default behavior for this skill). Use `"addToQueue"` only if the user explicitly says "queue it" or "schedule it".
+   - `schedulingType`: `"automatic"` — Buffer publishes directly to the platform. Use `"notification"` only for platforms that require a manual reminder flow (rare).
+   - Do NOT pass `dueAt` when using `shareNow` — the post goes live immediately.
    - `assets`: only if user provided an image — `{ images: [{ url: "<image-url>", metadata: { altText: "<contribution-title>" } }] }`
    - Platform-specific `metadata`:
      - **Facebook**: `metadata.facebook.type: "post"`
