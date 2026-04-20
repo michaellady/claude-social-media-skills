@@ -42,6 +42,26 @@ Present each snippet as a numbered list:
 
 Also present extracted images with URLs. Recommend the hero/header image as the default media attachment.
 
+**Before presenting the list, check the Buffer queue for existing posts from this article.**
+
+Users often kick off `/promote-newsletter` when earlier promotion runs (crosspost-newsletter, carousel-newsletter, a previous invocation of this skill) have already seeded the queue with related posts. Flag overlapping snippets so the user doesn't unknowingly re-promote the same lines.
+
+1. Call `mcp__buffer__get_account` for the organization ID. If Buffer MCP is unreachable, skip this check and warn the user at the top of the snippet list: *"Buffer queue check skipped — unable to reach Buffer MCP. Existing queue may overlap."* Then proceed without annotations.
+2. Call `mcp__buffer__list_posts` with:
+   - `organizationId`: from step 1
+   - `status`: `["scheduled", "needs_approval", "draft"]`
+   - `first: 100`
+   - `sort: [{field: "dueAt", direction: "asc"}]`
+3. If the response exceeds the tool-result size limit (saves to a file automatically), use `jq` to extract `{dueAt, channelService, text}` per post. You're scanning post text, not rendering the full payload.
+4. For each candidate snippet (and the article title), match against queued post text (case-insensitive substring) using:
+   - A **distinctive 4-8 word phrase** from the snippet (e.g., `"personal SaaS-apocalypse"`, `"blender of what has existed"`) — not a common word.
+   - The **article title** or a distinctive title phrase.
+   - Be specific — don't match on common words like "AI" or "shipped" alone.
+5. Annotate each snippet in the Phase 2 presentation with a status tag:
+   - `✅ new` — zero matching queued posts
+   - `⚠️ queued Nx (earliest YYYY-MM-DD)` — N matching posts; show the soonest `dueAt`
+   Mention the dup count in the Phase 3 question as well so the user's snippet selection is informed. Default recommendation: prefer `✅ new` snippets unless the user wants deliberate repetition.
+
 ### Phase 3 — User Snippet Selection
 
 Ask the user:
