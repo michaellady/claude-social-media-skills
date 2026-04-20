@@ -2,3 +2,5 @@ remaining-posts.md
 .gstack/
 linkedin-stats/cache/
 linkedin-stats/config.local.json
+buffer-stats/cache/
+buffer-stats/config.local.json

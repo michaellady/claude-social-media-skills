@@ -23,6 +23,7 @@ Aggregate signal from YouTube, beehiiv, LinkedIn, and the consulting log into on
 | beehiiv list | `mcp__beehiiv__beehiiv_stats` | current subscriber count |
 | beehiiv attribution | `mcp__beehiiv__beehiiv_attribution` | source mix (YouTube vs LinkedIn vs direct) |
 | LinkedIn | `~/dev/claude-social-media-skills/linkedin-stats/cache/snapshot-<latest>.json` | newsletter subs, profile + page followers |
+| Buffer | `~/dev/claude-social-media-skills/buffer-stats/cache/snapshot-<latest>.json` | per-channel followers/engagement for IG/FB/Threads fan-out + queue health |
 | Consulting | `(cd ~/dev/consulting-log && ./cl json)` | pipeline stages, realized revenue, content gaps |
 
 If any source fails or is stale, note it in the report — don't silently drop the row.
@@ -116,6 +117,29 @@ If the latest LinkedIn snapshot is >14 days old, flag it — stale LinkedIn data
 - heuristic: newsletter subscriber count increased ≥N since last snapshot → posting is active
 - if user wants per-article engagement, they run `/linkedin-stats` separately
 
+### Phase 4.5 — Buffer (IG/FB/Threads fan-out)
+
+Read the latest cached Buffer snapshot. Don't re-run `/buffer-stats` here — it's slow (scrapes Buffer Analyze) and the user runs it weekly:
+
+```bash
+BF_CACHE=~/dev/claude-social-media-skills/buffer-stats/cache
+LATEST_BF=$(ls -1 "$BF_CACHE"/snapshot-*.json 2>/dev/null | tail -1)
+if [ -n "$LATEST_BF" ]; then
+  BF_SNAP_DATE=$(basename "$LATEST_BF" .json | sed 's/snapshot-//')
+  BF_CHANNELS=$(jq -r '.channels | length' "$LATEST_BF")
+  BF_TOTAL_FOLLOWERS=$(jq -r '[.channels[].engagement.followers // 0] | add' "$LATEST_BF")
+  BF_TOTAL_FOLLOWERS_DELTA=$(jq -r '[.channels[].engagement.followers_delta // 0] | add' "$LATEST_BF")
+  BF_AVG_ENG_RATE=$(jq -r '[.channels[].engagement.engagement_rate // 0] | add / length' "$LATEST_BF")
+  BF_TOP_POST=$(jq -r '.top_posts[0] | "\(.service): \(.text_snippet) (\(.engagement) engagement)"' "$LATEST_BF")
+  # Stale-data flag (same 14-day threshold as LinkedIn)
+  BF_STALE=$(( $(date -u +%s) - $(date -j -f "%Y-%m-%d" "$BF_SNAP_DATE" +%s 2>/dev/null || date -d "$BF_SNAP_DATE" +%s) > 14*86400 ))
+else
+  BF_CHANNELS=""; BF_STALE=1
+fi
+```
+
+If the latest Buffer snapshot is >14 days old, flag it. Note that Buffer is the fan-out layer (Priority 2's "push viewers to Beehiiv" uses Buffer as the distribution surface for IG/FB/Threads), so its health informs Priority 2's attribution mix — if IG/Threads followers are growing but beehiiv attribution shows 0% from those surfaces, that's a link-in-bio / call-to-action problem, not a Buffer problem.
+
 ### Phase 5 — Consulting pipeline
 
 ```bash
@@ -161,6 +185,13 @@ Build the markdown with a fixed structure so snapshots are diffable week-over-we
 - Profile followers: N
 - Company page followers: N
 - Status: [🟢 | 🟡 | 🔴 | ⚪ no recent LN data]
+
+## Fan-out (Buffer) — cross-channel reach
+- Channels active: N (as of BF snapshot YYYY-MM-DD)
+- Total followers: N (+Δ this week)
+- Avg engagement rate: X%
+- Top cross-channel post: <service>: <snippet> (<N> engagement)
+- Status: [🟢 fresh | ⚪ no recent Buffer data | 🟡 stale (>14d)]
 
 ## Priority 4 — Long-form ≥ shorts volume
 - Long-form this window: N (target: 2-3/week)
@@ -208,6 +239,7 @@ Consider also writing a parallel `$SNAP_DIR/<date>.json` with the raw numbers to
   "youtube": { "streams": N, "long_form": N, "shorts": N, "views": N, "revenue": F, "subs_gained": N },
   "beehiiv": { "total_subs": N, "new_subs_in_window": N, "attribution": { "youtube": N, "linkedin": N, "...": N } },
   "linkedin": { "newsletter_subs": N, "profile_followers": N, "company_followers": N, "snapshot_date": "..." },
+  "buffer": { "channels": N, "total_followers": N, "total_followers_delta": N, "avg_engagement_rate": F, "snapshot_date": "..." },
   "consulting": { "pipeline": F, "realized_revenue": F, "content_gaps": N }
 }
 ```
@@ -222,5 +254,6 @@ After a few weeks of running `/flywheel` every Sunday, the snapshots directory b
 
 - **beehiiv MCP requires Claude Code restart** after `make install`ing the server. If the attribution tool is missing, remind the user.
 - **LinkedIn snapshots must be current.** If `/linkedin-stats` hasn't been run recently, Priority 3 will show stale numbers. The report should flag any snapshot older than 14 days as unreliable.
+- **Buffer snapshots must be current.** Same 14-day staleness threshold. If no snapshot exists, the fan-out section shows `⚪ no recent Buffer data` and prompts the user to run `/buffer-stats`. Buffer feeds the fan-out context for Priority 2 — if missing, Priority 2's attribution analysis loses the IG/FB/Threads signal.
 - **YouTube data.** `youtube_analytics` `analyze` reads `data/videos.json` which is only refreshed on `fetch`. If it's stale, the YouTube section will be too. Run `go run . fetch` in `~/dev/youtube_analytics` before running `/flywheel` if the numbers look off.
 - **Consulting log is local-only.** No data migrates from other tools. If the user uses a CRM, they have to update the markdown files themselves.

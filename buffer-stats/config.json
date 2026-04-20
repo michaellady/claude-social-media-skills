@@ -1,0 +1,12 @@
+{
+  "comment": "Override any of these in config.local.json (gitignored). The skill reads config.local.json first if present, then falls back to this file.",
+  "organization_name": null,
+  "channels_include": null,
+  "channels_exclude": [],
+  "default_window_days": 7,
+  "top_posts_limit": 10,
+  "delta_window_days": 7,
+  "stale_snapshot_days": 14,
+  "analyze_base_url": "https://analyze.buffer.com",
+  "publish_base_url": "https://publish.buffer.com"
+}
