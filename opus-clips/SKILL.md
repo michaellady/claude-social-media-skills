@@ -1,23 +1,28 @@
 ---
 name: opus-clips
-description: Use when user wants to turn a livestream video file into short-form social clips via Opus Clip — "clip my stream", "make shorts from this stream", "run opus on this video". Uploads the file, waits for AI clip generation, toggles the Enhancer (filler word + silence removal) on selected clips, then schedules them in Opus at up to 5 per day per connected platform.
+description: Use when user wants to turn a livestream video file into short-form social clips via Opus Clip — "clip my stream", "make shorts from this stream", "run opus on this video". Uploads to Drive, hands the 3-click picker to the user, waits for AI clip generation (30-90s shorts only), applies AI enhance (Remove filler words + Remove pauses subpanel), then schedules at 5 per day (hard cap, diminishing returns above) across 6 connected channels via Opus's per-clip Publish-on-Social modal.
+
 user_invocable: true
 ---
 
 # opus-clips
 
-**⚠️ SCAFFOLD — NOT YET IMPLEMENTED.** This skill's workflow is specified but the DOM selectors for app.opus.pro have not been captured yet. Before this skill can run, a one-time Claude-in-Chrome exploration session must:
-
-1. Open `app.opus.pro` logged in
-2. Observe + record stable selectors for: upload dropzone, clip library grid, individual clip detail view, Enhancer toggles (Remove filler words, Remove silences), Apply button, Schedule modal, platform multi-select, date picker, time picker, Confirm button
-3. Write those selectors into `selectors.json` alongside this file
-4. Update the Phase sections below with concrete `$B js` / `$B click` commands
-
-Everything else (config shape, flow, scheduling math) is already decided.
+End-to-end automation for Opus Clip: livestream → 30-90s shorts → scheduled posts. Everything except three picker clicks at ingest is automated; the rest of the flow (clip generation wait, AI enhance per clip, schedule fan-out to 6 channels, schedule verification) runs unattended.
 
 ## Why this skill
 
-Manual Opus Clip workflow: upload stream → wait → open each clip → toggle Enhancer → save → open scheduler → pick 4+ platforms × date × time per clip → repeat. For a 2-hour stream generating ~20 clips across 6 connected channels at 5/day/platform, that's ~80–120 manual clicks. This skill automates the clicks.
+Manual Opus Clip workflow for a 2-hour livestream: upload → wait 10-30 min → open each clip → AI enhance → Save → Publish on Social → pick platforms × date × time → repeat. For 20 clips across 6 channels, that's 80-120 clicks. This skill automates every click except **one human gesture at ingest** (Google Picker iframe requires a real HID click — see "Ingest limitation" below).
+
+## Non-negotiables
+
+Two hard rules from the user:
+
+1. **30-90s shorts only.** On Opus's `/workflow` setup page, the `Clip Length` selector MUST be set to `30s-90s` (not the default `Auto (<90s)`). Configured in `config.workflow_setup.clip_length_preset`.
+2. **5 videos/day/channel is the hard cap**, not a lower bound. Diminishing returns above this — skill must NEVER schedule a 6th post on the same calendar day. Configured in `config.posts_per_day_cap`. `schedule_clips.py` rolls over to the next day at slot 6.
+
+## How it runs
+
+Driven by **Claude-in-Chrome MCP tools** (real browser). Opus is a Next.js/Radix SPA — gstack (Playwright headless) cannot log in because auth tokens live in localStorage, not cookies. The helper scripts in this directory emit JSON runbooks that the skill executes via `mcp__claude-in-chrome__*` tools inline. No separate runner process.
 
 ## Connected accounts (as of 2026-04-19)
 
@@ -30,138 +35,184 @@ Manual Opus Clip workflow: upload stream → wait → open each clip → toggle 
 | TikTok | mikelady | 5 |
 | YouTube | Enterprise Vibe Code | 5 |
 
-Six channels total. Same clip posts to all of them; the 5/day cap is per channel, so 5 clips/day fills the queue everywhere.
+Six channels. One Opus "Schedule post" modal publishes a clip to all 6 at once.
 
 ## Scheduling math
 
-- N clips generated × 6 channels = 6N scheduled slots
-- 5/day/channel means N/5 days of content across all channels
-- 20 clips → 4 days; 40 clips → 8 days
+- 1 approved clip = 1 Opus schedule action = 6 platform posts (fan-out happens inside the modal)
+- 5 slots per day × 1 clip per slot → 5 clips/day max (per diminishing-returns rule)
+- N approved clips → ceil(N/5) days
+- 5 slots local PT: 09:00 / 12:00 / 15:00 / 18:00 / 21:00
+
+Run `./schedule_clips.py --n-clips N --start-date YYYY-MM-DD` for the plan. Use `--pre-scheduled K` if the start-date already has K slots committed (rare; mostly for rerun recovery).
+
+## The ingest limitation (Phase C finding, 2026-04-19)
+
+Opus's upload presents three ingest options: local **Upload** button, **Google Drive** picker, link-paste (Rumble/Twitch/YouTube/Zoom). Every path requires exactly ONE real human click:
+
+| Path | Blocker |
+|---|---|
+| `Upload` → native file chooser | Chrome requires `isTrusted=true` for `<input type=file>` activation; CDP mouse + keyboard events both fail |
+| `Google Drive` → in-page picker | `docs.google.com/picker` iframe is cross-origin; Google's isTrusted guard ignores CDP clicks |
+| Link-paste (Rumble/YouTube/etc.) | Accepts specific video-platform URLs only, not Drive share URLs |
+
+**Adopted path: Drive upload + picker handoff.**
+1. Skill uploads video to Drive folder `opus-clips-automation` via `drive_upload.py` (fully automated). ~60-120s for a 300MB file.
+2. Skill opens Opus dashboard + clicks `Google Drive` button (works — Opus's own origin).
+3. **User performs 3 clicks in the picker:** `opus-clips-automation` folder → video file → `Select`. ~5 seconds.
+4. Skill sets clip length to 30s-90s and clicks `Get clips in 1 click`.
+
+Everything downstream — processing wait, clip enumeration, AI enhance, scheduler, post-schedule verification — is 100% automated.
 
 ## Prerequisites
 
-- `gstack browse` installed (`~/.claude/skills/gstack/browse/dist/browse`) — same tool as `crosspost-newsletter`.
-- Opus Clip web login: a valid browser cookie jar imported via `$B cookie-import-browser app.opus.pro`. Set up once.
-- Local video file path for the livestream (user provides as skill argument).
-- `config.json` in this directory (committed) defines time slots, platforms, Enhancer settings. `config.local.json` (gitignored) overrides per-run.
+- Opus Clip web login at `https://clip.opus.pro` in the Claude-in-Chrome browser
+- Google Chrome with Claude-in-Chrome extension installed
+- Local video file path
+- **For automated Drive upload:** one-time setup
+  - GCP project `gen-lang-client-0527845499` with Drive API enabled (confirmed, Phase C)
+  - OAuth 2.0 Desktop Client ID + Secret in that project
+  - An rclone-authorized refresh token (in-memory only per safety rules; re-auth once per session via `rclone authorize drive <client_id> <client_secret>`)
+  - Drive folder `opus-clips-automation` (ID in `config.drive_upload.folder_id`) shared with the service account or accessible to your user
 
 ## Key files
 
 - `SKILL.md` — this workflow spec
-- `config.json` — defaults: 5 daily time slots, 6 channels, Enhancer settings
-- `selectors.json` — **TO BE CAPTURED** — per-page DOM selectors for Opus's UI
-- `upload.sh` — **TBD** — drag-drop local file via gstack
-- `wait_for_clips.sh` — **TBD** — polls DOM every 5 min until processing completes
-- `process_clips.py` — **TBD** — iterates clips, toggles Enhancer, applies
-- `schedule_clips.py` — **TBD** — assigns (channel, date, time) per clip from config, drives scheduler
+- `config.json` — channels, slots, enhancer settings, clip-length preset, posts_per_day_cap, Drive credentials
+- `selectors.json` — DOM selectors (Phase A captured, Phase C/D corrected)
+- `drive_upload.py` — resumable chunked Drive upload via our own OAuth client (avoids rclone's shared-project rate limit)
+- `upload.sh` — emits the full 8-step ingest runbook (Drive upload → picker handoff → workflow setup → processing trigger)
+- `wait_for_clips.sh` — emits polling runbook for `Original clips (N)` counter
+- `process_clips.py` — emits per-clip AI-enhance plan including the Remove-pauses subpanel subflow
+- `schedule_clips.py` — pure logic; computes (day, slot) per clip with cap enforcement
+- `verify_schedule.py` — emits a plan to navigate `/auto-post/calendar`, expand each day cell, count `Scheduled` tokens per time slot, and assert against expected
+
+Each helper supports `--help` and `--dry-run`.
 
 ## Workflow
 
-### Phase 0 — Setup (one-time)
+### Phase 0 — Session setup
 
-```bash
-B=~/.claude/skills/gstack/browse/dist/browse
-$B cookie-import-browser app.opus.pro   # Import Opus cookies from real browser
-$B goto https://app.opus.pro           # Verify logged-in state
-$B snapshot                            # Save baseline screenshot
+```
+mcp__claude-in-chrome__tabs_context_mcp               # verify MCP tab group
+mcp__claude-in-chrome__navigate → /dashboard          # confirm logged in
 ```
 
-### Phase 1 — Upload the livestream
+If not logged in, ask the user to sign in manually.
 
-```bash
-$B goto https://app.opus.pro/upload    # Or whatever the actual upload URL is
-$B upload '<dropzone selector>' /path/to/stream.mp4
-# Wait for upload progress to finish (DOM poll)
+### Phase 1 — Ingest (Drive-first)
+
+```
+./upload.sh /path/to/stream.mp4
 ```
 
-Record the Opus project ID from the URL after upload completes — needed for later phases.
+The emitted plan walks the skill through: Drive upload → navigate + click Google Drive → hand off to user for 3 picker clicks → set clip length to 30s-90s on `/workflow` → click `Get clips in 1 click` → extract `projectId` from redirect URL → log to `/tmp/opus-clips-<projectId>.log`.
+
+**Idempotency:** before starting, check if `/tmp/opus-clips-<projectId>.log` exists for this video filename. If yes, offer to resume vs start fresh.
 
 ### Phase 2 — Wait for clip generation
 
-Opus typically takes 10–30 min for a 1–2 hour stream. Poll the project page every 5 min:
-
-```bash
-until $B js "document.querySelector('<clip-list selector>')?.children.length > 0"; do
-  sleep 300
-done
+```
+./wait_for_clips.sh <projectId>
 ```
 
-Capture the count of generated clips. Report to user.
+Polls `/clip/<projectId>` every 5 min (2 hr ceiling). Matches regex `/Original clips\s*\(\s*(\d+)\s*\)/` on the page body.
 
-### Phase 3 — User review gate (clip selection)
+### Phase 3 — Clip review gate
 
-**IMPORTANT:** Do not auto-process every clip. Opus generates good and bad clips; the user should approve the list before we burn time editing each one.
+Enumerate clip cards. Phase D learned: the clip grid is virtualized; must scroll the overflow container to the bottom before extraction to get ranks #4 and #5.
 
-Produce a list:
+```js
+// Scroll the main scrollable container to the bottom
+const s = Array.from(document.querySelectorAll('*')).find(el => {
+  const cs = getComputedStyle(el);
+  return (cs.overflowY === 'auto' || cs.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 50;
+});
+for (let i = 0; i < 6; i++) { s.scrollTop = s.scrollHeight; await new Promise(r => setTimeout(r, 500)); }
 ```
-Clip 1: "title" — 43s — viral score 72
-Clip 2: "title" — 58s — viral score 89
-...
+
+Parse title, score, start/end from each `#N ... /100 ...` card. Default filter: `viral_score >= config.viral_score_threshold`. Ask user to approve the filtered set.
+
+### Phase 4 — AI enhance per clip
+
 ```
-Ask user which to keep. Default: all clips with viral score ≥ `config.viral_score_threshold` (default 70).
+./process_clips.py --project-id <projectId>.<firstClipHash> --clip-ranks 1,3,5
+```
 
-### Phase 4 — Per-clip Enhancer toggle
-
-For each approved clip:
-1. `$B click '<clip-card selector for clip N>'`
-2. Wait for detail view to load
-3. Open Enhancer panel: `$B click '<enhancer-button selector>'`
-4. Toggle **Remove filler words** on (if not already)
-5. Toggle **Remove silences** on (if not already)
-6. Any other settings from `config.enhancer_settings`
-7. Click **Apply** / **Save**
-8. Wait for re-render
-9. Close clip detail, return to library
-
-Rate: ~30s/clip. 20 clips = ~10 min.
+Per-clip sequence (Phase C/D verified):
+1. Click `Edit clip` on card → navigates to `/editor-ux/{projectId}.{clipHash}?clipRank={N}`
+2. Wait for `AI enhance` sidebar button → capture initial duration
+3. Click `AI enhance` → panel opens
+4. Click `Remove filler words` — **direct action**, no confirmation UI. May no-op on clips with no detected fillers (Phase C/D test clips all no-op'd). Skill logs this case but doesn't treat it as error.
+5. Click `Remove pauses` → **subpanel opens** with slider + `Remove (N)` button where N = detected pause count
+6. Click the `Remove (N)` button (regex `/^Remove\s*\(\d+\)$/`) → commits. Duration shrinks by reported seconds. Phase D evidence: 58s→52s (N=6), 24s→22s (N=2), 50s→46s (N=4).
+7. Click `Save changes` → editor navigates back to `/clip/{projectId}` = implicit success
+8. Log initial→final duration delta to `/tmp/opus-clips-<projectId>.log`
 
 ### Phase 5 — Schedule
 
-Build the schedule from config + number of approved clips:
-- Clip 1 → day 1, slot 1 (09:00 local)
-- Clip 2 → day 1, slot 2 (12:00 local)
-- Clip 3 → day 1, slot 3 (15:00 local)
-- Clip 4 → day 1, slot 4 (18:00 local)
-- Clip 5 → day 1, slot 5 (21:00 local)
-- Clip 6 → day 2, slot 1
-- …
+Per-clip loop (Phase D flow):
 
-For each clip, open the Schedule modal and:
-1. **IF Opus supports multi-platform scheduling in one modal** — select all 6 channels at once, pick date + time, confirm. 1 action = 6 scheduled posts.
-2. **IF not** — loop per channel: select channel, pick date + time, confirm. 6 actions per clip.
+1. Click `Publish on Social` on clip card → schedule modal opens with all 6 channels pre-selected + AI-generated per-platform copy
+2. Click `Select time` → date+time popover appears
+3. Click the date button (text matches target day-of-month) in the `rdp-*` calendar
+4. Click the time combobox (text matches current time like `12:00 AM`) → listbox of 15-min slots opens
+5. Click the option matching target time (format: `09:00 AM`, `12:00 PM`, `03:00 PM`)
+6. Verify the pill label at the bottom shows `<DD> <Month> 2026 H:MM AM/PM GMT-07:00` then click `Schedule` → modal closes silently
 
-The UI exploration session MUST answer this. It's the single biggest factor in total run time.
+**For large batches (N > ~5 clips):** consider the **Bulk schedule** modal (selectors.json → `bulk_schedule_modal`) which schedules all selected clips at once. Not yet used by this skill — Phase D looped per-clip for clarity on 3 clips.
 
-**Time zone:** times in config are interpreted as `config.timezone` (default `America/Los_Angeles`). Convert to whatever timezone Opus's scheduler expects (usually matches user's account setting).
+**Important:** `Schedule` click produces NO toast/confirmation. Verify success via Phase 6.
 
-### Phase 6 — Review + summary
+### Phase 6 — Verify scheduled posts
 
-Print a table:
+```
+./verify_schedule.py --n-clips N --start-date YYYY-MM-DD
+```
 
-| Clip | Viral score | Scheduled for | Channels |
-|---|---|---|---|
+Navigates `/auto-post/calendar`, expands each day cell (clicks `See N more`), counts `Scheduled` tokens and grouped times per day. Compares against expected:
+- Per day: expected slot-times match wall-clock
+- Per slot: count equals `len(config.channels)` (= 6)
+- Total across all days: `n_clips * 6`
 
-Report: total clips scheduled, total posts queued, next 24 hours of posts.
+Phase D evidence (Apr 20, 3 clips): expected `{9:00 AM: 6, 12:00 PM: 6, 3:00 PM: 6}` = 18 posts; actual matched exactly.
 
-## Gotchas (anticipated — confirm during UI exploration)
+## Debugging
 
-- **Opus detects headless automation** — React apps often do. If so, switch from gstack to `mcp__claude-in-chrome__*` tools (same fallback as `crosspost-newsletter` uses for Medium). Claude in Chrome runs in the user's real browser, bypasses detection.
-- **Clip list may lazy-load** — scroll-to-bottom before iterating.
-- **Schedule modal may reset selections** — when switching clips, the date/time picker may reset to defaults. Re-set per clip.
-- **Multi-platform scheduling** — if Opus charges per-platform seats on Auto Post but not on manual schedule, make sure we're not accidentally triggering paid features. Surface the pricing page in the exploration session.
-- **Processing timeout** — a very long stream may take hours. If wait loop runs too long (>2 hr), surface and ask the user to confirm before continuing.
+- **Log location:** `/tmp/opus-clips-<projectId>.log`. Appended JSON per phase/step with `elapsed_sec`, `result`.
+- **Editor not hydrating in Claude-in-Chrome tab:** observed Phase A — needs foreground tab before DOM queries. Fallback: `mcp__claude-in-chrome__computer action=screenshot` to confirm visual state, then retry.
+- **AI enhance panel buttons invisible:** panel must be open. Click `AI enhance` first.
+- **Remove pauses `Remove (N)` button not appearing:** means Opus detected 0 pauses above threshold. Skill treats as no-op success.
+- **Schedule modal close bug:** if `Close` button doesn't dismiss, dispatch Escape: `document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',bubbles:true}))`.
+- **Clip count stuck in processing:** force-reload the project page once (`location.reload()`) if count hasn't budged in 15 min.
+- **Drive upload 403 "Quota exceeded":** means rclone's default shared OAuth client was used. Switch to the user's own OAuth 2.0 client in `gen-lang-client-0527845499` and re-authorize.
+- **Drive upload `storageQuotaExceeded` from SA:** expected — service accounts can't own files on personal Gmail. Use user OAuth credentials, not SA.
+
+## Gotchas
+
+- **`clip.opus.pro`, not `app.opus.pro`.**
+- **No `data-testid` anywhere** — selectors are `aria-label`, `role`, `data-state`, `textContent`, `href`. Brittle if Opus changes copy.
+- **Opus account timezone**, not browser timezone. Scheduler modal shows `America/Los_Angeles` (confirmed 2026-04-19).
+- **Remove pauses is NOT one-click** — it opens a subpanel. Actual apply button is `Remove (N)` inside.
+- **Remove filler words has no UI confirmation** — may silently no-op. Skill uses duration delta + optional transcript diff to infer outcome.
+- **Schedule button success has no toast.** Must verify via `verify_schedule.py`.
+- **Service accounts cannot own files on personal Gmail.** Shared Drives are a Workspace-only feature. SA → OAuth user credentials.
+- **Google Picker iframe is docs.google.com origin.** Synthetic clicks from CDP do NOT reach it. User gesture required.
+- **rclone's default OAuth client hits a global ~99% upload quota.** Always bring your own OAuth 2.0 Client ID from a personal GCP project when uploading >100MB videos.
 
 ## Cost
 
-Opus Clip cost is your existing subscription — this skill adds no per-use API charges. Time cost: ~15–30 min of automation runtime per livestream, depending on stream length and clip count.
+Opus Clip: 3 credits per clip generation (observed Phase D on 3-min test video). Subscription-based, no per-API charges. Runtime: ~15-30 min per stream depending on length, plus ~2-5 min of browser automation.
+
+Drive upload: free within Google Drive storage quota. OAuth token refresh: free.
 
 ## Out of scope
 
-- Uploading the livestream to YouTube first (use a separate skill or manual)
-- Captions / branding customization (configured once in Opus dashboard Brand Templates; referenced by name, not controlled from here)
-- Cross-posting to Buffer in parallel (Opus handles the scheduling, Buffer is not involved in this skill)
-- X / Twitter (not a connected account per 2026-04-19 review)
+- Uploading the livestream to YouTube first
+- Captions / branding (set once in Opus Brand Templates)
+- Cross-posting to Buffer in parallel (Opus handles scheduling directly)
+- X / Twitter (not a connected account)
 
 ## Related skills
 
-- `../crosspost-newsletter/SKILL.md` — reference patterns for gstack browse automation, cookie imports, selector-based clicking, handoff-on-failure.
+- `../crosspost-newsletter/SKILL.md` — reference patterns for browser automation, cookie imports, selector-based clicking, handoff-on-failure.

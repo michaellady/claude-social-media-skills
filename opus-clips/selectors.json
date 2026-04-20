@@ -1,49 +1,189 @@
 {
-  "_instructions": "This file is intentionally empty-skeleton. Before the opus-clips skill can run, a one-time Claude-in-Chrome exploration session must capture the real DOM selectors from app.opus.pro and fill in the values below. Selectors should prefer stable attributes (data-testid, aria-label) over brittle CSS nth-child chains. If a selector has no stable attribute, use a text-content or role-based anchor instead.",
-  "_captured_at": null,
-  "_opus_version_notes": null,
+  "_instructions": "Captured during Phase A DOM exploration on 2026-04-19. Opus Clip's web app is a Next.js React SPA built on Radix UI primitives. No data-testid attributes exist anywhere — selectors rely on aria-label, role, data-state, text content, and href patterns.",
+  "_captured_at": "2026-04-19",
+  "_opus_version_notes": "Radix UI primitives, Tailwind, no data-testids. URL-driven editor state via quickAmend query params.",
+  "_base_url": "https://clip.opus.pro",
+  "_base_url_note": "Scaffold originally said app.opus.pro — that does NOT resolve. Real subdomain is clip.opus.pro.",
 
-  "upload_page": {
-    "url_pattern": "https://app.opus.pro/upload",
-    "dropzone": null,
-    "file_input": null,
-    "upload_progress_bar": null,
-    "processing_started_confirmation": null
+  "answered_questions": {
+    "Q1_headless_safe": "UNKNOWN — tested via Claude-in-Chrome (real browser) only. Recommend Claude-in-Chrome as default; gstack untested.",
+    "Q2_multi_platform_one_modal": "YES. Publish on Social opens a single dialog with all 6 connected channels pre-listed. Per-platform copy is AI-pre-generated; per-platform tabs (Post/Reel/Feed/Video) are visible inline.",
+    "Q3_bulk_schedule_ui": "YES — and this is the flagship finding. Click 'Bulk schedule' in clip library → enters select mode → 'Select all' → click 'Bulk schedule' again → opens mega-modal with every selected clip pre-scheduled on a default cadence (2-hour spacing). Final button is 'Schedule' (commit) or 'Close' (discard).",
+    "Q4_timezone": "Opus account timezone. Confirmed: modal displayed 'America/Los_Angeles' for this user. Config's timezone key should match the user's Opus profile.",
+    "Q5_auto_post_queue": "Bulk schedule IS effectively an auto-post queue — it auto-generates times for every selected clip. 'Customize time' lets you override individual slots. We didn't probe for other scheduling config depth."
+  },
+
+  "dashboard": {
+    "url": "https://clip.opus.pro/dashboard",
+    "project_card_selector": "a[href^=\"/clip/P\"]",
+    "project_title_source": "aria-label on the anchor (includes title + clip count, e.g. '$200/mo Everything ... 40')",
+    "project_id_pattern": "a.href matches /^\\/clip\\/(P[A-Za-z0-9]+)$/",
+    "project_id_from_workflow_redirect": "After processing starts, Opus redirects to /dashboard?projectId=P...&utm_...  — extract projectId query param",
+    "workflow_setup_page": {
+      "url": "https://clip.opus.pro/workflow",
+      "entered_by": "Drive picker Select OR successful local upload",
+      "get_clips_button_text": "Get clips in 1 click",
+      "note": "After clicking, Opus starts processing and redirects back to /dashboard with ?projectId=<P...> query param. Use that to locate the new project."
+    },
+    "upload_file_input": "input[type=file] (hidden). accept includes video/mp4, video/quicktime, video/webm, video/x-matroska, mpeg, etc.",
+    "upload_button_click_target": "button with textContent === 'Upload'",
+    "upload_button_activation_note": "ALL synthetic clicks (JS .click(), CDP mouseclick, CDP keydown Enter) fail Chrome's user-activation check for file chooser dialogs. Focus + real HID keypress (not CDP Enter) works, but Chrome rejects CDP-dispatched Enter too. Confirmed Phase C: file chooser never opens via any automated path — requires real human gesture.",
+    "drive_picker_button_click_target": "button with textContent === 'Google Drive'",
+    "drive_picker_note": "Clicking 'Google Drive' opens an in-page Google Picker iframe (docs.google.com/picker). The iframe is cross-origin — its DOM is not reachable from parent-page JS, and CDP clicks inside its viewport region are silently ignored by Google's isTrusted guards. Confirmed Phase C: user must click folder + file + Select manually in the picker.",
+    "ingest_limitation_summary": "Every ingest path requires exactly ONE real human click. Claude-in-Chrome automation can drive everything else post-ingest.",
+    "recommended_ingest_path": "Pre-upload the video to Google Drive via drive_upload.py (fully automated with our OAuth client), then have the user click through the Drive picker (folder → file → Select) — 3 clicks, all real gestures. Faster than native file chooser because no filesystem navigation."
+  },
+
+  "drive_upload_prerequisites": {
+    "note": "To automate Drive upload (so skill only needs 3 user clicks for picker): requires a one-time OAuth 2.0 client in the user's GCP project + rclone-style OAuth flow. Setup captured in Phase C (2026-04-19).",
+    "gcp_project": "gen-lang-client-0527845499",
+    "drive_api_enabled": true,
+    "service_account_created": "opus-clips-uploader@gen-lang-client-0527845499.iam.gserviceaccount.com  — useful for Drive folder write perms but CANNOT OWN files on personal Gmail (no storage quota). Left as SA for now.",
+    "oauth_client_type": "Desktop app OAuth 2.0 Client ID in the user's GCP project — REQUIRED because rclone's default shared-project hits 'Queries per minute' rate limit at 99%+ for a 290MB upload.",
+    "oauth_token_storage": "Not persisted to disk by default (safety system blocks config writes). For permanent skill use, user should explicitly approve rclone config at ~/.config/rclone/rclone.conf.",
+    "drive_folder": {
+      "id": "12Hhu9UbyVV6-bf5uACL7_aJRJYuk3dC1",
+      "name": "opus-clips-automation",
+      "viewUrl": "https://drive.google.com/drive/folders/12Hhu9UbyVV6-bf5uACL7_aJRJYuk3dC1",
+      "owner": "michaellady@gmail.com"
+    },
+    "upload_helper_script": "opus-clips/drive_upload.py  — uses Python google-api-python-client with a scoped token; handles resumable upload in 8MB chunks with automatic retry."
   },
 
   "clip_library": {
-    "url_pattern": "https://app.opus.pro/project/:projectId",
-    "clip_grid_root": null,
-    "clip_card": null,
-    "clip_title": null,
-    "clip_duration": null,
-    "clip_viral_score": null,
-    "clip_card_click_target": null,
-    "processing_complete_indicator": null
+    "url_pattern": "https://clip.opus.pro/clip/{projectId}  — projectId starts with 'P'",
+    "project_title_h_selector": "document.title (not an h1)",
+    "original_clips_count_text_regex": "/Original clips\\s*\\(\\s*(\\d+)\\s*\\)/",
+    "per_clip_action_buttons_by_text": {
+      "enhance_speech": "button with textContent === 'Enhance speech' (one per clip card)",
+      "publish_on_social": "button with textContent === 'Publish on Social'",
+      "edit_clip": "button with textContent === 'Edit clip'",
+      "ai_hook": "button with textContent === 'AI hook'",
+      "add_b_roll": "button with textContent === 'Add B-Roll'",
+      "duplicate": "button with aria-label === 'Duplicate'",
+      "regen": "button with aria-label === 'regen'",
+      "like": "button with aria-label === 'Like'",
+      "dislike": "button with aria-label === 'Dislike'",
+      "more": "button with aria-label === 'more'",
+      "download_hd": "button with textContent === 'Download HD'",
+      "export_xml": "button with textContent === 'Export XML'",
+      "aspect_ratio_toggle": "button with textContent === '16:9' or '9:16'"
+    },
+    "per_clip_action_iteration_note": "These buttons repeat per clip card. To target clip N, select the Nth element of the button query. Cards render as a vertical list in default view.",
+    "bulk_select_entry": "button with textContent === 'Select'  (also triggered by clicking 'Bulk schedule' from the single-clip Publish modal)",
+    "trending_badge_text": "'🔥 Trending' appears next to good clips; use as a proxy for viral score ≥ threshold until we find the numeric score."
   },
 
-  "clip_detail_view": {
-    "enhancer_panel_toggle": null,
-    "remove_filler_words_toggle": null,
-    "remove_silences_toggle": null,
-    "apply_button": null,
-    "back_to_library_button": null
+  "bulk_selection_mode": {
+    "entered_by": "Clicking 'Bulk schedule' from the per-clip Publish modal, OR likely via 'Select' button on the library top bar",
+    "indicators": {
+      "select_all_button": "button with textContent === 'Select all'",
+      "deselect_all_button": "button with textContent === 'Deselect all'",
+      "cancel_button": "button with textContent === 'Cancel'",
+      "bulk_schedule_button": "button with textContent === 'Bulk schedule'",
+      "bulk_download_button": "button with textContent === 'Bulk download'",
+      "selected_count_text_regex": "/(\\d+)\\s+selected/"
+    },
+    "clip_checkbox_selector": "[role=\"checkbox\"][data-state=\"checked\"|\"unchecked\"]",
+    "note": "In this mode, each clip card has a checkbox in its corner. Click the card (or checkbox) to toggle. 'Select all' checks every clip at once."
   },
 
-  "scheduler": {
-    "schedule_button_on_clip": null,
-    "modal_root": null,
-    "platform_multi_select": null,
-    "platform_option_facebook": null,
-    "platform_option_instagram": null,
-    "platform_option_linkedin_page": null,
-    "platform_option_linkedin_profile": null,
-    "platform_option_tiktok": null,
-    "platform_option_youtube": null,
-    "date_picker": null,
-    "time_picker": null,
-    "confirm_schedule_button": null,
-    "success_toast": null,
-    "supports_multi_platform_in_one_modal": null
-  }
+  "clip_editor": {
+    "url_pattern": "https://clip.opus.pro/editor-ux/{projectId}.{clipHash}?clipId={clipHash}&clipRank={N}&editType={edit}&quickAmend={json}",
+    "url_pattern_minimum": "https://clip.opus.pro/editor-ux/{projectId}.{clipHash}?clipId={clipHash}&clipRank={N}  (editType/quickAmend optional — AI enhance panel can drive changes live)",
+    "voice_enhancement_url_params": "editType=voiceEnhancement&quickAmend=%7B%22voiceEnhancement%22%3A%221%22%7D",
+    "save_button_text": "Save changes",
+    "export_button_text": "Export",
+    "right_sidebar_nav_buttons_by_text": ["AI enhance", "Captions", "Media", "Brand template", "B-Roll", "Transitions", "Text", "Music", "AI hook"],
+    "ai_enhance_panel": {
+      "open_trigger": "button with textContent === 'AI enhance' in the right sidebar",
+      "panel_header_text": "AI enhance",
+      "panel_open_indicator": "after click, a flyout appears left of the sidebar with header 'AI enhance' and rows for Remove filler words / Remove pauses / etc.",
+      "direct_action_buttons_by_text": [
+        "Remove filler words",
+        "Auto censor",
+        "Auto Generate AI B-Roll",
+        "Auto generate stock B-Roll",
+        "Auto generate AI hook"
+      ],
+      "direct_action_note": "These rows are one-click actions — clicking immediately mutates the clip in place. Remove filler words may no-op on clips with no detected fillers (Phase C test clip 'Fail Better' 58s had none, duration unchanged). URL does NOT change — no quickAmend gets appended. To commit, click 'Save changes' in the top bar afterwards.",
+      "subpanel_actions": {
+        "Remove pauses": {
+          "opens_subpanel": true,
+          "subpanel_header_text": "Remove pauses",
+          "subpanel_elements": {
+            "pause_duration_slider": "input[type=\"range\"] or a slider control labeled 'Pause duration' (default 0s)",
+            "apply_button_text_regex": "^Remove\\s*\\(\\d+\\)$  — e.g. 'Remove (6)' when 6 pauses are detected",
+            "detection_text_regex": "/(\\d+)\\s+pauses? longer than (\\d+\\.?\\d*)s are detected\\.\\s+(\\d+\\.?\\d*)s can be removed from your video\\./"
+          },
+          "flow": "Click 'Remove pauses' in AI enhance panel → subpanel opens with slider + 'Remove (N)' button → optionally adjust slider to change threshold → click 'Remove (N)' to apply → duration shrinks by reported seconds.",
+          "phase_c_evidence": "Test clip 'Fail Better' (Apr 2026 run, project P30420004wHK clip #1): 6 pauses detected, 6.3s removable. After Remove(6) click: duration went 00:58.14 → 00:52.07 (delta 6.07s, matches detection)."
+        }
+      },
+      "toggle_switches": {
+        "selector": "button[role=\"switch\"][data-state=\"checked\"|\"unchecked\"]",
+        "rows_in_order": [
+          "Speech enhancement",
+          "AI emoji",
+          "AI keywords highlighter",
+          "Auto transitions",
+          "Speaker colors"
+        ],
+        "targeting_pattern": "Find the row by its label textContent, then document.querySelectorAll('button[role=\"switch\"]')[N] — switches render in the order listed above. Default observed: AI keywords highlighter ON, others OFF.",
+        "default_observed": {"Speech enhancement": "unchecked", "AI emoji": "unchecked", "AI keywords highlighter": "checked", "Auto transitions": "unchecked", "Speaker colors": "unchecked"}
+      },
+      "enhancer_config_mapping": {
+        "config.enhancer_settings.remove_filler_words=true": "click button with textContent === 'Remove filler words' ONCE per session (direct-action; verify by duration shrink or transcript diff; may no-op if no fillers detected)",
+        "config.enhancer_settings.remove_silences=true": "click button 'Remove pauses' → wait for subpanel → click button matching /^Remove\\s*\\(\\d+\\)$/ in subpanel → duration shrinks"
+      }
+    },
+    "automation_strategy": "For every approved clip: (a) open editor URL, (b) wait for right sidebar 'AI enhance' button to render, (c) click it to open panel, (d) click 'Remove filler words' and 'Remove pauses' (one-shot actions), (e) click 'Save changes' top-right. No per-toggle state check needed for filler/pauses. Also supports URL-driven shortcut: editType=voiceEnhancement&quickAmend=... from clicking 'Enhance speech' on the library card — unclear whether that equals filler+pauses or something else."
+  },
+
+  "single_post_schedule_modal": {
+    "opened_by": "button with textContent === 'Publish on Social' (per-clip)",
+    "modal_selector": "[role=\"dialog\"]  (usually one open at a time)",
+    "modal_header_text": "Schedule post",
+    "all_platforms_combobox": "button with textContent === 'All platforms' (role=combobox)",
+    "per_platform_post_type_tabs": "button[role=\"tab\"] — e.g. Post/Reel for IG, Feed/Inbox for FB, Video for LI, Video for TikTok, YouTube fixed",
+    "per_platform_title_input_selector": "input[name*=\"~YOUTUBE~\"|\"~FACEBOOK_PAGE~\"|\"~INSTAGRAM~\"|\"~LINKEDIN~\"|\"~TIKTOK~\"][name$=\".title\"]",
+    "per_platform_title_name_format": "{PLATFORM}~{accountId}~{subId}.title",
+    "bulk_schedule_escape_button": "button with textContent === 'Bulk schedule' inside this modal — exits the single-post flow and enters bulk-select mode (!)",
+    "select_time_button": "button with textContent === 'Select time'",
+    "publish_now_button": "button/span with textContent === 'Publish now'",
+    "close_button": "button with textContent === 'Close' (may need Escape key as fallback — Close didn't always dismiss cleanly in our test)",
+    "dismiss_reliable": "document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))"
+  },
+
+  "bulk_schedule_modal": {
+    "opened_by": "Bulk-select mode → click 'Bulk schedule' (top-level action bar)",
+    "modal_header_text": "Schedule post",
+    "scrollable_content_selector": "[class*=\"overflow-y-auto\"] inside [role=\"dialog\"]",
+    "per_clip_row_content": {
+      "numbered_label_text": "'1', '2', '3', ... numbers rendered as button text",
+      "title_input_name_format": "{clipHash}~{PLATFORM}~{accountId}~.title",
+      "privacy_combobox_text": "'Public' (YouTube-specific)",
+      "per_clip_scheduled_text_regex": "/Scheduled on (.+?) America\\/Los_Angeles/"
+    },
+    "default_cadence_observed": "Clips spaced ~2 hours apart, starting the day after scheduling. e.g. 1:00 AM, 3:00 AM, 5:00 AM, 7:00 AM, 9:00 AM ...",
+    "customize_time_button": "button with textContent === 'Customize time'",
+    "commit_button": "button with textContent === 'Schedule'",
+    "cancel_button": "button with textContent === 'Close'",
+    "regenerate_copy_button": "button with textContent === 'Regenerate All'",
+    "copy_controls": ["Tone", "Format", "Mimic", "Hashtag"]
+  },
+
+  "sidebar_nav": {
+    "notes": "Each sidebar item is a <div> (not <a>) with an aria-label. Navigation likely via JS click.",
+    "items_by_aria_label": ["Home", "Brand template", "Asset library", "Calendar", "Analytics", "Social accounts", "Subscription", "Learning center", "Affiliate program", "Help center"]
+  },
+
+  "connected_accounts_observed_in_modal": [
+    {"platform": "facebook_page", "account": "Enterprise Vibe Code", "accountId": "10160172472816623~913906768469231"},
+    {"platform": "instagram", "account": "Enterprise Vibe Code"},
+    {"platform": "linkedin_page", "account": "Enterprise Vibe Code"},
+    {"platform": "linkedin_profile", "account": "Mike Lady"},
+    {"platform": "tiktok", "account": "mikelady"},
+    {"platform": "youtube", "account": "Enterprise Vibe Code", "accountId": "UCyxYcJWs5WstpM2h8KjabUw"}
+  ]
 }

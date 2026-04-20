@@ -1,6 +1,8 @@
 {
   "timezone": "America/Los_Angeles",
   "daily_time_slots": ["09:00", "12:00", "15:00", "18:00", "21:00"],
+  "posts_per_day_cap": 5,
+  "posts_per_day_rationale": "User-confirmed diminishing returns beyond 5 videos per day per channel; 5 slots is the hard ceiling, not a lower bound. Skill must never schedule a 6th slot on the same calendar day (it would starve the next day's queue and underperform engagement-wise).",
   "channels": [
     {"platform": "facebook",  "account": "Enterprise Vibe Code", "posts_per_day": 5},
     {"platform": "instagram", "account": "Enterprise Vibe Code", "posts_per_day": 5},
@@ -12,7 +14,19 @@
   "viral_score_threshold": 70,
   "enhancer_settings": {
     "remove_filler_words": true,
-    "remove_silences": true
+    "remove_silences": true,
+    "pause_duration_threshold_s": 0.5
   },
-  "notes": "Times are local to `timezone`. Opus's scheduler UI expects times in the user's Opus account timezone; confirm during UI exploration. `viral_score_threshold` auto-selects clips ≥ this score; lower to be less picky."
+  "workflow_setup": {
+    "clip_length_preset": "30s-90s",
+    "clip_length_preset_note": "User requirement — only generate shorts with duration between 30s and 90s. On the /workflow page after upload, the Clip Length selector MUST be set to this range (not the default 'Auto (<90s)'). The 30-90s window covers the sweet spot for YT Shorts, Reels, and TikTok without tripping platform minimum-length enforcement."
+  },
+  "drive_upload": {
+    "folder_id": "12Hhu9UbyVV6-bf5uACL7_aJRJYuk3dC1",
+    "folder_name": "opus-clips-automation",
+    "service_account_email": "opus-clips-uploader@gen-lang-client-0527845499.iam.gserviceaccount.com",
+    "oauth_client_project": "gen-lang-client-0527845499",
+    "note": "Drive upload via drive_upload.py is the preferred ingest path — 3-click user handoff via Opus's in-page Drive picker is faster than navigating macOS file chooser. See opus-clips/drive_upload.py for usage."
+  },
+  "notes": "Times are local to `timezone`. Opus's scheduler UI expects times in the user's Opus account timezone. `viral_score_threshold` auto-selects clips ≥ this score. `pause_duration_threshold_s` controls the Remove-pauses slider (Phase C found the subpanel defaults to 0s, which over-trims; 0.5s preserves natural speech rhythm). Do NOT exceed `posts_per_day_cap` per day — user has confirmed diminishing returns above 5/day."
 }
