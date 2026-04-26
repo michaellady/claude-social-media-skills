@@ -1158,6 +1158,36 @@ Setting a selection range (e.g. `range.setStartAfter(heading)`) before clicking 
 ### LinkedIn byline + destination radios are coupled
 The "publish-as" dropdown has two radio groups (Author + Destination) that constrain each other. The combination "Author = Personal + Destination = Individual article" is NOT possible — selecting "Individual article" auto-flips the author to the company. Valid combinations: personal-author + company-newsletter destination, or company-author + (Individual or company-newsletter). For most cross-posts, the LinkedIn default (personal author + company newsletter destination) is the canonical pattern — leave it alone.
 
+### LinkedIn accompanying-post field strips ALL programmatic paragraph breaks
+The "Tell your network what this edition of your newsletter is about…" textbox on the publish page (`[aria-label="Text editor for creating content"]`) is a Quill editor that silently filters out every programmatic paragraph-break input mechanism tested:
+- HTML clipboard paste (`<p>...</p><p>...</p>`) — only the first `<p>` lands; trailing paragraphs become empty `<p><br></p>` siblings.
+- Plain-text clipboard paste with `\n\n` — same truncation; only first paragraph survives.
+- `document.execCommand('insertParagraph')` — silently no-op after the first text insert (focus is lost).
+- `$B press Enter` between `$B type` calls — focus exits the editor, subsequent typed text disappears.
+- `$B type` with literal newlines embedded in the bash-quoted string — gstack reports typing all N chars but only the first paragraph appears.
+
+**Working pattern:** fill the entire post as a single paragraph (no newlines), then `$B handoff` to the user with explicit instructions to manually click between sentences and press Enter for paragraph breaks. Real user keyboard Enter is the only thing this editor accepts. Confirmed 2026-04-26.
+
+For the editor wipe before fill, use this hard-clear pattern (regular execCommand selectAll+delete leaves stale empty `<p><br></p>` siblings from prior insert attempts):
+```js
+const ed = document.querySelector('[aria-label="Text editor for creating content"]');
+ed.innerHTML = '<p><br></p>';
+ed.dispatchEvent(new Event('input', { bubbles: true }));
+ed.focus();
+const range = document.createRange();
+range.selectNodeContents(ed);
+range.collapse(true);
+const sel = window.getSelection();
+sel.removeAllRanges();
+sel.addRange(range);
+```
+
+### LinkedIn autosave is bulletproof — use it
+Cover, body, all figures, blockquotes, and links are autosaved continuously. If the gstack session drops, the browser crashes, or you have to re-auth mid-run, navigating back to `https://www.linkedin.com/article/edit/<draft-id>/?author=urn:li:fsd_profile:<id>` restores the full draft state. Capture the draft ID from the URL the moment LinkedIn assigns one (right after the first body paste) so you can recover from anything.
+
+### LinkedIn auth can drop after `$B handoff` to a new browser window
+Confirmed 2026-04-26: when `$B handoff` triggers a new about:blank window (which it does whenever the previous session was already in headed mode but the new handoff request opens a fresh instance), the gstack browser's LinkedIn session cookies get reset. After `$B resume`, navigating back to `linkedin.com/article/edit/<id>` will redirect to `linkedin.com/uas/login` with a session_redirect param. **Recovery:** re-import linkedin.com cookies via the picker, then re-navigate. Total cost ~30s. The article draft itself is intact (see autosave above).
+
 ### LinkedIn @e<N> refs go stale within seconds
 After any modal interaction (image upload, dismiss, click into a different field), LinkedIn re-renders enough of the DOM that snapshot refs from BEFORE the interaction may point to different elements (or no element). Always re-snapshot immediately before clicking a ref that was captured before any DOM-changing action. Symptoms of stale refs: `$B click @e3` reports "now at <unchanged URL>" but the click had no visible effect, OR the click hits a wrong element entirely (e.g., the editor toolbar's Next instead of the modal's Next).
 
