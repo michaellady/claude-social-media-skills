@@ -13,6 +13,15 @@ Extract snippets from a [beehiiv](https://beehiiv.com) newsletter post and sched
 /promote-newsletter latest
 ```
 
+### `/tease-newsletter`
+
+Sibling to `/promote-newsletter`. Instead of pulling verbatim snippets, write short original teaser hooks per channel that summarize the article without spoiling the punchline. Same `Comment "newsletter"…` CTA so the same DM automation works.
+
+```
+/tease-newsletter https://www.example.com/p/my-post
+/tease-newsletter latest
+```
+
 ### `/promote-github`
 
 Fetch your public GitHub contributions (merged PRs, commits, releases) and compose value/impact-framed social media posts. Posts immediately to all connected Buffer channels.
@@ -44,6 +53,7 @@ Cross-post a [beehiiv](https://beehiiv.com) newsletter article across five platf
 4. Symlink each skill directory into `~/.claude/skills/`:
    ```bash
    ln -s /path/to/claude-social-media-skills/promote-newsletter ~/.claude/skills/promote-newsletter
+   ln -s /path/to/claude-social-media-skills/tease-newsletter ~/.claude/skills/tease-newsletter
    ln -s /path/to/claude-social-media-skills/promote-github ~/.claude/skills/promote-github
    ln -s /path/to/claude-social-media-skills/crosspost-newsletter ~/.claude/skills/crosspost-newsletter
    ```
