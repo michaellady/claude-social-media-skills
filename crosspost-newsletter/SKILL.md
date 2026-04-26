@@ -195,7 +195,10 @@ Ask the user which platforms to cross-post to (**multi-select** — any combinat
 
 Platforms are processed one at a time, sequentially. Full-article platforms run first (they need the article body prepared in Phase 1), then link submissions.
 
-**Mid-session auth notes:** LinkedIn, Substack, Medium, and HN run through Claude in Chrome (which uses the user's real Chrome browser, so sessions persist). Reddit uses gstack browse and needs a one-time cookie import (`$B cookie-import-browser chrome reddit.com`) — the cookie picker opens a UI the user must interact with before continuing.
+**Mid-session auth notes:**
+- **LinkedIn + Reddit** run through gstack browse and authenticate via `cookie-import-browser chrome <domain>`. LinkedIn import works on first try; Reddit needs a UA spoof set BEFORE the first navigation (otherwise 403).
+- **Substack** runs through gstack browse but cookie-import does NOT work (HttpOnly session cookies). Use a manual `$B handoff` for in-window login instead — saves time vs. retrying the picker.
+- **Medium + HN** run through Claude in Chrome (the real Chrome browser), bypassing both Cloudflare (Medium) and headless detection. No cookie import needed; the user's real Chrome session is used as-is.
 
 ### Phase 3 — Browser Setup & Authentication
 
@@ -212,7 +215,9 @@ Navigate to a page that reveals login state and take a snapshot:
 
 **LinkedIn:** `$B goto https://www.linkedin.com/feed/` — logged in = feed with search bar. Not logged in = login form with "Email or phone" field.
 
-**Substack:** `$B goto https://substack.com/account/settings` — logged in = shows Home/Subscriptions/Dashboard buttons. Not logged in = email input and "Continue" button.
+**Substack:** `$B goto https://substack.com/sign-in` — if it stays on `/sign-in` and shows an email input, NOT logged in. If it auto-redirects away from `/sign-in`, logged in. **Note:** `https://substack.com/account/settings` and `https://substack.com/home` both serve a public marketing/feed page when not logged in (no obvious "you're signed out" signal), so they're unreliable for auth checks. Use `/sign-in` redirect behavior as the canonical test. Beware of HTTP 429s from rate-hitting `/sign-in` — wait 5 seconds between checks.
+
+**Substack auth caveat (2026-04-26 confirmed):** the cookie-import-browser flow does NOT reliably work for Substack, even when the user selects substack.com in the picker. Substack's session cookies appear to be HttpOnly or otherwise inaccessible to the picker. If the first cookie import doesn't take, **don't retry the picker** — go straight to a `$B handoff` for in-window manual login. This burns ~2 min vs. 10+ min of failed cookie-picker rounds.
 
 **Medium:** `$B goto https://medium.com/me/stories` — logged in = stories dashboard. Not logged in = login page. **WARNING: Medium aggressively blocks headless browsers with Cloudflare (403). Cookie import typically does not help. Expect to skip Medium or handoff for manual login.**
 
@@ -234,6 +239,19 @@ For any platform where the user is NOT logged in:
    ```
 
 4. After user confirms, `$B resume` and verify. If still not logged in, skip this platform.
+
+**Per-platform reliability of cookie import (confirmed 2026-04-26):**
+- **LinkedIn** — cookie import works reliably on the first try.
+- **Reddit** — cookie import works reliably, but ALSO requires a UA spoof (see below) for any subsequent navigation. Set the UA proactively before any reddit.com goto.
+- **Substack** — cookie import does NOT work (HttpOnly session cookies). Skip the picker for Substack and go straight to in-window handoff login. Saves time.
+
+**Reddit UA spoof — set this proactively, not as a fallback:**
+```bash
+$B useragent "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+```
+Without this, `$B goto https://www.reddit.com/` returns HTTP 403 immediately (Reddit's bot detection blocks the default headless UA). With the spoof, navigation succeeds and the imported cookies authenticate the session normally. Set the UA before the first Reddit navigation in the run, not as a recovery step after the 403.
+
+**`$B handoff` opens a separate browser window at `about:blank`.** Confirmed 2026-04-26. The handoff message tells the user what to do, but the URL the user sees in the popped tab is `about:blank` — they need to switch back to the platform tab (LinkedIn / Substack / Reddit etc.) to actually do the action. Make this explicit in handoff messages: *"Switch to the [platform] tab and click X. The about:blank tab can be ignored."*
 
 **Optimization: batch the cookie picker request.** When multiple gstack platforms will be used (e.g. LinkedIn + Substack + Reddit), open the picker once and tell the user to select all relevant domains at the same time ("please select linkedin.com + substack.com + reddit.com, then close the picker"). Saves a round-trip per platform and keeps the handoffs to one.
 
@@ -265,6 +283,29 @@ $B goto https://www.linkedin.com/article/new/
 $B snapshot -i
 ```
 Look for `[textbox] "Title"` and `[textbox] "Article editor content"` in the snapshot. Also note `[button] "Upload from computer"` for the cover image.
+
+**Step 1b — Verify byline + publish destination (the radios are coupled):**
+
+The "publish-as" dropdown at the top of the editor has TWO radio groups that constrain each other:
+1. **Author** — "Mike Lady" (personal) or "<Company>" (LinkedIn page)
+2. **Destination** — "Individual article" or "<Company> newsletter"
+
+The valid combinations are:
+- **Author = Mike Lady + Destination = `<Company>` newsletter** ✅ canonical pattern for personal byline on a company newsletter — this is the LinkedIn default if the user admins a newsletter publication
+- **Author = `<Company>` + Destination = Individual article** ✅ standalone post under the company page
+- **Author = `<Company>` + Destination = `<Company>` newsletter** ✅ company-byline newsletter article
+- **Author = Mike Lady + Destination = Individual article** ❌ NOT POSSIBLE — selecting "Individual article" auto-flips author to the company
+
+If the user wants a personal byline (Mike Lady) on a standalone (non-newsletter) article, they cannot do it via this UI — the only "personal byline" option requires publishing under the company's newsletter. Confirm with the user before making the dropdown selection. The default state (Mike Lady author + Company newsletter destination) is usually what they want.
+
+If you need to change byline or destination:
+```bash
+$B click @e<dropdown>  # expand the publish-as dropdown
+# Snapshot shows two radio groups: author radios + destination radios
+$B click @e<author-Mike-Lady-radio>  # picks personal byline
+# Note: destination flips back to <Company> newsletter automatically
+$B snapshot -i  # verify state
+```
 
 **Step 2 — Fill the title:**
 ```bash
@@ -326,7 +367,7 @@ Upload:
 $B upload "#media-editor-file-selector__file-input" /tmp/bb-cover.png
 ```
 
-The cover modal overlay appears (`[button] "Dismiss"`, `[button] "Edit"`, `[button] "Delete"`). **Handoff to user** to click the article body to dismiss it — the modal cannot be escaped programmatically.
+The cover modal overlay appears with buttons: `[button] "Dismiss"`, `[button] "Edit"`, `[button] "Alternative text"`, `[button] "Hyperlink"`, `[button] "Select bb-cover.png"`, `[button] "Delete"`, `[button] "Next"`. **The "Next" button commits the cover image AND closes the modal cleanly** — that's the programmatic dismiss path. Do NOT click "Dismiss" (that triggers a discard-confirmation dialog) or "Delete" (deletes the upload). For the cover specifically, the modal sometimes lacks the Next button and only a body-click works — if `$B click @<Next-ref>` fails, fall back to a single user handoff for body-click dismiss.
 
 **Step 4b — Identify the body image toolbar button (once):**
 ```bash
@@ -340,54 +381,73 @@ $B js "
 ```
 The image button has `href: '#image-medium'` (typically index 9).
 
-**Step 4c — Batch upload all body images in article order:**
-For each body image (in the order they appear in the article):
+**Step 4c — Upload each body image in article order, dismiss via the modal's "Next" button:**
+
+For each body image:
 ```bash
-# Click the image toolbar button via JS (cursor position is ignored — don't try to set it)
+# 1. Click the image toolbar button via JS (cursor position is ignored — don't try to set it)
 $B js "
   const buttons = [...document.querySelectorAll('.scaffold-formatted-text-editor-icon-button')];
   buttons[9].click();
   'clicked';
 "
+sleep 2
 
-# Upload the image
+# 2. Upload the image
 $B upload "#media-editor-file-selector__file-input" /tmp/bb-imgN.jpg
+sleep 4
 
-# Handoff to user to dismiss the image overlay by clicking the article body
-$B handoff "Image N uploaded. Please click the article body to dismiss the overlay."
-# (resume after user confirms)
+# 3. CRITICAL — re-snapshot to get the modal's fresh "Next" ref (refs go stale fast after upload)
+$B snapshot -i  # find @e<N> for [button] "Next"
+$B click @e<N>  # the modal's Next button — commits the image AND closes the modal
+sleep 2
+
+# 4. Verify figure was inserted
+$B js "({ figureCount: document.querySelector('[aria-label=\"Article editor content\"]').querySelectorAll('figure').length })"
 ```
 
-After all body images are uploaded, they will all be clumped together in the wrong spot. That's fine — the next step fixes it.
+**The modal's "Next" button is the reliable programmatic dismiss path for body images.** Confirmed on the 2026-04-26 run after Escape, programmatic body click, and pointer-event sequences all failed:
+- `$B press Escape` only works if the editor is currently focused (rare after a JS-triggered toolbar click — focus stays on the body or moves to the modal).
+- Programmatic clicks on the editor (even with the full pointer+mouse event sequence) do NOT dismiss the modal.
+- `$B click @<Dismiss-ref>` triggers a discard-confirmation dialog (Dismiss / Cancel / Discard); clicking Cancel returns you to the upload modal, clicking Discard wipes the upload.
+- `$B click @<Delete-ref>` deletes the upload.
+- `$B click @<Next-ref>` commits the image into the editor body AND closes the modal.
 
-**Step 4d — Move each figure to its correct heading via DOM:**
+After upload, the modal exposes both the editor toolbar's Next button and the modal's own Next button — re-snapshot to get the fresh ref of the modal Next, since `@e<N>` refs shift between snapshots.
 
-Walk the editor, find each heading, find each figure (in upload order), and use `parentNode.insertBefore` to place each figure right after its target heading:
+After all body images are uploaded this way, they will all be clumped together at the end of the article (cursor position is ignored). The next step moves them to the right positions.
+
+**Step 4d — Move each figure to its empty-`<p>` placeholder anchor:**
+
+The clean HTML from Phase 1 contained empty-paragraph anchors (`<p><!-- IMG1: ... --></p>`) at each image position. The HTML comment is stripped on paste but the empty `<p>` remains as a positional marker. After body image upload, all figures are clumped at the end of the editor — move each to its corresponding empty `<p>` anchor in source order, then remove the placeholder:
 
 ```bash
 $B js "
   const editor = document.querySelector('[aria-label=\"Article editor content\"]');
+  const allChildren = [...editor.children];
+  // Empty <p>s that aren't figure containers — these are our anchors
+  const emptyPs = allChildren.filter(c => c.tagName === 'P' && !c.textContent.trim() && !c.querySelector('figure'));
+  const anchors = emptyPs.slice(0, 4);  // first N match the N image placeholders
   const figures = [...editor.querySelectorAll('figure')];
-  const headings = [...editor.querySelectorAll('h3')];
-
-  // targets: pair each upload-order figure with the text of the heading
-  // it should appear under. Populate this from Phase 1 — for each body
-  // image, record the heading that precedes it in the source article.
-  const targets = [
-    { headingText: '<heading text before image 1>', figIdx: 0 },
-    { headingText: '<heading text before image 2>', figIdx: 1 },
-    // ...one entry per body image...
-  ];
-
-  for (const { headingText, figIdx } of targets) {
-    const h = headings.find(h => h.textContent.trim() === headingText);
-    const fig = figures[figIdx];
-    if (h && fig) h.parentNode.insertBefore(fig, h.nextSibling);
+  let moved = 0;
+  for (let i = 0; i < figures.length; i++) {
+    const target = anchors[i];
+    const fig = figures[i];
+    if (target && fig) {
+      target.parentNode.insertBefore(fig, target);
+      target.remove();
+      moved++;
+    }
   }
   editor.dispatchEvent(new Event('input', { bubbles: true }));
-  'MOVED ' + targets.length + ' figures';
+  'MOVED ' + moved + ' figures';
 "
 ```
+
+This anchor-based approach is more reliable than heading-text matching because:
+- Many articles place images mid-section, not directly after a heading
+- Heading text can be transformed by LinkedIn's paste sanitizer (NBSPs, h2→h3 downgrade) and require normalization
+- Empty `<p>`s have a predictable index per Phase 1 source order — no string matching needed
 
 **This DOM manipulation is safe on LinkedIn** — `<figure>` moves do not break the editor's save state. (This is different from Medium, where post-paste DOM edits break save.)
 
@@ -1095,11 +1155,25 @@ When manually composing `/tmp/article-body.html` from beehiiv extraction output,
 ### LinkedIn image toolbar ignores cursor position
 Setting a selection range (e.g. `range.setStartAfter(heading)`) before clicking the image toolbar button has no effect — images consistently land at a cached/default position, regardless of where you put the cursor. **Workaround:** batch-upload all body images in order, accept that they'll all clump together in the wrong spot, then move each `<figure>` to its target heading via `parentNode.insertBefore(figure, heading.nextSibling)` followed by dispatching an `input` event on the editor.
 
+### LinkedIn byline + destination radios are coupled
+The "publish-as" dropdown has two radio groups (Author + Destination) that constrain each other. The combination "Author = Personal + Destination = Individual article" is NOT possible — selecting "Individual article" auto-flips the author to the company. Valid combinations: personal-author + company-newsletter destination, or company-author + (Individual or company-newsletter). For most cross-posts, the LinkedIn default (personal author + company newsletter destination) is the canonical pattern — leave it alone.
+
+### LinkedIn @e<N> refs go stale within seconds
+After any modal interaction (image upload, dismiss, click into a different field), LinkedIn re-renders enough of the DOM that snapshot refs from BEFORE the interaction may point to different elements (or no element). Always re-snapshot immediately before clicking a ref that was captured before any DOM-changing action. Symptoms of stale refs: `$B click @e3` reports "now at <unchanged URL>" but the click had no visible effect, OR the click hits a wrong element entirely (e.g., the editor toolbar's Next instead of the modal's Next).
+
 ### LinkedIn DOM figure moves are safe
 Unlike Medium (where post-paste DOM manipulation breaks the editor's save state), LinkedIn's article editor handles moving `<figure>` elements cleanly. You can freely reorder figures with `parentNode.insertBefore` — the editor re-syncs on the `input` event and saves fine.
 
-### LinkedIn cover image modal is persistent
-After uploading an image (cover or inline), LinkedIn shows a persistent modal overlay with "Dismiss", "Edit", "Delete" buttons. Clicking "Dismiss" triggers a discard confirmation. This modal blocks all editor interaction. **Workaround:** handoff to user to click the article body below the overlay — the overlay dismisses on a body click but not programmatic focus.
+### LinkedIn image modal — use the modal's "Next" button to commit + dismiss
+After uploading an image (cover or inline), LinkedIn shows a persistent modal overlay with buttons including Dismiss / Edit / Alternative text / Hyperlink / Select <filename> / Delete / **Next**. The modal blocks all editor interaction.
+
+**The "Next" button is the programmatic dismiss path.** Confirmed 2026-04-26 after exhaustive testing: `$B click @<Next-ref>` commits the image into the editor body AND closes the modal cleanly. Dismiss triggers a discard-confirmation dialog (Dismiss / Cancel / Discard); Delete deletes the upload; Escape only works when the editor is focused (rare after JS-triggered toolbar click); programmatic body clicks (even with the full pointer+mouse event sequence) do NOT dismiss it.
+
+**Refs go stale fast on this modal** — re-snapshot after upload to find the modal's fresh "Next" ref. There are usually two visible "Next" buttons after upload: the editor toolbar's Next (which jumps to the publish flow) and the modal's Next (which commits the image). Re-snapshot to disambiguate.
+
+Earlier versions of this skill claimed the modal couldn't be escaped programmatically and required a user handoff. That was wrong — the Next button works, and per-image handoffs are not needed.
+
+**The cover image modal is the one exception** — sometimes lacks a Next button and requires a body-click. If `$B click @<Next-ref>` fails for the cover image specifically (because no Next ref exists in the snapshot), fall back to a single user handoff for body-click dismiss.
 
 ### LinkedIn figure captions require React-native setter
 Each figure has a `<textarea class="article-editor-figure-caption">` for captions. Direct `textarea.value = "..."` is silently reverted by React. **Workaround:** use the native setter:
@@ -1115,6 +1189,9 @@ LinkedIn's paste sanitizer downgrades all `<h2>` headings to `<h3>`. When anchor
 
 ### Substack image captions require full pointer+mouse event sequence
 The three-dot menu on a Substack image (which contains "Edit caption") only surfaces when the image NodeView enters a selected state. A synthetic `img.click()` or even a basic `MouseEvent('click')` does NOT trigger this. You must dispatch the full `pointerdown → mousedown → pointerup → mouseup → click` sequence with real `clientX/clientY` coordinates (center of the image via `getBoundingClientRect`). Once the menu is visible in the DOM, clicking the "Edit caption" action inserts a `<figcaption class="image-caption">`, and filling that caption requires `document.execCommand('insertText', ...)` routed through a Range+Selection (NOT direct `.textContent = ...`, which ProseMirror ignores). See Substack Step 7 for the working pattern.
+
+### Substack cookie-import does not authenticate
+Confirmed 2026-04-26 across two cookie-picker attempts (substack.com domain selected both times): Substack's session cookies are not exposed to the cookie picker (likely HttpOnly), so importing them does not log gstack into Substack. The `/sign-in` page continues to show the email input form even after import. **Workaround:** skip the cookie picker for Substack entirely. Go straight to `$B handoff "Please log in to Substack..."` — the user logs in inside the gstack-controlled browser window in ~1-2 minutes. After resume, verify with `$B goto https://substack.com/sign-in`; if it redirects away from `/sign-in` (or you see Subscribe buttons / a feed in the snapshot), you're in. Beware: hitting `/sign-in` repeatedly returns 429 — wait 5+ seconds between checks.
 
 ### Substack strips images on paste
 ProseMirror clipboard paste preserves text formatting but strips `<img>` tags. **Workaround:** upload images separately via the toolbar Image button after pasting text.
