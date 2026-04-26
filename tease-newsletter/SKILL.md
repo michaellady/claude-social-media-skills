@@ -55,17 +55,20 @@ Angles available:
 
 Also: **check the Buffer queue for existing posts from this article** (same procedure as `promote-newsletter` Phase 2). Annotate each angle with `✅ new` or `⚠️ overlaps existing queued post about <subject>` so the user can avoid duplicate angles.
 
-### Phase 3 — User Angle Selection
+### Phase 3 — User Picks ONE Angle (then we adapt to length)
 
-**Default: ONE core message across all channels.** Pick the single strongest angle and write that one tease. Then adapt only the **length** per platform (long for LinkedIn/Instagram, trimmed for FB/Threads/Twitter). Do NOT write per-channel angle variations unless the user explicitly asks for them. This is the most common mistake — the temptation to "use the long-form room on LinkedIn for a different angle" produces a feed where each channel sounds like a different person promoting a different article. One message, length-adapted, is the right default.
+**The workflow is: present angles → user picks ONE → fit that single message to each platform's length.** The user's job is to choose the angle. Your job is to length-adapt — never to angle-vary.
 
-Ask:
-- Which angle to use as the core message across all channels (recommend the strongest from Phase 2)
-- Which image attaches where (default: hero image on the highest-priority channel)
-- Tease style preference: **curiosity-gap** ("Here's what I learned about X — and why it surprised me"), **provocation** ("Most people get X wrong. Here's why."), **personal-story** ("I bought a $200 paperweight last week. Here's what it taught me about AI.")
-- (Optional) Whether to override the one-message default with per-channel angle variations — only ask if the user has hinted at this; otherwise skip and use the default
+Concretely:
 
-**Wait for user input.**
+1. **Present** the 3–5 angles from Phase 2 to the user with a one-line preview tease for each. Use AskUserQuestion (single-select, NOT multi-select) so the UI forces a single pick.
+2. **Wait** for the user to select exactly one angle.
+3. **Also ask** in the same prompt:
+   - Which image attaches where (default: hero image on the highest-priority channel — see priority order below)
+   - Tease style preference: **curiosity-gap** ("Here's what I learned about X — and why it surprised me"), **provocation** ("Most people get X wrong. Here's why."), or **personal-story** ("I bought a $200 paperweight last week.")
+4. **In Phase 4**, write that one chosen angle as the canonical message at the longest applicable length (LinkedIn/Instagram). Then for shorter platforms, derive a length-trimmed version of the SAME message — same hook, same setup, same withheld punchline — just compressed. Don't introduce new content, new angles, or new framings in the shorter versions.
+
+**Banned in this phase:** asking the user "would you like different angles for different platforms?" That escape hatch is the source of the per-channel-variation antipattern. Only honor that request if the user volunteers it explicitly and unprompted.
 
 **Unattended-mode fallback:** If running unattended (e.g. `/loop`, autonomous run, or no human reviewer): pick the strongest single angle from Phase 2 and use the **curiosity-gap** style as default. Apply that one message to all channels with length adaptation only — do NOT auto-vary angles per channel. Proceed without waiting.
 
