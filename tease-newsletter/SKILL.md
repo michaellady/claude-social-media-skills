@@ -57,21 +57,24 @@ Also: **check the Buffer queue for existing posts from this article** (same proc
 
 ### Phase 3 — User Angle Selection
 
+**Default: ONE core message across all channels.** Pick the single strongest angle and write that one tease. Then adapt only the **length** per platform (long for LinkedIn/Instagram, trimmed for FB/Threads/Twitter). Do NOT write per-channel angle variations unless the user explicitly asks for them. This is the most common mistake — the temptation to "use the long-form room on LinkedIn for a different angle" produces a feed where each channel sounds like a different person promoting a different article. One message, length-adapted, is the right default.
+
 Ask:
-- Which angle(s) to use across channels (one per channel, or one for all, or a mix)
+- Which angle to use as the core message across all channels (recommend the strongest from Phase 2)
 - Which image attaches where (default: hero image on the highest-priority channel)
-- Tease style preference: **curiosity-gap** ("Here's what I learned about X — and why it surprised me"), **provocation** ("Most people get X wrong. Here's why."), **personal-story** ("I bought a $200 paperweight last week. Here's what it taught me about AI."), or **mixed**
+- Tease style preference: **curiosity-gap** ("Here's what I learned about X — and why it surprised me"), **provocation** ("Most people get X wrong. Here's why."), **personal-story** ("I bought a $200 paperweight last week. Here's what it taught me about AI.")
+- (Optional) Whether to override the one-message default with per-channel angle variations — only ask if the user has hinted at this; otherwise skip and use the default
 
 **Wait for user input.**
 
-**Unattended-mode fallback:** If running unattended (e.g. `/loop`, autonomous run, or no human reviewer): pick the angle assignment that maximizes diversity across channels (one unique angle per channel where possible) and use the **curiosity-gap** style as default. Proceed without waiting.
+**Unattended-mode fallback:** If running unattended (e.g. `/loop`, autonomous run, or no human reviewer): pick the strongest single angle from Phase 2 and use the **curiosity-gap** style as default. Apply that one message to all channels with length adaptation only — do NOT auto-vary angles per channel. Proceed without waiting.
 
 ### Phase 4 — Compose Teaser Posts
 
 **CRITICAL RULES:**
 1. **No contiguous run of 7+ words may be copied directly from the article.** This is the verbatim rule, applied mechanically: take any 7-word substring from your draft and grep the article for it — must return zero matches. Teasers are original copy that summarize and intrigue.
 2. **Do NOT spoil the punchline.** The reader's payoff for clicking through (or commenting "newsletter") is the actual insight. If the tease gives it away, the CTA fails.
-3. **Stay faithful to the article.** Don't invent claims the article doesn't make. Don't promise insights the article doesn't deliver. Hooks summarize, they don't fabricate.
+3. **Stay faithful to the article.** Don't invent claims the article doesn't make. Don't promise insights the article doesn't deliver. Hooks summarize, they don't fabricate. **Specifically banned:** unverifiable third-party claims like "every leader I respect does X", "everyone in [industry] knows Y", "successful founders all keep Z on their desk". These are appeals-to-authority that the article does not back up — they sound generic and they are factually unverifiable. Stick to first-person observations the writer can stand behind.
 4. **No emoji unless the user requests it.** Match the sibling `promote-newsletter` convention.
 5. **End every post with the exact CTA**, blank line above:
    ```
@@ -145,15 +148,19 @@ Identical to `promote-newsletter` Phase 6:
 - [ ] No emoji (unless the user requested them).
 - [ ] Ends with the exact CTA and the article title in quotes.
 - [ ] **Whole-post character count** (tease body + blank line + CTA) is within the platform's total post budget from the table above.
+- [ ] **No unverifiable third-party claims** ("every leader I respect…", "everyone in [industry] knows…", "successful founders all do X"). First-person only, or claims the article itself supports.
+- [ ] **Same core message as the other channels' posts** (length-adapted, not angle-varied) — unless the user explicitly asked for per-channel variations.
 
 ## Common Mistakes
 
+- **Per-channel angle variations by default.** The temptation to "use the long-form room on LinkedIn for a different angle than Threads" produces a feed where each channel sounds like a different person promoting a different article. **One message, length-adapted, is the right default.** Only vary angles when the user explicitly asks for it.
+- **Unverifiable third-party claims.** Lines like "every leader I respect keeps a token on their desk" sound generic and aren't backed by the article. They're appeals-to-authority that won't survive a reader thinking "no they don't." Stick to first-person observations the writer can stand behind.
 - **Spoiling the punchline.** The reader has no reason to click/comment if the post already delivered the insight. Cut the conclusion sentence.
 - **Vague teases ("interesting thoughts on AI").** Specificity drives clicks. Name the object, the metaphor, the concrete event.
 - **Verbatim drift.** Easy to slip into quoting when paraphrasing. Apply the checklist's "no contiguous run of 7+ words copied" rule mechanically — slide a 7-word window across your draft and grep the article.
 - **Confusing the budget with the hard limit.** A 459-char Facebook post is under the 500 hard limit but over a 402-char total budget. Compute the budget; don't eyeball the hard limit.
 - **Forgetting the queue check.** A teaser angle that overlaps a queued snippet from the same article doubles up the feed. Use the same Buffer queue check pattern as `promote-newsletter`.
-- **One-size-fits-all teases.** A LinkedIn-length tease pasted onto Threads reads like a wall of text; a Threads-length tease on LinkedIn reads thin. Length-match per platform.
+- **One-size-fits-all length.** A LinkedIn-length tease pasted onto Threads reads like a wall of text; a Threads-length tease on LinkedIn reads thin. Length-match per platform — *length only*, not angle.
 
 ## Worked Example
 
