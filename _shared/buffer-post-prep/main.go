@@ -26,6 +26,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -117,7 +118,18 @@ func main() {
 		"text":           *text,
 		"mode":           *mode,
 		"schedulingType": "automatic",
-		"tags":           []string{tagValue},
+	}
+
+	// Buffer's CreatePostInput requires tagIds: [TagId!] (24-char hex IDs),
+	// NOT tag name strings. The earlier "tags": []string{tagValue} field
+	// was silently dropped by Buffer (the schema has no "tags" parameter).
+	// Look up the ID from tag-ids.local.json (gitignored — IDs are
+	// per-organization). If the file is missing or the key isn't in it,
+	// emit the post WITHOUT a tagId and warn on stderr — better to ship
+	// untagged than fail the whole post.
+	tagID := lookupTagID(*formatTag, tagValue)
+	if tagID != "" {
+		args["tagIds"] = []string{tagID}
 	}
 	if *dueAt != "" {
 		args["dueAt"] = *dueAt
@@ -166,4 +178,56 @@ func keys[V any](m map[string]V) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// lookupTagID reads tag-ids.local.json (next to this binary) and returns the
+// 24-char-hex Buffer Tag ID for the given format-tag key. Returns "" if the
+// file is missing, the key isn't there, or the ID doesn't look valid — and
+// warns on stderr. Skill keeps shipping the post (untagged) so closed-loop
+// attribution degrades gracefully instead of blocking publication.
+//
+// Expected file shape (gitignored — IDs are per-organization):
+//
+//	{"verbatim_quote": "abc123...", "teaser": "def456...", ...}
+//
+// Setup once: create the format:* tags in Buffer's web UI, then look them up
+// via mcp__buffer__execute_query with `posts {... tags { id name } ...}` on
+// any post that has them, and paste the IDs here. See
+// _shared/buffer-post-prep/tag-ids.example.json.
+func lookupTagID(formatKey, tagValue string) string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	resolved, err := filepath.EvalSymlinks(exe)
+	if err != nil {
+		return ""
+	}
+	cfgPath := filepath.Join(filepath.Dir(resolved), "tag-ids.local.json")
+	raw, err := os.ReadFile(cfgPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr,
+			"buffer-post-prep: WARN no %s — closed-loop attribution will be empty for tag %q. See tag-ids.example.json for setup.\n",
+			cfgPath, tagValue)
+		return ""
+	}
+	var ids map[string]string
+	if err := json.Unmarshal(raw, &ids); err != nil {
+		fmt.Fprintf(os.Stderr, "buffer-post-prep: WARN failed to parse %s: %v\n", cfgPath, err)
+		return ""
+	}
+	id, ok := ids[formatKey]
+	if !ok || id == "" {
+		fmt.Fprintf(os.Stderr,
+			"buffer-post-prep: WARN no Tag ID for format key %q in %s — post will ship untagged.\n",
+			formatKey, cfgPath)
+		return ""
+	}
+	if !channelIDRe.MatchString(id) {
+		fmt.Fprintf(os.Stderr,
+			"buffer-post-prep: WARN Tag ID for %q (%q) is not 24 hex chars — Buffer will reject. Skipping tag.\n",
+			formatKey, id)
+		return ""
+	}
+	return id
 }

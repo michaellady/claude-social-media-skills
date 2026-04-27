@@ -1,0 +1,9 @@
+{
+  "_comment": "Map format-tag KEY (matches _shared/format_tags.json keys) → Buffer Tag ID (24 hex chars). Copy this file to tag-ids.local.json (gitignored) and replace the placeholders with real IDs from your Buffer org. See README of this directory.",
+
+  "verbatim_quote": "REPLACE_WITH_24_HEX_CHARS",
+  "teaser": "REPLACE_WITH_24_HEX_CHARS",
+  "carousel": "REPLACE_WITH_24_HEX_CHARS",
+  "link_share": "REPLACE_WITH_24_HEX_CHARS",
+  "batch_summary": "REPLACE_WITH_24_HEX_CHARS"
+}

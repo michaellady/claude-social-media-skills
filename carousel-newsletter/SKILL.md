@@ -204,7 +204,7 @@ All captions use the canonical CTA — generate via `_shared/cta.sh "<Article Ti
 | Facebook | `{ facebook: { type: "post" } }` | All 10 PNG URLs | Same as IG. |
 | Threads | `{ threads: { type: "post" } }` | All 10 PNG URLs (max 20) | Same as IG. |
 
-`mode: "addToQueue"`, `schedulingType: "automatic"`, **`tags: ["format:carousel"]`** (required for closed-loop measurement — `buffer-stats` uses this tag to compute per-format engagement).
+`mode: "addToQueue"`, `schedulingType: "automatic"`, **`tagIds: [<format:carousel Tag ID>]`** (required for closed-loop measurement — `buffer-stats` uses this tag to compute per-format engagement). Buffer's `CreatePostInput` schema has `tagIds: [TagId!]` (24-char hex MongoDB ObjectIds) — NOT a `tags` field. Tag *name* strings are silently dropped if you send them as `tags`. Look up the carousel Tag ID from `_shared/buffer-post-prep/tag-ids.local.json` (one-time setup — see [`_shared/buffer-post-prep/README.md`](../_shared/buffer-post-prep/README.md)) and pass it as `tagIds: [<id>]`. If the file is missing or the key isn't there, ship the post untagged and warn the user — `audit-buffer-queue` will catch it next week.
 
 **Important — `instagram.type` does NOT accept `carousel` as of 2026-04-26.** The Buffer MCP API rejects it with `"Invalid option: expected one of 'story'|'reel'|'post'"`. Use `instagram.type: "post"` and attach all 10 image URLs in `assets.images` — Instagram automatically renders multi-image posts as a carousel. Earlier skill claim about `PostType.carousel` was inaccurate (that's a top-level `PostType` enum but not valid for `InstagramPostMetadataInput.type`).
 

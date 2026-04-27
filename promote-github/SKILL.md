@@ -371,7 +371,7 @@ For each approved post, build args via `_shared/buffer-post-prep/buffer-post-pre
 - Skips disconnected/locked/startPage channels
 - Skips channels below `min_followers_to_promote = 50`
 - Validates the post text against the platform char limit
-- Attaches the appropriate `tags: ["format:link-share"]` or `tags: ["format:batch-summary"]`
+- Attaches the appropriate `tagIds: [<format:link-share Tag ID>]` or `tagIds: [<format:batch-summary Tag ID>]` from `_shared/buffer-post-prep/tag-ids.local.json` (Buffer's schema requires Tag IDs, not tag-name strings — `tags: [...]` is silently dropped). One-time setup in [`_shared/buffer-post-prep/README.md`](../_shared/buffer-post-prep/README.md).
 - Sets platform-specific metadata correctly
 
 **Rate limiting:** Buffer's API enforces rate limits (HTTP 429). When rate limited:
