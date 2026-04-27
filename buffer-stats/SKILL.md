@@ -33,6 +33,7 @@ Fields:
 - `delta_window_days` — compare against the newest snapshot at least this old (7).
 - `stale_snapshot_days` — flag snapshots older than this when `/flywheel` consumes them (14).
 - `analyze_base_url` / `publish_base_url` — Buffer surface URLs (unlikely to change).
+- `insights_base_url` — `https://publish.buffer.com/insights` (the Beta cross-channel summary view; richer than analyze.buffer.com for most "how have my posts done" questions).
 
 Load config at the start of every run:
 
@@ -72,9 +73,57 @@ The Buffer MCP is always available in this project — no browser needed, no coo
 4. **Organization-level flags**
    - Paused queues, posting goals `AtRisk`, channels with empty queues, channels over weekly limit.
 
-### Phase 2 — Engagement data (via gstack Analyze scrape)
+### Phase 2 — Engagement data
 
 Skip this phase entirely when invoked as `/buffer-stats operational`.
+
+**Buffer exposes engagement data on TWO surfaces.** The skill scrapes both for complementary views (confirmed 2026-04-27):
+
+1. **`https://publish.buffer.com/insights`** (Beta) — **cross-channel aggregated.** Covers ALL connected channels (LinkedIn personal, both Threads accounts, etc.) that analyze.buffer.com doesn't surface. Top posts ranked by reactions/comments. Best single view for "how have my posts done overall."
+2. **`https://analyze.buffer.com`** — per-channel deep dive. Covers FB pages, IG business, LinkedIn pages, Twitter (NOT LinkedIn personal, NOT Threads). Top posts ranked by impressions. Best for per-channel engagement-rate breakdown.
+
+Run Insights first (faster, better cross-channel summary), then Analyze for the channels Insights doesn't fully break out per-platform engagement-rate for.
+
+#### Phase 2a — publish.buffer.com/insights (cross-channel summary)
+
+```bash
+B=~/.claude/skills/gstack/browse/dist/browse
+$B goto https://publish.buffer.com/insights
+sleep 4
+$B js "
+const main = document.querySelector('main, [role=main]') || document.body;
+const text = main.innerText;
+// Top section: Posts / Followers / Reactions / Comments with deltas
+const summary = {};
+const summaryRegex = /(Posts|Followers|Reactions|Comments)\\s+(\\S+)\\s+(Up|Down)\\s+([\\d.]+%|\\+\\d+)/g;
+let m;
+while ((m = summaryRegex.exec(text))) {
+  summary[m[1]] = { value: m[2], direction: m[3].toLowerCase(), delta: m[4] };
+}
+({ summary, mainTextSnippet: text.slice(0, 600) })
+"
+```
+
+Date presets at publish.buffer.com/insights: **Last 7 days, Last 30 days, Month to date, Last month, Custom**. Default is "Last 7 days" — change via the picker button (text matches the current selection, e.g. "Last 7 days" → click → option list appears).
+
+Top-5-posts extraction from Insights:
+```bash
+$B js "
+const text = (document.querySelector('main, [role=main]') || document.body).innerText;
+// Posts appear as '#N Post' / 'X Reactions' / time / text
+const postBlockRegex = /#(\\d+) Post\\s+(\\d+) Reactions\\s+(\\d{1,2}:\\d{2}\\s*[AP]M)\\s+([\\s\\S]+?)(?=View comments|Duplicate post|#\\d+ Post|$)/g;
+const posts = [];
+let m;
+while ((m = postBlockRegex.exec(text))) {
+  posts.push({ rank: parseInt(m[1]), reactions: parseInt(m[2]), time: m[3], snippet: m[4].trim().slice(0, 200) });
+}
+posts
+"
+```
+
+The Insights surface is in **Beta** (banner: "Looking for more metrics and reports? Go to Analyze"). Treat it as the primary cross-channel view but expect occasional UI changes.
+
+#### Phase 2b — analyze.buffer.com (per-channel deep dive)
 
 **Buffer Analyze lives at `https://analyze.buffer.com`** (separate subdomain from `publish.buffer.com`). The dashboard is client-rendered React; selectors below are confirmed as of 2026-04-20.
 
@@ -367,7 +416,7 @@ Text-pattern extractors (finding `<li>` by `innerText` shape) are more resilient
 
 ## Known issues / robustness notes
 
-- **Subdomain cookie gap.** Cookies imported for `buffer.com` do NOT automatically authenticate `analyze.buffer.com`. Users almost always need one manual login on first run. After that, the session persists.
+- **Subdomain cookie gap.** ~~Cookies imported for `buffer.com` do NOT automatically authenticate `analyze.buffer.com`.~~ **Updated 2026-04-27:** cookie import for `buffer.com` DOES carry to `analyze.buffer.com` in current Buffer setup — confirmed working via `$B cookie-import-browser chrome buffer.com` then nav to `analyze.buffer.com` succeeds without redirect-to-login. Try cookie import first; only fall back to manual handoff login if the cookie path actually fails.
 - **No "Last 7 days" preset.** Buffer Analyze only offers This/Last month, This/Last week, and Custom. The skill uses **Last week** for a 7-day window (complete Monday-Sunday). "This week" is broken on Mondays (0 days of data). For arbitrary windows, the skill falls back to Custom — implementation note below.
 - **Instagram requires Facebook Business link.** If the IG channel isn't linked to a Facebook Business Page, Buffer shows an "Unlock Instagram Analytics" banner and no engagement data. The skill detects the banner and flags `engagement: { unavailable: true, reason: "ig_not_linked" }` in the JSON — doesn't fail the snapshot.
 - **Facebook Pages impressions.** Banner: "Learn why impressions are not available for Facebook Pages." For affected channels, the Impressions field is missing entirely. Parse as `null`, not `0`.
