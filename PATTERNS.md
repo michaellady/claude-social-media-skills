@@ -6,9 +6,12 @@ When a skill needs one of these patterns, it should reference the relevant secti
 
 ## Why this isn't code
 
-Each pattern below requires the LLM to make a judgment call that's not safely encodeable in a binary. Per [the Primitive Test](https://github.com/michaellady/claude-social-media-skills/blob/main/PATTERNS.md#why-this-isnt-code) — if a smarter model would do it differently, it's cognition; it belongs in the prompt.
+Each pattern below requires the LLM to make a judgment call that's not safely encodeable in a binary. Per **the Primitive Test** (three necessary conditions: atomicity / Bitter Lesson / ZFC):
+- **Atomicity** — Can two callers race? If not, no need for code-level coordination.
+- **Bitter Lesson** — Does a smarter model still need this exact thing? If yes, it's plumbing (primitive). If a smarter model would do it differently, it's cognition (consumer layer / prompt).
+- **ZFC** — Does any line of the implementation contain a judgment call (`if stuck then X`)? If yes, the decision belongs in the prompt, not the code.
 
-The transport layer (in `_shared/`) handles the deterministic plumbing those decisions produce.
+The transport layer (in [`_shared/`](./_shared/)) handles the deterministic plumbing those decisions produce. The patterns below stay in prompts because they all fail one or more of the three conditions.
 
 ---
 
@@ -37,6 +40,26 @@ For each draft, return:
 
 Return only the JSON: {"verdict": [...], "issues": [...]} per draft.
 ```
+
+### How to invoke
+
+The reviewer MUST be a fresh subagent with no context from the compose phase. Two equivalent paths:
+
+**Option A (recommended): the standalone `/adversarial-review` skill** (in `~/dev/mike-skills/adversarial-review/`). It accepts SOURCE + RULES + DRAFTS as inputs and returns the JSON verdict. Reusable across projects.
+
+```
+Use the Skill tool: Skill name "adversarial-review", args = JSON containing
+{source_label, source_content, skill_name, artifact_name, rules_list, issue_guidance, drafts}
+```
+
+**Option B (inline): use the Task / Agent tool with a `general-purpose` subagent.** Construct the prompt by substituting all `<<...>>` placeholders in the scaffold above, then send it as the agent's task input.
+
+```
+Tool: Agent (subagent_type: general-purpose)
+Prompt: <the assembled scaffold with placeholders filled in>
+```
+
+Both paths return the same JSON shape. Parse it; if all verdicts are PASS, proceed to Phase 5. If any FAIL, fix the cited issues and re-run — never surface FAIL items to the user.
 
 ### Per-skill specifics
 
@@ -165,15 +188,19 @@ Outputs validated JSON ready to pass as `mcp__buffer__create_post` args. Exits n
 
 ## Pattern: Per-skill format tag
 
-Each compose skill always uses ONE format tag (the skill's identity is one-to-one with its tag value). When the skill calls `_shared/buffer-post-prep`:
+Each compose skill always uses ONE format tag (the skill's identity is one-to-one with its tag value). When the skill calls `_shared/buffer-post-prep`, pass the **underscored key** as `--format-tag`. The binary maps it to the hyphenated `format:<name>` Buffer tag value:
 
-| Skill | `--format-tag` value |
-|---|---|
-| promote-newsletter | `verbatim_quote` |
-| tease-newsletter | `teaser` |
-| carousel-newsletter | `carousel` |
-| promote-github (individual posts) | `link-share` |
-| promote-github (batched) | `batch-summary` |
-| crosspost-newsletter (LinkedIn pulse + accompanying post) | `long-form-pulse` |
+| Skill | `--format-tag` value (underscored, what the binary expects) | Resulting Buffer tag |
+|---|---|---|
+| promote-newsletter | `verbatim_quote` | `format:verbatim-quote` |
+| tease-newsletter | `teaser` | `format:teaser` |
+| carousel-newsletter | `carousel` | `format:carousel` |
+| promote-github (individual posts) | `link_share` | `format:link-share` |
+| promote-github (batched) | `batch_summary` | `format:batch-summary` |
+| crosspost-newsletter (companion Buffer announcement, if any) | `long_form_pulse` | `format:long-form-pulse` |
 
-(Carousel posts use the `carousel-newsletter` skill's flow but bypass `buffer-post-prep` because they need 10-image asset arrays — different shape. Tag is still `format:carousel`, applied via direct `mcp__buffer__create_post` call with `tags: ["format:carousel"]`.)
+The keys match `_shared/format_tags.json` exactly. If you pass a hyphenated form (e.g. `link-share`), `buffer-post-prep` will fail with "invalid --format-tag".
+
+**Two exceptions to the binary path:**
+- **Carousel posts** bypass `buffer-post-prep` because they need 10-image asset arrays — different shape. Tag is still `format:carousel`, applied via direct `mcp__buffer__create_post` call with `tags: ["format:carousel"]`.
+- **crosspost-newsletter** publishes directly to each platform's native editor (LinkedIn pulse, Substack, Medium, HN, Reddit) — none of these go through Buffer. The `format:long-form-pulse` tag is only applied if a future skill schedules a companion Buffer announcement post for the published article. Closed-loop attribution for the native-published versions instead comes from `linkedin-stats` (LinkedIn pulse) and platform-specific dashboards (Medium, HN, Reddit — not yet scraped).

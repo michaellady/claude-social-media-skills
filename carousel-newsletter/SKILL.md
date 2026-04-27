@@ -179,10 +179,12 @@ Raw URL: `https://raw.githubusercontent.com/<owner>/<repo>/main/generated/<YYYY-
 
 Reuse patterns from `../promote-newsletter/SKILL.md`. Filter `list_channels` to `isDisconnected=false AND isLocked=false`. Per-channel:
 
+All captions use the canonical CTA — generate via `_shared/cta.sh "<Article Title>"` and concatenate. Do NOT add a trailing period or other punctuation; PATTERNS.md warns that ad-hoc edits to the CTA risk breaking the Manychat trigger silently.
+
 | Platform | `metadata` | `assets.images` | Caption |
 |---|---|---|---|
-| Instagram | `{ instagram: { type: "post", shouldShareToFeed: true } }` | All 10 PNG URLs (multi-image post auto-creates carousel when ≥2 images attached) | `"<strongest quote>"\n\nComment "newsletter" to get my latest post, "<Title>".` |
-| LinkedIn | `{ linkedin: {} }` | All 10 PNG URLs | Same as IG. |
+| Instagram | `{ instagram: { type: "post", shouldShareToFeed: true } }` | All 10 PNG URLs (multi-image post auto-creates carousel when ≥2 images attached) | `"<strongest quote>"\n\n` + canonical CTA from `_shared/cta.sh` |
+| LinkedIn | (no metadata required) | All 10 PNG URLs | Same as IG. |
 | Facebook | `{ facebook: { type: "post" } }` | All 10 PNG URLs | Same as IG. |
 | Threads | `{ threads: { type: "post" } }` | All 10 PNG URLs (max 20) | Same as IG. |
 

@@ -38,9 +38,11 @@ fi
 is_logged_in() {
   "$B" goto "$URL" >/dev/null 2>&1
   sleep 3
-  # Generic check: if the URL contains '/login' or 'session_redirect=', we're not logged in
+  # Generic check: if the URL path starts with /login, /sign-in, /uas/login, or
+  # contains session_redirect=, we're not logged in.
+  # Use anchored path matching to avoid false positives on URLs like ?ref=login_modal.
   CURRENT_URL=$("$B" url 2>/dev/null | head -1)
-  if echo "$CURRENT_URL" | grep -qE '/login|session_redirect=|/sign-in|/uas/login'; then
+  if echo "$CURRENT_URL" | grep -qE '://[^/]+/(login|sign-in|uas/login)([/?#]|$)|[?&]session_redirect='; then
     return 1
   fi
   return 0
@@ -66,6 +68,11 @@ for i in $(seq 1 60); do
   fi
   sleep 1
 done
+
+# Reap the picker process so we don't leave a zombie if it exited normally.
+# `wait` returns the picker's exit code but we don't use it — the cookie picker
+# always exits 0 on close.
+wait "$PICKER_PID" 2>/dev/null || true
 
 # Re-check auth
 if is_logged_in; then

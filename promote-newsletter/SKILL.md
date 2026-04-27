@@ -144,7 +144,7 @@ Post (247/280 chars):
 ---
 [snippet text]
 
-Comment "newsletter" to get a link to my latest post, "<Article Title>"
+Comment "newsletter" to get my latest post, "<Article Title>"
 ---
 Image: [image URL]
 ```
@@ -171,8 +171,10 @@ The skill's cognition for this phase is choosing WHICH approved posts go to whic
 - Validates the post text against the platform char limit
 - Attaches `tags: ["format:verbatim-quote"]`
 - Sets platform-specific metadata correctly
-4. **Rate limiting:** Buffer's API enforces rate limits (HTTP 429). When scheduling many posts (e.g. multiple articles in one session), you will hit this after ~40-50 rapid `create_post` calls. When rate limited:
-   - Stop immediately — do not retry in a loop.
-   - Save all remaining posts (snippet text, CTA, channel IDs, image URLs, Twitter-trimmed variants) to `remaining-posts.md` in the project directory so they can be scheduled in a later session.
-   - Report to the user which posts succeeded and which are saved for later.
-5. Report results per channel: success or error message.
+
+**Rate limiting:** Buffer's API enforces rate limits (HTTP 429). When scheduling many posts (e.g. multiple articles in one session), you will hit this after ~40-50 rapid `create_post` calls. When rate limited:
+- Stop immediately — do not retry in a loop.
+- Save all remaining posts (snippet text, CTA, channel IDs, image URLs, Twitter-trimmed variants) to `remaining-posts.md` in the project directory so they can be scheduled in a later session.
+- Report to the user which posts succeeded and which are saved for later.
+
+Report results per channel: success or error message.

@@ -310,13 +310,9 @@ For each approved post, build args via `_shared/buffer-post-prep/buffer-post-pre
 - Attaches the appropriate `tags: ["format:link-share"]` or `tags: ["format:batch-summary"]`
 - Sets platform-specific metadata correctly
 
-Legacy create_post details (kept for reference; transport layer handles them):
-     - **Facebook**: `metadata.facebook.type: "post"`
-     - **Instagram**: `metadata.instagram.type: "post"`, `metadata.instagram.shouldShareToFeed: true`
-     - **Pinterest**: `metadata.pinterest.boardServiceId` (get from `get_channel` response, under `metadata.boards[].serviceId`)
-     - **LinkedIn, Twitter, Threads, Bluesky, Mastodon**: no extra metadata required
-5. **Rate limiting:** Buffer's API enforces rate limits (HTTP 429). When rate limited:
-   - Stop immediately — do not retry in a loop.
-   - Save all remaining posts (post text, channel IDs, image URLs if any) to `remaining-posts.md` in the project directory so they can be posted in a later session.
-   - Report to the user which posts succeeded and which are saved for later.
-6. Report results per channel: success or error message.
+**Rate limiting:** Buffer's API enforces rate limits (HTTP 429). When rate limited:
+- Stop immediately — do not retry in a loop.
+- Save all remaining posts (post text, channel IDs, image URLs if any) to `remaining-posts.md` in the project directory so they can be posted in a later session.
+- Report to the user which posts succeeded and which are saved for later.
+
+Report results per channel: success or error message.

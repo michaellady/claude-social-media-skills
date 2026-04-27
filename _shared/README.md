@@ -27,7 +27,7 @@ Built binaries are gitignored — each user builds locally. The Go source is the
 
 ## Why these are pure transport
 
-Each helper passes [The Primitive Test](https://github.com/michaellady/claude-social-media-skills/blob/main/PATTERNS.md#why-this-isnt-code):
+Each helper passes the Primitive Test (see [PATTERNS.md § Why this isn't code](../PATTERNS.md#why-this-isnt-code)):
 
 - **Atomicity:** stateless; safe to call concurrently.
 - **Bitter Lesson:** a smarter model still needs validated JSON shapes and deterministic queue scans.

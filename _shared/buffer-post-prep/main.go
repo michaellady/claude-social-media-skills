@@ -10,7 +10,7 @@
 //	  --channel-id <24-hex-chars> \
 //	  --service <linkedin|facebook|instagram|threads|twitter|bluesky|mastodon|pinterest> \
 //	  --text "<post text including CTA>" \
-//	  --format-tag <verbatim_quote|teaser|carousel|link-share|batch-summary|long-form-pulse> \
+//	  --format-tag <verbatim_quote|teaser|carousel|link_share|batch_summary|long_form_pulse> \
 //	  [--image-url "<url>"] \
 //	  [--image-alt "<alt text>"] \
 //	  [--mode addToQueue|shareNow|customScheduled] \
@@ -43,14 +43,16 @@ var platformLimits = map[string]int{
 	"linkedin":  3000,
 }
 
-// Valid format tag values (matches _shared/format_tags.json).
+// Valid format tag values (matches _shared/format_tags.json keys exactly).
+// CALLER passes the underscored key (e.g. verbatim_quote); the binary maps it
+// to the hyphenated Buffer tag value (e.g. format:verbatim-quote).
 var validFormatTags = map[string]string{
 	"verbatim_quote":  "format:verbatim-quote",
 	"teaser":          "format:teaser",
 	"carousel":        "format:carousel",
-	"link-share":      "format:link-share",
-	"batch-summary":   "format:batch-summary",
-	"long-form-pulse": "format:long-form-pulse",
+	"link_share":      "format:link-share",
+	"batch_summary":   "format:batch-summary",
+	"long_form_pulse": "format:long-form-pulse",
 }
 
 var channelIDRe = regexp.MustCompile(`^[a-f0-9]{24}$`)
@@ -63,7 +65,7 @@ func main() {
 		formatTag      = flag.String("format-tag", "", "format tag key (see _shared/format_tags.json)")
 		imageURL       = flag.String("image-url", "", "optional image URL")
 		imageAlt       = flag.String("image-alt", "", "optional image alt text (required if image-url set)")
-		mode           = flag.String("mode", "addToQueue", "scheduling mode")
+		mode           = flag.String("mode", "addToQueue", "scheduling mode (addToQueue|shareNow|shareNext|customScheduled|recommendedTime)")
 		dueAt          = flag.String("due-at", "", "ISO 8601 dueAt (required if mode=customScheduled)")
 		pinterestBoard = flag.String("pinterest-board-id", "", "Pinterest board service ID (required for service=pinterest)")
 	)
@@ -99,6 +101,9 @@ func main() {
 	}
 	if *service == "pinterest" && *pinterestBoard == "" {
 		fail(65, "pinterest posts require --pinterest-board-id")
+	}
+	if *service == "pinterest" && *imageURL == "" {
+		fail(65, "pinterest posts require --image-url (pins need an image)")
 	}
 	validModes := map[string]bool{"addToQueue": true, "shareNow": true, "shareNext": true, "customScheduled": true, "recommendedTime": true}
 	if !validModes[*mode] {

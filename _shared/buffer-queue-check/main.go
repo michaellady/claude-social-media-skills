@@ -83,13 +83,14 @@ func main() {
 	if err != nil {
 		fail(65, "read stdin: "+err.Error())
 	}
-	if len(rawIn) == 0 {
-		fail(64, "empty stdin (expected mcp__buffer__list_posts response JSON)")
-	}
 
 	var resp listPostsResponse
-	if err := json.Unmarshal(rawIn, &resp); err != nil {
-		fail(65, "parse stdin JSON: "+err.Error())
+	// Empty stdin = no posts to scan (paused queue / brand-new account).
+	// Treat as a clean no-match result rather than an error.
+	if len(rawIn) > 0 {
+		if err := json.Unmarshal(rawIn, &resp); err != nil {
+			fail(65, "parse stdin JSON: "+err.Error())
+		}
 	}
 
 	out := output{

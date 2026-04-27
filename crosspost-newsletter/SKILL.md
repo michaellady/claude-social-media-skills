@@ -1132,6 +1132,20 @@ Per-platform RULES_LIST + ISSUE_GUIDANCE:
 
 This is what catches LinkedIn accompanying posts saying "second of these" when the article doesn't say that — happened on the 2026-04-26 Tokens From Our Past run, caught manually by the user. Phase 4.5 prevents that next time.
 
+### Closed-loop attribution note (no Buffer tag for this skill)
+
+Unlike the other compose skills, `crosspost-newsletter` publishes directly to each platform's native editor (LinkedIn pulse, Substack, Medium, HN, Reddit) — **none of these go through Buffer**, so the `format:long-form-pulse` tag is never applied at compose time the way the other skills tag posts.
+
+Closed-loop attribution for these submissions instead comes from:
+- **LinkedIn pulse + accompanying post** → `linkedin-stats` Phase 2 (the `/analytics/creator/content` URL discovered 2026-04-27 — top posts table includes pulse posts directly)
+- **Medium articles** → Medium's own dashboard (no skill scrapes this yet; future enhancement)
+- **HN submissions** → `news.ycombinator.com/user?id=<handle>` and item-specific URLs (no skill scrapes; manual inspection)
+- **Reddit submissions** → `reddit.com/user/<handle>/submitted/` per-sub karma (no skill scrapes; manual inspection)
+
+For the closed loop, `linkedin-stats` Phase 5 (when added) should aggregate LinkedIn pulse post engagement as `format:long-form-pulse` equivalent. The `format_tags.json` entry for `long_form_pulse` documents this for future skills that may pre-tag a companion Buffer announcement post.
+
+**TODO:** when a future skill schedules a Buffer announcement post for a published LinkedIn pulse (e.g. "I just published this article — read it here: [pulse URL]"), that post SHOULD be tagged `format:long-form-pulse` via `_shared/buffer-post-prep --format-tag long_form_pulse`. The current skill doesn't do this.
+
 ### Phase 5 — User Review (per platform)
 
 After preparing each platform, show a screenshot and ask. The template differs by content mode:
