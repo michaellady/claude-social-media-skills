@@ -1361,6 +1361,33 @@ The Claude in Chrome extension refuses to navigate to `reddit.com` with the mess
 ### Reddit gstack handoff + resume clears all form fields
 When you do `$B handoff "..."` on a Reddit submit page and then `$B resume`, all form fields (Title, Link URL, Body text) and any selected flair get wiped. This is different from the flair-modal clearing issue — the handoff itself triggers a soft page refresh. **Workaround:** after resuming from a Reddit handoff, re-fill every field from scratch (title, URL, body, post flair, user tag) as if starting over. Don't assume anything survived.
 
+### Reddit flair modal — minimum-friction flow (confirmed 2026-04-26)
+After a real run on r/vibecoding (no flair required) and r/ClaudeAI (Philosophy flair), the friction was 80% from refs going stale during probing. Here's the minimum-friction flow:
+
+1. **Switch to Link tab first** — `$B click @e<Link-tab-ref>`. Confirm with snapshot that `[tab] "Link" [selected]`.
+2. **Snapshot once** to get all 4 critical refs in one read: Title (`@e18`), Add-flair (`@e19`), Link-URL (`@e20`), Body (`@e21`), Post (`@e36`/`@e37`). Don't snapshot again until after flair commit; refs stay stable while you're in the form.
+3. **Fill all 3 form fields BEFORE opening flair** — title via `$B click @e<title> + $B type "..."`, then URL the same way, then body. Verify via JS that body's `[contenteditable="true"]` has the right `textContent.length`.
+4. **Open flair modal** — `$B click @e<add-flair-ref>`. Snapshot fresh — flair radios get refs starting around `@e22+`.
+5. **If your target flair isn't in the first 3 visible options, click "View all flairs"** — that exposes the full list. r/ClaudeAI as of 2026: No flair / Question / Claude Code / Coding / Vibe Coding / Custom agents / Built with Claude / Praise / Meetup / Productivity / Enterprise / NOT about coding / Writing / **Philosophy** / News / Bug / Other / Comparison / Suggestion / Corporate / MCP / Humor / Feedback / Promotion. For reflective essays about AI/reskilling: **Philosophy** is the right pick.
+6. **Click your flair radio**, then **find the Add button via shadow-DOM walk + coordinate click** — `@e<Add-ref>` from the snapshot consistently gets "Selector matched multiple elements" errors because Reddit's modal Web Component has duplicate Add buttons in shadow trees. Use:
+   ```js
+   let found = null;
+   const walk = (root) => {
+     if (found || !root.querySelectorAll) return;
+     root.querySelectorAll('button').forEach(b => {
+       if (!found && b.textContent.trim() === 'Add' && b.offsetParent !== null) found = b;
+     });
+     root.querySelectorAll('*').forEach(el => { if (el.shadowRoot) walk(el.shadowRoot); });
+   };
+   walk(document);
+   const r = found?.getBoundingClientRect();
+   ({ x: Math.round(r.x + r.width/2), y: Math.round(r.y + r.height/2) })
+   ```
+   Then `$B click <x> <y>`.
+7. **After Add commits, all 3 fields persist** (contradicts older skill claim about modal-close clearing fields — that was true for an earlier Reddit UI). Verify: snapshot should show Title and Link URL with their values intact, and a "Clear Flair" button visible (deep-search via shadow walk for `Clear Flair` text). Body's `textContent` should still match its 300+ char value.
+8. **Click Post** — `$B click @e<Post-ref>`. ⚠️ **Refs renumbered after flair commit** — re-snapshot before clicking Post; the Post button's ref will have shifted (e.g. `@e36` → `@e67`).
+9. **CAPTCHA handoff** — Reddit triggers CAPTCHA on roughly half of submissions for accounts with low karma or recent posting activity. The skill cannot solve CAPTCHAs (Claude in Chrome safety rules + Reddit ToS). When CAPTCHA detected (`document.querySelector('iframe[src*="captcha"], [class*="captcha" i]')` is non-null), `$B handoff "Please solve the CAPTCHA and click Post"` and wait. ~30 sec on user end.
+
 ### Reddit flair modal lives in shadow DOM and clears form state
 Reddit's flair picker is inside `<r-post-flairs-modal>` which has a shadow root. Finding the "Add" button requires a recursive shadow-DOM walk:
 ```javascript
