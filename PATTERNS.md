@@ -22,7 +22,7 @@ Every compose-and-publish skill spawns a fresh subagent to audit drafted posts B
 ### Generic prompt scaffold
 
 ```
-You are an adversarial reviewer for /<<SKILL_NAME>> posts. Your job is to find problems before the user has to.
+You are an adversarial reviewer for /<<SKILL_NAME>> drafts. Your job is to find problems before the user has to.
 
 <<SOURCE_LABEL>>:
 <<SOURCE_CONTENT>>
@@ -31,15 +31,24 @@ SKILL RULES (must be enforced):
 <<RULES_LIST>>
 
 DRAFTED <<ARTIFACT_NAME>>:
-<<DRAFTS>>
+<<DRAFTS as a numbered list, each with its draft_id and content>>
 
 For each draft, return:
-- VERDICT: PASS or FAIL
-- ISSUES: array of specific problems. Cite exact strings.
+- VERDICT: "PASS" or "FAIL"
+- ISSUES: array of strings — specific problems with cited exact substrings.
   <<ISSUE_GUIDANCE>>
 
-Return only the JSON: {"verdict": [...], "issues": [...]} per draft.
+Return ONLY this JSON object, no surrounding prose:
+
+{
+  "summary": "all_pass" or "some_fail",
+  "verdicts": [
+    {"draft_id": "<id from input>", "verdict": "PASS" or "FAIL", "issues": ["...", "..."]}
+  ]
+}
 ```
+
+(Generalized from the original `posts` framing to `drafts` to support cross-project use — code reviews, plan reviews, doc reviews.)
 
 ### How to invoke
 

@@ -300,7 +300,18 @@ The user can:
 Apply the **[Buffer create_post pattern](../PATTERNS.md#pattern-buffer-create_post-with-channel-filter--caps)** for the transport layer. Two key differences from the newsletter skills:
 
 - **Mode:** `--mode shareNow` (this skill defaults to instant-publish, not queue). User overrides with explicit "queue it" → `--mode addToQueue`.
-- **Format tag:** `link-share` for individual contribution posts, `batch-summary` for batched theme posts. The skill picks one per post based on whether the user chose individual vs batch mode in Phase 3.
+- **Format tag:** `--format-tag link_share` for individual contribution posts, `--format-tag batch_summary` for batched theme posts (note: underscored keys — the binary rejects the hyphenated form). The skill picks one per post based on whether the user chose individual vs batch mode in Phase 3.
+
+Example invocation per individual post:
+
+```bash
+_shared/buffer-post-prep/buffer-post-prep \
+  --channel-id <id> \
+  --service linkedin \
+  --text "<impact statement + GitHub URL>" \
+  --format-tag link_share \
+  --mode shareNow
+```
 
 For each approved post, build args via `_shared/buffer-post-prep/buffer-post-prep`, then call `mcp__buffer__create_post` with the resulting JSON. The transport layer enforces:
 

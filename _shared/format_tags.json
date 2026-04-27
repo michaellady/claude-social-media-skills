@@ -28,8 +28,8 @@
     },
     "long_form_pulse": {
       "value": "format:long-form-pulse",
-      "produced_by": "crosspost-newsletter",
-      "description": "LinkedIn native article + accompanying post that links into it."
+      "produced_by": "(future-reserved — no skill currently produces this)",
+      "description": "Reserved for a future skill that schedules a Buffer companion announcement post for a published LinkedIn pulse article. crosspost-newsletter publishes pulse articles directly to LinkedIn (not via Buffer), so its outputs are NOT tagged with this; closed-loop attribution for native pulse posts comes from linkedin-stats."
     }
   }
 }

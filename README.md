@@ -4,7 +4,7 @@ Claude Code skills for promoting and syndicating your work on social media.
 
 These skills are designed as a **closed loop** — every post is tagged at compose time so engagement can be attributed back, and the analytics skills auto-generate skill-config recommendations from each week's data. See **[ARCHITECTURE.md](ARCHITECTURE.md)** for the design philosophy and **[PATTERNS.md](PATTERNS.md)** for cross-skill cognition patterns (adversarial review, queue overlap check, CTA convention, etc).
 
-Pure-transport helpers live in [`_shared/`](./_shared/) (Go binaries + shell scripts; no cognition).
+Pure-transport helpers live in [`_shared/`](./_shared/) (Go binaries + shell scripts; no cognition). The decision framework for what belongs in code vs prompts is in [PRIMITIVE-TEST.md](PRIMITIVE-TEST.md).
 
 ## Skills
 

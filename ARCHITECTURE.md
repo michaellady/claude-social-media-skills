@@ -32,7 +32,7 @@ User accepts → SKILL.md edits committed → next batch better-targeted
 | [`tease-newsletter`](tease-newsletter/SKILL.md) | Original teaser hooks per channel (no verbatim drift) | `format:teaser` |
 | [`carousel-newsletter`](carousel-newsletter/SKILL.md) | 10-slide illustrated carousel with Gemini-generated art | `format:carousel` |
 | [`promote-github`](promote-github/SKILL.md) | Impact-framed posts about GitHub contributions | `format:link-share` (individual) or `format:batch-summary` (batched) |
-| [`crosspost-newsletter`](crosspost-newsletter/SKILL.md) | Full-article syndication to LinkedIn pulse, Substack, Medium + link submissions to HN, Reddit | `format:long-form-pulse` (the LinkedIn pulse + accompanying post) |
+| [`crosspost-newsletter`](crosspost-newsletter/SKILL.md) | Full-article syndication to LinkedIn pulse, Substack, Medium + link submissions to HN, Reddit | (none — publishes directly to platform native editors, not Buffer; closed-loop attribution comes from `linkedin-stats` for the LinkedIn pulse + accompanying post) |
 
 Every compose-and-publish skill has these required phases:
 - **Phase 4.5 — Adversarial review** (spawn fresh subagent to audit drafts against source + skill rules before user sees them; catches fabrications)
@@ -64,7 +64,7 @@ These are the only valid `format:<name>` tag values as of 2026-04-27. The compos
 | `format:carousel` | carousel-newsletter | 10-slide illustrated swipe post |
 | `format:link-share` | promote-github | Single GitHub contribution as a post |
 | `format:batch-summary` | promote-github | Multiple contributions unified by a theme sentence |
-| `format:long-form-pulse` | crosspost-newsletter | LinkedIn native article + accompanying post |
+| `format:long-form-pulse` | (future-reserved) | Reserved for a future skill that schedules a Buffer companion post for a published LinkedIn pulse article. `crosspost-newsletter` publishes pulse articles directly to LinkedIn, NOT via Buffer; pulse-post engagement is attributed via `linkedin-stats` instead of `buffer-stats` |
 
 If you add a new compose skill, define a new format tag and update this table + `buffer-stats` Phase 5's expected tag list.
 
