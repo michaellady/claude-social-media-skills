@@ -1317,6 +1317,22 @@ The official HN Firebase API (`github.com/HackerNews/API`) is entirely read-only
 ### Hacker News rate limits and shadow-killing
 HN enforces strict per-user rate limits — submitting multiple stories quickly triggers "You're posting too fast." HN also silently kills ("[dead]") submissions flagged by their anti-spam filter; the submit looks successful but the story never appears on `/newest`. **Workaround:** submit one at a time, space submissions by at least 5 minutes, and check `/newest` after submitting to confirm the story is visible. If shadow-killed, the user must contact HN moderators — no automated recovery.
 
+### Hacker News submit form drops fields under batched `type` actions
+Confirmed 2026-04-26: filling title + url + text via four chained Claude in Chrome `computer` actions (left_click → type → left_click → type → left_click → type) caused the renderer to freeze; subsequent screenshot timed out, and a value-check showed all 3 fields empty (the typed text went into nothing). **Workaround:** use the React-native value setter pattern via `javascript_tool` instead — single JS call that sets all three fields at once via `Object.getOwnPropertyDescriptor(...).set.call(el, value)` + dispatch input/change events. Worked first try, no freeze:
+```js
+const setInput = (selector, value) => {
+  const el = document.querySelector(selector);
+  const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+  setter.call(el, value);
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+};
+setInput('input[name="title"]', '<title>');
+setInput('input[name="url"]', '<beehiiv URL>');
+setInput('textarea[name="text"]', '<author note>');
+```
+
 ### Hacker News title rules
 HN culture expects descriptive titles. No editorialization, no clickbait ("How to X", "You won't believe"), no "N things" listicles. Under 80 characters. "Show HN:" prefix is reserved for actual original work demos — misuse gets the submission killed. **Workaround:** adapt the beehiiv title for HN before submitting; present adapted title to the user for approval.
 
