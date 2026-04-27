@@ -8,7 +8,7 @@
 //
 //	voice-corpus                  # fetch if cache stale, print cache JSON to stdout
 //	voice-corpus --refresh        # force fetch, ignore cache age
-//	voice-corpus --num 3          # override num_recent
+//	voice-corpus --num 3          # override num_recent (use 0 for all)
 //	voice-corpus --print-only     # print existing cache, do not fetch
 //
 // Output JSON shape:
@@ -81,7 +81,7 @@ type cache struct {
 func main() {
 	var (
 		refresh   = flag.Bool("refresh", false, "force fetch, ignore cache age")
-		numFlag   = flag.Int("num", 0, "override num_recent (0 = use config)")
+		numFlag   = flag.Int("num", -1, "override num_recent (-1 = use config; 0 = all in feed)")
 		printOnly = flag.Bool("print-only", false, "print existing cache, do not fetch")
 	)
 	flag.Parse()
@@ -95,7 +95,7 @@ func main() {
 	if err != nil {
 		fail(65, "load config: "+err.Error())
 	}
-	if *numFlag > 0 {
+	if *numFlag >= 0 {
 		cfg.NumRecent = *numFlag
 	}
 
@@ -149,7 +149,7 @@ func exeDir() (string, error) {
 func loadConfig(defaultPath, localPath string) (config, error) {
 	cfg := config{
 		FeedURL:         "https://rss.beehiiv.com/feeds/9AbhG8CTgD.xml",
-		NumRecent:       5,
+		NumRecent:       0, // 0 = all items in the feed (~50 for beehiiv)
 		MaxCharsPerPost: 2000,
 		StaleDays:       7,
 		CachePath:       "cache.json",
@@ -234,7 +234,8 @@ func fetchAndParse(feedURL string, n, maxChars int) ([]post, error) {
 	}
 
 	items := feed.Channel.Items
-	if len(items) > n {
+	// n == 0 means "all items in the feed"; otherwise cap at n.
+	if n > 0 && len(items) > n {
 		items = items[:n]
 	}
 

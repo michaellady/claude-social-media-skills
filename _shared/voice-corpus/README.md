@@ -15,7 +15,7 @@ cd _shared/voice-corpus && go build .
 ```bash
 voice-corpus                # fetch if cache stale, print cache JSON to stdout
 voice-corpus --refresh      # force fetch, ignore cache age
-voice-corpus --num 3        # override num_recent
+voice-corpus --num 3        # override num_recent (-1 = use config; 0 = all in feed)
 voice-corpus --print-only   # print existing cache, do not fetch
 ```
 
@@ -25,7 +25,7 @@ voice-corpus --print-only   # print existing cache, do not fetch
 {
   "fetched_at": "2026-04-27T...",
   "feed_url": "https://rss.beehiiv.com/feeds/9AbhG8CTgD.xml",
-  "num_posts": 5,
+  "num_posts": 12,
   "posts": [
     {
       "title": "Tokens From Our Past and The Great Re-Why-ing",
@@ -41,7 +41,7 @@ voice-corpus --print-only   # print existing cache, do not fetch
 
 `config.json` (committed):
 - `feed_url` — beehiiv RSS feed
-- `num_recent` — how many recent posts to cache (default 5)
+- `num_recent` — how many recent posts to cache (default `0` = all items the feed returns; ~12 for an active beehiiv account)
 - `max_chars_per_post` — truncate bodies (default 2000 ≈ 350 words)
 - `stale_days` — cache TTL (default 7)
 - `cache_path` — relative to binary dir

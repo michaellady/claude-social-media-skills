@@ -284,7 +284,7 @@ Output: JSON with `posts: [{title, url, published_at, body_text}]`.
 
 Prepend the voice-corpus output into the compose context as inline excerpts:
 
-> The author's recent newsletters (sample of the last 5):
+> The author's recent newsletters (full corpus from beehiiv RSS — all available; default ~12 posts truncated to 2000 chars each ≈ 24k total):
 > ---
 > [for each post] **<Title>** (<published_at>): <body_text>
 > ---

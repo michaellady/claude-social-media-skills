@@ -1,7 +1,8 @@
 {
   "feed_url": "https://rss.beehiiv.com/feeds/9AbhG8CTgD.xml",
-  "num_recent": 5,
+  "num_recent": 0,
   "max_chars_per_post": 2000,
   "stale_days": 7,
-  "cache_path": "cache.json"
+  "cache_path": "cache.json",
+  "_comment": "num_recent=0 means use ALL items the feed returns (~50 for beehiiv). max_chars_per_post truncates each post body so the prompt stays bounded even with a wider corpus. Override either via _shared/voice-corpus/config.local.json (gitignored)."
 }

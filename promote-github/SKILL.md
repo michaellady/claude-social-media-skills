@@ -204,7 +204,7 @@ Ask the user two questions:
 
 Before composing, prepend the Phase 1 voice-corpus output as inline excerpts in your working context, framed as:
 
-> The author's recent newsletters (sample of the last 5):
+> The author's recent newsletters (full corpus from beehiiv RSS — all available, ~12 posts and ~24k chars):
 > ---
 > [for each post in the corpus] **<Title>** (<published_at>): <body_text>
 > ---
