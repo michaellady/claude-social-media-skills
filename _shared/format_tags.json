@@ -1,0 +1,35 @@
+{
+  "comment": "Authoritative source for the format:<name> Buffer post tag values. Skills MUST use only these values; buffer-stats Phase 5 expects them. Adding a new format means editing this file AND ARCHITECTURE.md's format-tag table AND buffer-stats Phase 5 expected-tags list.",
+  "tags": {
+    "verbatim_quote": {
+      "value": "format:verbatim-quote",
+      "produced_by": "promote-newsletter",
+      "description": "Direct excerpt from a beehiiv article body. No paraphrasing."
+    },
+    "teaser": {
+      "value": "format:teaser",
+      "produced_by": "tease-newsletter",
+      "description": "Original copy summarizing the article without spoiling the punchline. No verbatim drift."
+    },
+    "carousel": {
+      "value": "format:carousel",
+      "produced_by": "carousel-newsletter",
+      "description": "10-slide illustrated swipe post. IG/LI/FB/Threads."
+    },
+    "link_share": {
+      "value": "format:link-share",
+      "produced_by": "promote-github",
+      "description": "Single GitHub contribution as an impact-framed post + link."
+    },
+    "batch_summary": {
+      "value": "format:batch-summary",
+      "produced_by": "promote-github",
+      "description": "Multiple GitHub contributions unified by a theme sentence."
+    },
+    "long_form_pulse": {
+      "value": "format:long-form-pulse",
+      "produced_by": "crosspost-newsletter",
+      "description": "LinkedIn native article + accompanying post that links into it."
+    }
+  }
+}

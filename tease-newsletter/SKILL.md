@@ -116,44 +116,23 @@ Skip Instagram if no image is available for it. Skip TikTok / YouTube channels (
 
 ### Phase 4.5 — Adversarial review (REQUIRED before user review)
 
-**Spawn a fresh subagent** (Agent tool, `general-purpose` type) to audit every teaser against the source article + the skill's rules. The reviewer has no context from the compose phase — fresh eyes catch the "every leader I respect" / "second of these" type fabrications.
+Apply the **[Adversarial Review pattern](../PATTERNS.md#pattern-adversarial-review-phase-45)** with these per-skill specifics:
 
-Agent prompt template (fill in `<<...>>`):
-
-```
-You are an adversarial reviewer for /tease-newsletter posts. Your job is to find problems before the user has to.
-
-SOURCE ARTICLE:
-<<full article body, verbatim from beehiiv>>
-
-SKILL RULES:
-- Teasers are ORIGINAL copy that summarize without spoiling the punchline.
-- BANNED: any contiguous run of 7+ words copied from the source verbatim. Run a sliding window check.
-- BANNED: unverifiable third-party claims ("every leader I respect keeps a token on their desk", "everyone in [industry] knows…", "successful founders all do X").
-- BANNED: claims the article doesn't actually make (fabrication).
-- BANNED: spoiling the punchline (the reader's payoff for clicking through).
-- BANNED: emoji unless explicitly requested.
-- REQUIRED: every post ends with `Comment "newsletter" to get my latest post, "<Article Title>"` (verbatim CTA).
-- REQUIRED: same core message across all channels — only length adapted, not angle.
-- REQUIRED: total post char count within platform budget (e.g. Threads = 500 - CTA - 7 margin).
-
-DRAFTED TEASERS:
-<<list of teasers, one per channel>>
-
-For each teaser, return:
-- VERDICT: PASS or FAIL
-- ISSUES: array of specific problems. Cite exact strings.
-  - For verbatim drift: quote the 7+ word run that matches source.
-  - For fabrication: quote the claim and explain what the source actually says.
-  - For punchline spoilage: quote the line that gives away the takeaway.
-  - For unverifiable claims: quote the third-party assertion.
-
-Return only the JSON: {"verdict": [...], "issues": [...]} per teaser.
-```
-
-**Apply verdicts:**
-- All PASS → proceed to Phase 5.
-- Any FAIL → revise the failing teasers (using the issues as concrete edit guidance), re-run the reviewer until clean, THEN show to user. The user should see only PASS-grade copy at Phase 5.
+- **SOURCE_LABEL:** "SOURCE ARTICLE"
+- **SOURCE_CONTENT:** the full beehiiv article body, verbatim
+- **SKILL_NAME:** `tease-newsletter`
+- **ARTIFACT_NAME:** "teaser"
+- **RULES_LIST:**
+  - Teasers are ORIGINAL copy that summarize without spoiling the punchline.
+  - BANNED: any contiguous run of 7+ words copied from the source verbatim. Run a sliding window check.
+  - BANNED: unverifiable third-party claims ("every leader I respect keeps a token on their desk", "everyone in [industry] knows…", "successful founders all do X").
+  - BANNED: claims the article doesn't actually make (fabrication).
+  - BANNED: spoiling the punchline (the reader's payoff for clicking through).
+  - BANNED: emoji unless explicitly requested.
+  - REQUIRED: every post ends with the canonical CTA (use `_shared/cta.sh "<Article Title>"`).
+  - REQUIRED: same core message across all channels — only length adapted, not angle.
+  - REQUIRED: total post char count within platform budget (e.g. Threads = 500 - CTA - 7 margin).
+- **ISSUE_GUIDANCE:** "For verbatim drift, quote the 7+ word run that matches source. For fabrication, quote the claim and explain what the source actually says. For punchline spoilage, quote the line that gives away the takeaway. For unverifiable claims, quote the third-party assertion."
 
 The first time this skill ran on "Tokens From Our Past" (2026-04-26), the user caught a fabrication ("Every leader I respect keeps a token from a past reskilling on their desk") manually. This phase prevents that next time.
 

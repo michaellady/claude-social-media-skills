@@ -1,0 +1,3 @@
+# Compiled Go binaries — built locally via `go build`, not committed.
+buffer-post-prep/buffer-post-prep
+buffer-queue-check/buffer-queue-check
