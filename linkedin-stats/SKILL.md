@@ -118,7 +118,47 @@ This gives:
 - `new_newsletter_subs` — **new subs added in past 7 days** (much better signal than the static subscriber count from the newsletter page)
 - `newsletter_article_views` — total article views past 7 days
 
-**Per-post engagement** (which posts drove the impressions) still requires a separate analytics-by-post view. No current URL discovered as of 2026-04-27 — TODO when LinkedIn surfaces a replacement. For now, fall back to Buffer Insights (`publish.buffer.com/insights`) which ranks LinkedIn posts by reactions cross-channel.
+**Per-post engagement** (confirmed 2026-04-27):
+
+```bash
+$B goto "https://www.linkedin.com/analytics/creator/content/?timeRange=past_7_days"
+sleep 5
+$B js "
+  const text = (document.querySelector('main') || document.body).innerText;
+  // Top section gives Discovery + Engagement summary:
+  //   1,839 Impressions, 647 Members reached
+  //   15 Social engagements, 13 Reactions, 2 Comments, 0 Reposts, 0 Saves, 0 Sends
+  // Below that, top posts list each appears as:
+  //   '<N> impressions • <M> engagement\nView analytics\n<post type>\n<post text...>'
+  const summary = {
+    impressions: text.match(/Cumulative\\s+\\n\\s*([0-9,]+)/)?.[1]?.replace(/,/g, ''),
+    members_reached: text.match(/([0-9,]+)\\s+Members reached/)?.[1]?.replace(/,/g, ''),
+    social_engagements: text.match(/([0-9,]+)\\s+Social engagements/)?.[1]?.replace(/,/g, ''),
+    reactions: text.match(/Reactions\\s+\\n\\s*([0-9,]+)/)?.[1]?.replace(/,/g, ''),
+    comments: text.match(/([0-9,]+)\\s+Comments/)?.[1]?.replace(/,/g, ''),
+    reposts: text.match(/([0-9,]+)\\s+Reposts/)?.[1]?.replace(/,/g, '')
+  };
+  const postRegex = /(\\d+(?:,\\d+)*)\\s+impressions\\s+•\\s+(\\d+(?:,\\d+)*)\\s+engagements?\\s*\\n+View analytics\\s*\\n+([^\\n]+)\\s*\\n+([\\s\\S]+?)(?=\\n\\d+(?:,\\d+)*\\s+impressions|$)/g;
+  const posts = [];
+  let m;
+  while ((m = postRegex.exec(text))) {
+    posts.push({
+      impressions: parseInt(m[1].replace(/,/g, '')),
+      engagements: parseInt(m[2].replace(/,/g, '')),
+      type: m[3].trim().slice(0, 40),
+      snippet: m[4].trim().slice(0, 200)
+    });
+  }
+  ({ summary, top_posts: posts.slice(0, 10) })
+"
+```
+
+Also discovered:
+- `https://www.linkedin.com/analytics/creator/audience` — audience-side analytics (industry, job title, location breakdowns)
+- `https://www.linkedin.com/analytics/newsletter/urn:li:fsd_contentSeries:<id>/?metricType=NEWSLETTER_SUBSCRIBERS` — per-newsletter subscriber detail (the `<id>` matches the newsletter URL slug)
+- `https://www.linkedin.com/analytics/newsletter/urn:li:fsd_contentSeries:<id>/?metricType=ARTICLE_VIEWS` — per-newsletter article view detail
+
+These deep-link directly from `/dashboard/` — find them by querying `a[href]` on the dashboard for `/analytics/` href patterns.
 
 If selectors break in the future, fall back to screenshot + handoff:
 
