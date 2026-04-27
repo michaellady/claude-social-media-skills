@@ -141,32 +141,40 @@ User can:
 - Tweak proposed times
 - Cancel
 
-### Phase 8 — Apply via GraphQL mutation
+### Phase 8 — Apply
 
-Buffer's MCP server doesn't expose a domain tool for updating `postingSchedule` — use `mcp__buffer__execute_mutation`. **Always introspect first** to find the canonical mutation name + input shape (Buffer renames mutations periodically):
+**Buffer's public GraphQL API does NOT expose a mutation for editing `postingSchedule`.** As of 2026-04-27, the schema only exposes `deletePost`, `createPost`, `editPost`, `createIdea`. The `postingSchedule` field on `Channel` is read-only via the API; schedule edits must be made in Buffer's web UI.
 
+Always re-verify by calling `mcp__buffer__introspect_schema` first — Buffer may add a `updatePostingSchedule` (or similar) mutation in the future. If found, use it; if not, fall through to the manual path below.
+
+**Manual path (current default):**
+
+For each approved channel, surface a copy-paste-ready checklist:
+
+```markdown
+## <Channel Name> — Buffer web UI steps
+
+1. Open https://publish.buffer.com/channels/<channelId>/settings (or Channel → Settings → Posting Schedule)
+2. For each day below, replace the existing times with the proposed times:
+   - Mon: 09:30, 13:30, 18:30
+   - Tue: 09:30, 13:30, 18:30
+   - ...
+3. Save.
 ```
-mcp__buffer__introspect_schema
-  → search for "schedule" or "posting" → find the mutation (likely `updateChannelPostingSchedule` or `updatePostingPlan`)
-  → confirm input shape (likely { channelId, schedule: [{ day, times, paused }] })
-```
 
-Then call:
+After the user confirms a channel was updated in the web UI, immediately call `mcp__buffer__get_channel(channelId)` and verify `postingSchedule` matches the proposed one. If it doesn't, surface the diff.
+
+**If a future Buffer schema exposes the mutation:**
 
 ```
 mcp__buffer__execute_mutation(
   summary: "Update <channel name> posting schedule to spread bunched morning slots",
-  mutation: <the canonical mutation>,
+  mutation: <the canonical mutation, e.g. updatePostingSchedule>,
   variables: { channelId: ..., schedule: [...proposed...] }
 )
 ```
 
-**Apply per-channel, not in one batch.** Per-channel mutations:
-- Surface failures cleanly (one channel's bad input doesn't blow away the others)
-- Match the user's per-channel approval granularity from Phase 7
-- Are easier to roll back
-
-After each successful mutation, immediately re-call `mcp__buffer__get_channel` and verify the new `postingSchedule` matches the proposed one. If it doesn't, surface the diff to the user and stop — don't keep applying.
+Apply per-channel, not in one batch. After each successful mutation, re-call `get_channel` and verify.
 
 ### Phase 9 — Report
 
