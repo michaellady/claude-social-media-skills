@@ -186,7 +186,7 @@ Ask: **"Ready to schedule these to Buffer?"**
 Identical to `promote-newsletter` Phase 6 (including the `min_followers_to_promote`, `max_posts_per_channel_per_article`, and below-threshold/locked channel filters):
 1. `mcp__buffer__get_account` → org ID + timezone
 2. `mcp__buffer__list_channels` → exact channel IDs (filter out `isDisconnected`, `isLocked`, `service: "startPage"`, channels below `min_followers_to_promote=50`)
-3. Per approved post: `mcp__buffer__create_post` with `mode: "addToQueue"`, `schedulingType: "automatic"`, **`tags: ["format:teaser"]`** (required — closed-loop measurement depends on this), platform-specific metadata (`facebook.type: "post"`, `instagram.type: "post" + shouldShareToFeed: true`, etc.)
+3. Per approved post: `mcp__buffer__create_post` with `mode: "addToQueue"`, `schedulingType: "automatic"`, **`tagIds: [<format:teaser Tag ID>]`** (24-char hex from `_shared/buffer-post-prep/tag-ids.local.json` — Buffer's `CreatePostInput` schema requires Tag IDs, not tag-name strings; `tags: [...]` is silently dropped), platform-specific metadata (`facebook.type: "post"`, `instagram.type: "post" + shouldShareToFeed: true`, etc.). Use `_shared/buffer-post-prep` to do the lookup; one-time tag setup in [`_shared/buffer-post-prep/README.md`](../_shared/buffer-post-prep/README.md).
 4. On HTTP 429 rate limit: stop, save remaining posts to `remaining-posts.md`, report.
 5. Report per-channel success/error.
 

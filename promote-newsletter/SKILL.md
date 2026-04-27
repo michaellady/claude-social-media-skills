@@ -169,7 +169,7 @@ The skill's cognition for this phase is choosing WHICH approved posts go to whic
 - Skips channels with `isDisconnected: true`, `isLocked: true`, or `service: "startPage"`
 - Skips channels below `min_followers_to_promote = 50` (verified via `mcp__buffer__get_channel`)
 - Validates the post text against the platform char limit
-- Attaches `tags: ["format:verbatim-quote"]`
+- Attaches `tagIds: [<format:verbatim-quote Tag ID>]` from `_shared/buffer-post-prep/tag-ids.local.json` (Buffer's `CreatePostInput` schema requires Tag IDs, not tag-name strings — `tags: [...]` is silently dropped). One-time setup in [`_shared/buffer-post-prep/README.md`](../_shared/buffer-post-prep/README.md). If the local config is missing, the post still ships (untagged) and the binary warns on stderr.
 - Sets platform-specific metadata correctly
 
 **Rate limiting:** Buffer's API enforces rate limits (HTTP 429). When scheduling many posts (e.g. multiple articles in one session), you will hit this after ~40-50 rapid `create_post` calls. When rate limited:

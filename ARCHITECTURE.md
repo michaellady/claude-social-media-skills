@@ -36,7 +36,7 @@ User accepts → SKILL.md edits committed → next batch better-targeted
 
 Every compose-and-publish skill has these required phases:
 - **Adversarial review** (spawn fresh subagent to audit drafts against source + skill rules before user sees them; catches fabrications)
-- **Phase 6 — Buffer create_post** with `tags: ["format:<name>"]` (attribution prereq)
+- **Phase 6 — Buffer create_post** with `tagIds: [<format:<name> Tag ID>]` (attribution prereq — Buffer's `CreatePostInput` requires Tag IDs not name strings; lookup table at `_shared/buffer-post-prep/tag-ids.local.json`)
 
 ### Measure (read side)
 
@@ -91,7 +91,7 @@ With the closed loop, **every promotion run feeds the next one's defaults.** The
 
 If the new skill **creates posts** (compose-and-publish):
 1. Define a new format tag (`format:<name>`) and add it to the table above
-2. Tag every Buffer post the skill creates with `tags: ["format:<name>"]` at `mcp__buffer__create_post` time
+2. Tag every Buffer post the skill creates with `tagIds: [<format:<name> Tag ID>]` at `mcp__buffer__create_post` time. **Important:** Buffer's `CreatePostInput` schema requires Tag IDs (24-char hex), not name strings. The `tags: [...]` field is silently dropped. Tag IDs are per-organization and live in `_shared/buffer-post-prep/tag-ids.local.json` (gitignored). New tags must be created in Buffer's web UI first (no public `createTag` mutation); the buffer-post-prep helper does the name→ID lookup automatically. See `_shared/buffer-post-prep/README.md` for the one-time setup.
 3. Add an Adversarial Review step (spawn a fresh subagent to audit drafts against source + skill rules before user sees them) — use existing skills as templates
 4. Document the format in `buffer-stats` Phase 5's expected-tags list
 

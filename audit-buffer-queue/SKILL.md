@@ -75,15 +75,27 @@ Defaults:
 
 The helper output makes this deterministic; the thresholds above are tunable judgment.
 
-### Phase 4 — Untagged post check
+### Phase 4 — Untagged post check + auto-backfill
 
-Every post created by the promote-* skills should have a `format:<name>` tag (`format:verbatim-quote`, `format:teaser`, `format:carousel`, `format:link-share`, `format:long-form-pulse`, `format:batch-summary`). Posts without this tag break the closed-loop measurement system — `buffer-stats`'s Phase 5 format-performance analyzer can't attribute them.
+Every post created by the promote-* skills should have a `format:<name>` tag (`format:verbatim-quote`, `format:teaser`, `format:carousel`, `format:link-share`, `format:batch-summary` — `format:long-form-pulse` is future-reserved and not produced by any current skill, so don't flag its absence). Posts without one of those tags break the closed-loop measurement system — `buffer-stats`'s Phase 5 format-performance analyzer can't attribute them.
 
 ```python
-untagged = [p for p in posts if not any(t.startswith('format:') for t in p['tags'])]
+EXPECTED = {'format:verbatim-quote', 'format:teaser', 'format:carousel', 'format:link-share', 'format:batch-summary'}
+untagged = [p for p in posts if not any(t['name'] in EXPECTED for t in p['tags'])]
 ```
 
-For each untagged post, suggest a format tag based on the post's text content (e.g., quote → `format:verbatim-quote`; "Comment 'newsletter'" + original copy → `format:teaser`; multi-image post → `format:carousel`; GitHub URL → `format:link-share`). The user can apply via `mcp__buffer__update_post` (or via Buffer's web UI).
+For each untagged post, classify by text content:
+- starts with `"<quote>"` and ends with `Comment "newsletter"…` CTA → `format:verbatim-quote`
+- original copy + `Comment "newsletter"…` CTA → `format:teaser`
+- 10-image multi-image post → `format:carousel`
+- contains `github.com/` URL → `format:link-share` (or `format:batch-summary` if the post unifies multiple contributions with a theme sentence)
+
+**Auto-backfill (since 2026-04-27, Stage A complete):** the 5 format tags exist on the org and their IDs are in `_shared/buffer-post-prep/tag-ids.local.json`. For each untagged post, you CAN auto-apply the right tag via the Buffer GraphQL `editPost` mutation — but with two important caveats:
+
+1. **`editPost` is full-replace, NOT partial-update.** If you only pass `id + tagIds`, the post's text + assets + metadata get wiped. Always fetch the full post first via `mcp__buffer__get_post` and pass `text + assets + metadata + tagIds` together. See `/tmp/queue_audit/backfill_tags.sh` for a working reference implementation (the curl-based script used for the original 53-post backfill).
+2. **Buffer enforces a 15-min sliding rate-limit window** on the OIDC token (~50-100 calls per 15 min before HTTP 429). For a backfill of more than ~25 posts, expect to hit it; build a poll-retry loop with 180s sleep between attempts (also at `/tmp/queue_audit/poll_retry.sh`).
+
+If the user prefers manual control, surface the recommendations and let them apply individually — `mcp__buffer__edit_post` is not exposed as a domain tool, so they'd use Buffer's web UI tag picker.
 
 ### Phase 5 — Dead-channel check
 

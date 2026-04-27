@@ -211,7 +211,7 @@ Each compose skill always uses ONE format tag (the skill's identity is one-to-on
 The keys match `_shared/format_tags.json` exactly. If you pass a hyphenated form (e.g. `link-share`), `buffer-post-prep` will fail with "invalid --format-tag".
 
 **Two exceptions to the binary path:**
-- **Carousel posts** bypass `buffer-post-prep` because they need 10-image asset arrays — different shape. Tag is still `format:carousel`, applied via direct `mcp__buffer__create_post` call with `tags: ["format:carousel"]`.
+- **Carousel posts** bypass `buffer-post-prep` because they need 10-image asset arrays — different shape. Tag is still `format:carousel`, applied via direct `mcp__buffer__create_post` call with `tagIds: [<format:carousel Tag ID>]` (24-char hex from `_shared/buffer-post-prep/tag-ids.local.json` — Buffer's schema requires Tag IDs, not name strings; `tags: [...]` is silently dropped).
 - **crosspost-newsletter** publishes directly to each platform's native editor (LinkedIn pulse, Substack, Medium, HN, Reddit) — none of these go through Buffer. The `format:long-form-pulse` tag is only applied if a future skill schedules a companion Buffer announcement post for the published article. Closed-loop attribution for the native-published versions instead comes from `linkedin-stats` (LinkedIn pulse) and platform-specific dashboards (Medium, HN, Reddit — not yet scraped).
 
 ---

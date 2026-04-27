@@ -1,6 +1,6 @@
 ---
 name: tune-posting-schedule
-description: Use when posting times are bunching, when /audit-buffer-queue surfaces structural bunches that re-appear after rescheduling individual posts, or when /buffer-stats finds a per-hour engagement pattern that disagrees with current Buffer slots. Analyzes each channel's postingSchedule against (a) gap-spacing rules, (b) recent sent-post engagement-by-hour, and (c) audience timezone, then proposes + applies a new schedule via Buffer's GraphQL mutation. Triggers — "tune my posting schedule", "fix my buffer slots", "analyze posting times", "my queue keeps bunching", "change posting schedule".
+description: Use when posting times are bunching, when /audit-buffer-queue surfaces structural bunches that re-appear after rescheduling individual posts, or when /buffer-stats finds a per-hour engagement pattern that disagrees with current Buffer slots. Analyzes each channel's postingSchedule against (a) gap-spacing rules, (b) recent sent-post engagement-by-hour, and (c) audience timezone, then proposes + applies a new schedule via the gstack web-UI driver in _shared/buffer-schedule-edit (Buffer's public API has no schedule mutation). Triggers — "tune my posting schedule", "fix my buffer slots", "analyze posting times", "my queue keeps bunching", "change posting schedule".
 user_invocable: true
 ---
 
