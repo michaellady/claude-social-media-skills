@@ -231,5 +231,7 @@ Pure-transport (deterministic, no judgment) per [PRIMITIVE-TEST.md](PRIMITIVE-TE
 8. **Use the slash commands from any Claude Code session.** Recommended weekly cadence:
    - As you ship: `/promote-github`, `/promote-newsletter` or `/tease-newsletter`, optionally `/carousel-newsletter` and `/crosspost-newsletter` for major articles
    - Mid-week: `/audit-buffer-queue` if posts feel bunched
-   - End-of-week: `/buffer-stats`, `/linkedin-stats`, then `/flywheel` for the weekly rollup
+   - End-of-week: `/buffer-stats`, `/linkedin-stats`, then `/flywheel` for the weekly rollup (or install the Sunday cron — see next step)
    - Periodically: `/tune-posting-schedule` when the audit keeps re-flagging the same structural bunches
+
+9. **(Optional) Install the Sunday weekly-review cron.** Runs the full closed-loop review (`/buffer-stats` → `/linkedin-stats` → `/audit-buffer-queue` → `/flywheel`) headlessly via `claude -p` every Sunday at 09:30 local time and writes the report to `data/reviews/<date>.md`. Macros: `make schedule-install`, `make schedule-uninstall`, `make schedule-test` (fires immediately). Logs at `~/Library/Logs/csms-weekly-review/`. Read-mostly — does NOT auto-apply destructive queue actions; surfaces them for your Monday review.

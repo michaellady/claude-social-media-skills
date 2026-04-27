@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd schedule for the claude-social-media-skills Sunday weekly review.
+  Install:   make schedule-install   (symlinks into ~/Library/LaunchAgents
+                                      and registers with launchctl)
+  Uninstall: make schedule-uninstall
+  Test now:  make schedule-test      (fires the script immediately)
+  Inspect:   launchctl list | grep csms-weekly-review
+
+  Schedule: Sunday at 09:30 local time (30 minutes after the
+  yt-weekly-review at 09:00 — staggered so they don't compete for
+  Claude API quota or browser focus). launchd uses local time, so
+  this always reads 9:30 AM regardless of DST.
+
+  Logs land in ~/Library/Logs/csms-weekly-review/ (per-run dated files,
+  written by the script itself); launchd's own stdout/stderr captures
+  go to ~/Library/Logs/csms-weekly-review/launchd.log so you can see
+  if the agent ever fails to start.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.mikelady.csms-weekly-review</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-l</string>
+    <string>__REPO_DIR__/scripts/weekly-review.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__REPO_DIR__</string>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>0</integer>
+    <key>Hour</key>
+    <integer>9</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/csms-weekly-review/launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/csms-weekly-review/launchd.log</string>
+
+  <!-- launchd needs PATH to find go, claude, gstack browse. The -l flag on
+       bash above loads the user's profile, but include common paths as a
+       fallback. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__HOME__/.local/bin:/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+</dict>
+</plist>
