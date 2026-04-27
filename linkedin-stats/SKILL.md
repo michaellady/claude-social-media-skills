@@ -84,29 +84,47 @@ $B js "
 NL_SUBS=$(cat /tmp/ln-newsletter-subs.txt | tr -d '"')
 ```
 
-**Recent articles with engagement** (from the Creator analytics dashboard — the newsletter tab):
+**Aggregated 7-day analytics** (from the new LinkedIn dashboard — confirmed 2026-04-27):
+
+The old `https://www.linkedin.com/creator/dashboard/` and `/creator/analytics/posts/` URLs return 404 — LinkedIn moved Creator analytics. The replacement is `https://www.linkedin.com/dashboard/`, which exposes 6 metrics with 7-day deltas in plain text:
 
 ```bash
-$B goto "https://www.linkedin.com/creator/analytics/posts/"
+$B goto "https://www.linkedin.com/dashboard/"
+sleep 4
 $B js "
-  // Posts table rows. LinkedIn's DOM shifts; the stable structure is a role='row'
-  // in a table within the analytics container. Extract what we can and return as
-  // a JSON array; the consumer filters to POST_LIMIT newest.
-  const rows = [...document.querySelectorAll('[role=row], li.analytics-feed__row')];
-  const out = rows.slice(0, 20).map(r => {
-    const t = r.innerText.split('\\n').map(s => s.trim()).filter(Boolean);
-    return t; // raw text block — harder to break on DOM churn
-  });
-  JSON.stringify(out);
-" > /tmp/ln-articles-raw.json
+  const text = (document.querySelector('main') || document.body).innerText;
+  // Each metric appears as: '<value>\n<label>\n<delta>%? past N days'
+  const grab = (label) => {
+    const re = new RegExp('([0-9,.]+)\\\\s*\\\\n\\\\s*' + label.replace(/ /g, '\\\\s+') + '\\\\s*\\\\n\\\\s*([0-9.]+%(?:\\\\s+past\\\\s+\\\\d+\\\\s+days)?)', 'i');
+    const m = text.match(re);
+    return m ? { value: m[1].replace(/,/g, ''), delta: m[2] } : null;
+  };
+  ({
+    post_impressions: grab('Post impressions'),
+    followers: grab('Followers'),
+    profile_viewers: grab('Profile viewers'),
+    search_appearances: grab('Search appearances'),
+    new_newsletter_subs: grab('New newsletter subscribers'),
+    newsletter_article_views: grab('Newsletter article views')
+  })
+"
 ```
 
-If the structured selector breaks (LinkedIn re-skins regularly), fall back to taking a screenshot + handoff so the user can read the numbers off manually:
+This gives:
+- `post_impressions` — total impressions across all posts (rolling 7d, with %Δ)
+- `followers` — connection count + 7d delta
+- `profile_viewers` — past 90 days
+- `search_appearances` — previous calendar week
+- `new_newsletter_subs` — **new subs added in past 7 days** (much better signal than the static subscriber count from the newsletter page)
+- `newsletter_article_views` — total article views past 7 days
+
+**Per-post engagement** (which posts drove the impressions) still requires a separate analytics-by-post view. No current URL discovered as of 2026-04-27 — TODO when LinkedIn surfaces a replacement. For now, fall back to Buffer Insights (`publish.buffer.com/insights`) which ranks LinkedIn posts by reactions cross-channel.
+
+If selectors break in the future, fall back to screenshot + handoff:
 
 ```bash
 $B screenshot /tmp/ln-analytics.png
-# If jq can't parse /tmp/ln-articles-raw.json into a useful shape, handoff:
-$B handoff "LinkedIn analytics DOM changed. Screenshot at /tmp/ln-analytics.png — please read the top $POST_LIMIT post stats and paste here."
+$B handoff "LinkedIn dashboard DOM changed. Screenshot at /tmp/ln-analytics.png — please read the top metrics and paste here."
 ```
 
 ### Phase 3 — Profile follower count + top posts
