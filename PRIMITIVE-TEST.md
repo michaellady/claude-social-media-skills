@@ -1,6 +1,9 @@
 ---
 title: "The Primitive Test"
+source: "https://github.com/gastownhall/gascity/blob/main/engdocs/contributors/primitive-test.md"
 ---
+
+> **Source:** This framework is from [Gas City](https://github.com/gastownhall/gascity)'s contributor docs ([primitive-test.md](https://github.com/gastownhall/gascity/blob/a4d32733a4b697c0d8a76e5388f3e9a9fe257d84/engdocs/contributors/primitive-test.md#L4)). It's reproduced here in full as the canonical reference for the `_shared/` vs SKILL.md split — kept inline rather than linked so this repo stays self-contained.
 
 Decision framework for whether a capability belongs in Gas City's SDK
 primitive layer or in the consumer layer (agent prompts, `bd` CLI, user
