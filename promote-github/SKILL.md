@@ -269,11 +269,34 @@ For short-form platforms (Twitter, Bluesky, Pinterest): single-sentence impact +
 For long-form platforms (LinkedIn, Instagram): expand with context — what problem it solves, why it matters, what you learned.
 For batch posts on short-form platforms: theme sentence + link to profile. Individual contribution lines will not fit.
 
-**Media:**
-- GitHub contributions do not have built-in images. Posts are text-only by default.
-- If the user provides an image URL, attach it using the same `assets.images` format as other skills.
-- **Instagram requires an image** — skip Instagram for text-only posts.
-- **Skip TikTok and YouTube** — they require video assets.
+**Media — generate one hero image per theme:**
+
+GitHub contributions don't have built-in images, but generic text-only posts underperform on every platform that supports an image preview. Generate **one hero illustration per theme** (post in individual mode = one image per contribution; in batch mode = one image for the bundle) and attach it to every channel for that theme.
+
+Use the same Gemini 2.5 Flash Image pipeline as `/carousel-newsletter` — the EVC brand banner stays as the style reference so promo posts visually match the carousel decks. Cost: ~$0.04/image.
+
+**Steps:**
+
+1. **Compose a per-theme scene prompt** that visually represents the contribution. Tie the visual to the contribution's *meaning*, not the technology stack. Examples from past runs:
+   - Closed-loop pattern in an analytics repo → robot at a closed rail-track loop with cohort bricks moving along the track
+   - Skill that fixes Buffer posting times → robot with a wrench spacing bricks across a calendar grid
+   - Voice-grounding helper for compose phases → robot reading a stack of newsletter scrolls, second smaller robot writing on a tablet
+2. **Generate at 16:9** (good fit for LinkedIn / Facebook / Threads link previews; Instagram crops it to 1:1 cleanly):
+   ```bash
+   python3 ../carousel-newsletter/templates/gen_illustration.py \
+     "<scene>" \
+     promote-github/assets/<YYYY-MM-DD>/<theme-slug>.png \
+     --aspect 16:9
+   ```
+3. **Commit + push the PNG** to make the GitHub raw URL live before the Buffer call:
+   ```
+   https://raw.githubusercontent.com/<user>/<repo>/main/promote-github/assets/<YYYY-MM-DD>/<theme-slug>.png
+   ```
+4. **Attach to every channel for the theme** via `assets.images: [{url, metadata: {altText}}]` in `mcp__buffer__create_post`. Same image reused across all platforms for that theme — voice and visual stay consistent.
+
+**With images attached, Instagram becomes eligible** for `/promote-github` posts (was previously skipped for text-only). Skip TikTok / YouTube — they require video.
+
+**If image generation fails** (Gemini rate limit, ADC expired, etc.): fall back to text-only and warn the user. Don't block posting on image generation.
 
 ### Adversarial review (REQUIRED before user review)
 
