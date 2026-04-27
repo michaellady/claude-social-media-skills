@@ -157,12 +157,14 @@ Reuse patterns from `../promote-newsletter/SKILL.md`. Filter `list_channels` to 
 
 | Platform | `metadata` | `assets.images` | Caption |
 |---|---|---|---|
-| Instagram | `{ instagram: { type: "carousel", shouldShareToFeed: true } }` | All 10 PNG URLs | `"<strongest quote>"\n\nComment "newsletter" to get my latest post, "<Title>".` |
+| Instagram | `{ instagram: { type: "post", shouldShareToFeed: true } }` | All 10 PNG URLs (multi-image post auto-creates carousel when ≥2 images attached) | `"<strongest quote>"\n\nComment "newsletter" to get my latest post, "<Title>".` |
 | LinkedIn | `{ linkedin: {} }` | All 10 PNG URLs | Same as IG. |
 | Facebook | `{ facebook: { type: "post" } }` | All 10 PNG URLs | Same as IG. |
 | Threads | `{ threads: { type: "post" } }` | All 10 PNG URLs (max 20) | Same as IG. |
 
-`mode: "addToQueue"`, `schedulingType: "automatic"`. Verified via `introspect_schema`: `PostType.carousel` exists, `AssetsInput.images` is an array, `InstagramPostMetadataInput.type` accepts `carousel`.
+`mode: "addToQueue"`, `schedulingType: "automatic"`.
+
+**Important — `instagram.type` does NOT accept `carousel` as of 2026-04-26.** The Buffer MCP API rejects it with `"Invalid option: expected one of 'story'|'reel'|'post'"`. Use `instagram.type: "post"` and attach all 10 image URLs in `assets.images` — Instagram automatically renders multi-image posts as a carousel. Earlier skill claim about `PostType.carousel` was inaccurate (that's a top-level `PostType` enum but not valid for `InstagramPostMetadataInput.type`).
 
 If a channel rejects the carousel payload, log and continue — do not abort the whole run. Channels not targeted: X/Twitter (not connected), TikTok/YouTube (need video).
 
