@@ -2,6 +2,8 @@
 
 Claude Code skills for promoting and syndicating your work on social media.
 
+These skills are designed as a **closed loop** — every post is tagged at compose time so engagement can be attributed back, and the analytics skills auto-generate skill-config recommendations from each week's data. See **[ARCHITECTURE.md](ARCHITECTURE.md)** for the design philosophy and how the skills connect.
+
 ## Skills
 
 ### `/promote-newsletter`
