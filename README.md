@@ -117,6 +117,7 @@ Analyze each Buffer channel's `postingSchedule` (the time slots Buffer drops que
    ```bash
    cd _shared/buffer-post-prep && go build .
    cd ../buffer-queue-check && go build .
+   cd ../voice-corpus && go build .
    ```
 5. Symlink each skill directory into `~/.claude/skills/`:
    ```bash

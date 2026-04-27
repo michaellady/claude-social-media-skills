@@ -250,3 +250,51 @@ For `<textarea>` use `HTMLTextAreaElement.prototype` instead (same shape).
 ### Why this works
 
 React's controlled inputs override the prototype's `value` setter to track changes. The override stores the new value in React's fiber state. Direct `.value = "X"` bypasses React's tracking — React still thinks the value is the old one, so its `onChange` doesn't fire and form submission uses the stale value. The native setter (`Object.getOwnPropertyDescriptor(proto, "value").set`) is the original, un-overridden setter; calling it with `setter.call(input, "X")` writes to the DOM AND triggers React's change-tracking when paired with the `input` event dispatch.
+
+---
+
+## Pattern: Voice grounding for original-copy generation
+
+Any skill that generates **NEW copy** (not verbatim extraction, not full-article syndication) MUST inject the author's recent newsletters as a **voice corpus** into the compose-phase prompt. Without this, model output reverts to baseline corporate-LinkedIn voice — factually correct but tonally off (generic "shipped a thing!" energy instead of the author's slight-irreverent grounded-practical first-person voice).
+
+### Skills using this pattern
+
+| Skill | Phase | Notes |
+|---|---|---|
+| `/tease-newsletter` | Phase 4 | Original teaser hooks per channel |
+| `/promote-github` | Phase 4 | Value/impact framing for GitHub posts. **No source article** — the corpus is the only voice anchor. |
+| `/carousel-newsletter` | Phase 2 | Slides 1, 2, 4, 6, 8, 9 (hook, sections, stats) only. Quote slides 3/5/7 stay verbatim; CTA slide 10 is a fixed template. |
+
+### Skills NOT in scope
+
+- `/promote-newsletter` — verbatim quotes only, no original copy to voice-match
+- `/crosspost-newsletter` — syndicates the article body to native editors; no original copy
+
+### How
+
+**Phase 1 (or earliest Phase the skill has) — fetch:**
+
+```bash
+_shared/voice-corpus/voice-corpus  # auto-refreshes if cache > 7 days old
+```
+
+Output: JSON with `posts: [{title, url, published_at, body_text}]`.
+
+**Compose phase — inject + enforce:**
+
+Prepend the voice-corpus output into the compose context as inline excerpts:
+
+> The author's recent newsletters (sample of the last 5):
+> ---
+> [for each post] **<Title>** (<published_at>): <body_text>
+> ---
+
+Then state the voice-grounding rule alongside the existing CRITICAL RULES (verbatim, no fabrication, etc.) — same enforcement weight. The drafts MUST match: sentence rhythm, vocabulary preferences, recurring framings ("vibe coding", "agentic", "tokens from our past"), first-person stance, the slight-irreverent grounded-practical tone. **Mismatched voice is a fail signal — same weight as a fabrication.**
+
+### Why a shared corpus, not per-skill
+
+Voice doesn't vary by skill. Caching once amortizes the fetch cost across all skills in a run (`/carousel-newsletter` + `/tease-newsletter` + `/promote-github` in the same session re-use the same cache.json). Stale-after-7-days TTL keeps the corpus fresh without re-fetching every invocation.
+
+### Why this isn't in the adversarial reviewer (yet)
+
+Voice judgment is fuzzy ("does this sound like the author?") and hard to enforce mechanically — the reviewer would have a high false-positive rate. The composer is responsible; user review catches drift. If voice drift keeps surfacing across multiple runs, escalate to a v2 that passes the corpus to the reviewer with a "tone matches author voice" rule.

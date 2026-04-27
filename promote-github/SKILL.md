@@ -17,7 +17,15 @@ Fetch public GitHub contributions (new repos, merged PRs, commits, releases) and
 
 ## Process
 
-### Phase 1 — Fetch GitHub Data
+### Phase 1 — Fetch GitHub Data + Voice Corpus
+
+**Also fetch the voice corpus** (recent newsletters, used as voice reference in Phase 4 — there's no source article for GitHub posts, so the corpus is the ONLY voice anchor):
+
+```bash
+_shared/voice-corpus/voice-corpus  # auto-refreshes if cache > 7 days old
+```
+
+Output is JSON with `posts: [{title, url, published_at, body_text}]`. Hold onto this output for Phase 4. See [PATTERNS.md#pattern-voice-grounding-for-original-copy-generation](../PATTERNS.md#pattern-voice-grounding-for-original-copy-generation) for the rationale.
 
 **Detect the authenticated GitHub user:**
 ```bash
@@ -191,6 +199,26 @@ Ask the user two questions:
 **Wait for user input before proceeding.**
 
 ### Phase 4 — Compose Platform-Specific Posts
+
+**VOICE GROUNDING (read this BEFORE writing any draft):**
+
+Before composing, prepend the Phase 1 voice-corpus output as inline excerpts in your working context, framed as:
+
+> The author's recent newsletters (sample of the last 5):
+> ---
+> [for each post in the corpus] **<Title>** (<published_at>): <body_text>
+> ---
+
+GitHub posts have **no source article** — the voice corpus is the ONLY anchor for matching the author's voice. Posts that read like generic "shipped a thing!" tech-Twitter copy fail this rule.
+
+The drafts you produce MUST sound like a continuation of this voice. Match:
+- **Sentence rhythm** — short-to-medium with the occasional intentional fragment
+- **Vocabulary preferences** — specific phrases the author actually uses (avoid LinkedIn-corporate-speak unless the author uses it)
+- **Recurring framings** — e.g. "vibe coding", "agentic", "tokens from our past", "compounding taste"
+- **First-person stance** — "I shipped" / "I just wired" not "We're excited to announce"
+- **Tone** — slight irreverence + grounded practicality + first-hand observation
+
+**Mismatched voice is a fail signal — same weight as a fabrication.** See [PATTERNS.md#pattern-voice-grounding-for-original-copy-generation](../PATTERNS.md#pattern-voice-grounding-for-original-copy-generation).
 
 **CRITICAL RULE — Value/Impact Framing:**
 Frame every post around what the contribution does for users or the project — not the technical implementation. Read the PR body, commit message, or release notes to understand the "why," then write a plain-language impact statement.

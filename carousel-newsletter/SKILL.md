@@ -59,11 +59,27 @@ gcloud config set project gen-lang-client-0527845499
 
 ## Workflow
 
-### Phase 1 — Fetch the newsletter
+### Phase 1 — Fetch the newsletter + Voice Corpus
 
 Same pattern as `promote-newsletter`. WebFetch the beehiiv RSS feed (or the URL the user provides). Extract: title, subtitle, H2 section headings, body paragraphs, blockquotes, stat-shaped phrases, hero image URL (for reference, not used in the deck). Save to `/tmp/carousel-<slug>/source.json`.
 
+**Also fetch the voice corpus** (recent newsletters, used as voice reference in Phase 2 for the original-copy slides):
+
+```bash
+_shared/voice-corpus/voice-corpus  # auto-refreshes if cache > 7 days old
+```
+
+Output is JSON with `posts: [{title, url, published_at, body_text}]`. Hold onto this output for Phase 2. See [PATTERNS.md#pattern-voice-grounding-for-original-copy-generation](../PATTERNS.md#pattern-voice-grounding-for-original-copy-generation) for the rationale.
+
 ### Phase 2 — Draft the 10-slide script  ← USER REVIEW GATE (COPY)
+
+**VOICE GROUNDING applies to slides 1, 2, 4, 6, 8, 9 ONLY.**
+
+The 10-slide deck mixes verbatim quotes and original copy. The voice grounding rule applies only to the original-copy slides:
+
+- **Slides 1 (hook), 2 / 6 / 9 (sections), 4 / 8 (stats)** — original copy, MUST sound like the author. Prepend the Phase 1 voice-corpus output as inline excerpts and match: sentence rhythm, vocabulary preferences ("vibe coding", "agentic", etc.), first-person stance, slight irreverence + grounded practicality. Mismatched voice on these slides is a fail signal — same weight as a fabrication. See [PATTERNS.md#pattern-voice-grounding-for-original-copy-generation](../PATTERNS.md#pattern-voice-grounding-for-original-copy-generation).
+- **Slides 3 / 5 / 7 (quotes)** — VERBATIM from the source article. Voice grounding does NOT apply; do not rewrite the quote in the author's voice (the quote IS the author's voice already).
+- **Slide 10 (CTA)** — fixed template. Not subject to voice rewriting.
 
 Plain text outline, no rendering yet. Fixed structure:
 

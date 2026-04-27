@@ -29,11 +29,19 @@ Do NOT use when:
 
 ## Process
 
-### Phase 1 — Fetch Newsletter Content
+### Phase 1 — Fetch Newsletter Content + Voice Corpus
 
 Same as `promote-newsletter` Phase 1:
 - If URL provided: `WebFetch` the beehiiv post, extract title, subtitle, body paragraphs, image URLs.
 - If "latest" or no URL: fetch the beehiiv RSS feed (URL stored in memory `reference_beehiiv_feed.md`), list recent articles, ask the user which one.
+
+**Also fetch the voice corpus** (recent newsletters, used as voice reference in Phase 4):
+
+```bash
+_shared/voice-corpus/voice-corpus  # auto-refreshes if cache > 7 days old
+```
+
+Output is JSON with `posts: [{title, url, published_at, body_text}]`. Hold onto this output for Phase 4. See [PATTERNS.md#pattern-voice-grounding-for-original-copy-generation](../PATTERNS.md#pattern-voice-grounding-for-original-copy-generation) for the rationale.
 
 ### Phase 2 — Identify the Hook Material (no quoting yet)
 
@@ -75,8 +83,26 @@ Concretely:
 
 ### Phase 4 — Compose Teaser Posts
 
+**VOICE GROUNDING (read this BEFORE writing any draft):**
+
+Before composing, prepend the Phase 1 voice-corpus output as inline excerpts in your working context, framed as:
+
+> The author's recent newsletters (sample of the last 5):
+> ---
+> [for each post in the corpus] **<Title>** (<published_at>): <body_text>
+> ---
+
+The drafts you produce MUST sound like a continuation of this voice. Match:
+- **Sentence rhythm** — typically short-to-medium with the occasional intentional fragment
+- **Vocabulary preferences** — specific phrases the author actually uses (avoid LinkedIn-corporate-speak unless the author uses it)
+- **Recurring framings** — e.g. "vibe coding", "agentic", "tokens from our past", "compounding taste"
+- **First-person stance** — "I" not "you should"
+- **Tone** — slight irreverence + grounded practicality + first-hand observation
+
+**Mismatched voice is a fail signal — same weight as a fabrication.** A draft that's factually correct but reads as generic LinkedIn copy fails this rule and must be rewritten. See [PATTERNS.md#pattern-voice-grounding-for-original-copy-generation](../PATTERNS.md#pattern-voice-grounding-for-original-copy-generation).
+
 **CRITICAL RULES:**
-1. **No contiguous run of 7+ words may be copied directly from the article.** This is the verbatim rule, applied mechanically: take any 7-word substring from your draft and grep the article for it — must return zero matches. Teasers are original copy that summarize and intrigue.
+1. **No contiguous run of 7+ words may be copied directly from the article.** This is the verbatim rule, applied mechanically: take any 7-word substring from your draft and grep the article for it — must return zero matches. Teasers are original copy that summarize and intrigue. (This applies to the SOURCE article, not the voice corpus — voice excerpts are reference material, not source to be repeated either.)
 2. **Do NOT spoil the punchline.** The reader's payoff for clicking through (or commenting "newsletter") is the actual insight. If the tease gives it away, the CTA fails.
 3. **Stay faithful to the article.** Don't invent claims the article doesn't make. Don't promise insights the article doesn't deliver. Hooks summarize, they don't fabricate. **Specifically banned:** unverifiable third-party claims like "every leader I respect does X", "everyone in [industry] knows Y", "successful founders all keep Z on their desk". These are appeals-to-authority that the article does not back up — they sound generic and they are factually unverifiable. Stick to first-person observations the writer can stand behind.
 4. **No emoji unless the user requests it.** Match the sibling `promote-newsletter` convention.

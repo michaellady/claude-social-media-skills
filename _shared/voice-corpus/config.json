@@ -1,0 +1,7 @@
+{
+  "feed_url": "https://rss.beehiiv.com/feeds/9AbhG8CTgD.xml",
+  "num_recent": 5,
+  "max_chars_per_post": 2000,
+  "stale_days": 7,
+  "cache_path": "cache.json"
+}
