@@ -141,40 +141,49 @@ User can:
 - Tweak proposed times
 - Cancel
 
-### Phase 8 — Apply
+### Phase 8 — Apply via gstack web-UI automation
 
-**Buffer's public GraphQL API does NOT expose a mutation for editing `postingSchedule`.** As of 2026-04-27, the schema only exposes `deletePost`, `createPost`, `editPost`, `createIdea`. The `postingSchedule` field on `Channel` is read-only via the API; schedule edits must be made in Buffer's web UI.
+**Buffer's public GraphQL API does NOT expose a mutation for editing `postingSchedule`.** As of 2026-04-27, the public schema (`mcp__buffer__introspect_schema`) only exposes `deletePost`, `createPost`, `editPost`, `createIdea`. Buffer's v1 REST API at `api.bufferapp.com` rejects all OIDC tokens (the only token type new accounts can issue from publish.buffer.com/settings/api). The schedule editor lives only in the web UI at `publish.buffer.com/channels/:id/settings`.
 
-Always re-verify by calling `mcp__buffer__introspect_schema` first — Buffer may add a `updatePostingSchedule` (or similar) mutation in the future. If found, use it; if not, fall through to the manual path below.
+The skill drives that web UI via gstack browse, using known data-testids on the Posting Slots form. Apply path:
 
-**Manual path (current default):**
-
-For each approved channel, surface a copy-paste-ready checklist:
-
-```markdown
-## <Channel Name> — Buffer web UI steps
-
-1. Open https://publish.buffer.com/channels/<channelId>/settings (or Channel → Settings → Posting Schedule)
-2. For each day below, replace the existing times with the proposed times:
-   - Mon: 09:30, 13:30, 18:30
-   - Tue: 09:30, 13:30, 18:30
-   - ...
-3. Save.
+**1. Auth check (once per session):**
+```bash
+B=~/.claude/skills/gstack/browse/dist/browse
+"$B" goto https://publish.buffer.com/all-channels >/dev/null 2>&1; sleep 4
+"$B" url | grep -qE 'login|sign-in' && bash _shared/gstack_auth.sh buffer.com https://publish.buffer.com/all-channels
+# If still not logged in: $B goto https://login.buffer.com/login && $B handoff (user logs in)
 ```
 
-After the user confirms a channel was updated in the web UI, immediately call `mcp__buffer__get_channel(channelId)` and verify `postingSchedule` matches the proposed one. If it doesn't, surface the diff.
-
-**If a future Buffer schema exposes the mutation:**
-
-```
-mcp__buffer__execute_mutation(
-  summary: "Update <channel name> posting schedule to spread bunched morning slots",
-  mutation: <the canonical mutation, e.g. updatePostingSchedule>,
-  variables: { channelId: ..., schedule: [...proposed...] }
-)
+**2. Per-channel apply (use the shared helper):**
+```bash
+_shared/buffer-schedule-edit/buffer-schedule-edit.sh <channelId> <schedule.json>
 ```
 
-Apply per-channel, not in one batch. After each successful mutation, re-call `get_channel` and verify.
+`schedule.json` shape: `{"mon": ["09:30","13:30","18:30"], "tue": [...], ...}` — times in 24h, channel-local.
+
+The helper:
+- Navigates to `/channels/<channelId>/settings`
+- Clicks "Clear All" → confirms
+- Loops the proposed schedule, for each `(day, time24h)`:
+  - Picks the day (`postingtime-form-days-selector`)
+  - Picks the hour (`postingtime-form-hours-selector`, 12h format)
+  - Picks the minute (`postingtime-form-minutes-selector`)
+  - Picks AM/PM (`postingtime-form-am-pm-selector`)
+  - Clicks submit (`postingtime-form-submit-button`)
+- All clicks use radix-friendly PointerEvent + MouseEvent dispatch (regular `.click()` doesn't open radix menus)
+
+**3. Verify each channel (per skill rules — required after each apply):**
+```
+mcp__buffer__get_channel(channelId) → postingSchedule
+```
+Compare the returned schedule to the proposed JSON. If any day's `times` array doesn't match, surface the diff to the user and stop.
+
+**Apply per-channel, not in one batch.** Run `apply` then `verify` for each channel before moving to the next. If one fails, the user can intervene without losing the others.
+
+**Posting goal (separate concern):** the `postingGoal` on `Channel` (e.g. "21 posts/wk") is editable on the same Settings page (numeric input — only one `<input>` on the page) but is *independent* of the slot count. If the apply changes weekly slot count (e.g. drops 21→14), surface to the user that the goal won't auto-update — the Buffer queue will say "OnTrack" for goal=21 even though only 14 slots/wk fire. Recommend the user update the goal in the same UI session, or add a second helper to set the goal field.
+
+**If a future Buffer schema exposes the mutation:** introspect first; prefer the mutation over the web-UI automation (faster, no browser auth needed).
 
 ### Phase 9 — Report
 
@@ -214,12 +223,16 @@ Run `/tune-posting-schedule` after `/audit-buffer-queue` flags bunches that recu
 - **Confusing channel-local time with UTC.** `postingSchedule.times` are in the channel's `timezone`, not UTC. Convert correctly when comparing against `sentAt` (which is UTC).
 - **Treating low-engagement hours as engagement-dead without checking sample size.** A 9pm slot with 3 posts in 90 days isn't a "dead hour" — it's an undersampled hour. Flag to user, don't silently drop.
 
-## Rationale: why this lives in the skill (cognition) vs a Go helper (transport)
+## Rationale: cognition vs transport
 
 Per [PRIMITIVE-TEST.md](../PRIMITIVE-TEST.md):
 
-- **Atomicity:** schedule edits are single-channel single-mutation; Buffer's GraphQL is the source of truth — no race. ✅ no helper needed.
-- **Bitter Lesson:** "which hours are audience-active" is exactly the kind of judgment a smarter model does better. ✅ stays in prompt.
-- **ZFC:** the analysis IS judgment (`if morning bunched then redistribute to afternoon/evening`). ✅ stays in prompt.
+- **Atomicity:** schedule edits are single-channel single-mutation/clearAll-then-add. No race when only one editor (this skill) runs. ✅ no atomic helper needed.
+- **Bitter Lesson:** "which hours are audience-active" / "which slot count is right per channel" is exactly the kind of judgment a smarter model does better. ✅ stays in prompt (this file).
+- **ZFC:** the analysis IS judgment (`if morning bunched then redistribute`). ✅ stays in prompt.
 
-The deterministic transport pieces — `mcp__buffer__list_channels`, `get_channel`, `introspect_schema`, `execute_mutation` — are already provided by Buffer's MCP server. No new `_shared/` Go binary is required for this skill.
+The deterministic transport pieces:
+- Channel discovery + verification: `mcp__buffer__list_channels`, `get_channel` (Buffer MCP)
+- Schedule write: `_shared/buffer-schedule-edit/buffer-schedule-edit.sh` (gstack web-UI driver — no API mutation exists)
+
+The schedule-edit script is **transport** (deterministic clicks against known testids) — no judgment lives there. If the Buffer UI changes its testids, fix in the script, not the skill prompt.
