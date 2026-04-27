@@ -213,3 +213,40 @@ The keys match `_shared/format_tags.json` exactly. If you pass a hyphenated form
 **Two exceptions to the binary path:**
 - **Carousel posts** bypass `buffer-post-prep` because they need 10-image asset arrays — different shape. Tag is still `format:carousel`, applied via direct `mcp__buffer__create_post` call with `tags: ["format:carousel"]`.
 - **crosspost-newsletter** publishes directly to each platform's native editor (LinkedIn pulse, Substack, Medium, HN, Reddit) — none of these go through Buffer. The `format:long-form-pulse` tag is only applied if a future skill schedules a companion Buffer announcement post for the published article. Closed-loop attribution for the native-published versions instead comes from `linkedin-stats` (LinkedIn pulse) and platform-specific dashboards (Medium, HN, Reddit — not yet scraped).
+
+---
+
+## Pattern: React form input setter
+
+When automating a web form built with React (Buffer's posting-goal field, LinkedIn's post composer, Medium's title input, Substack's subject line, etc.), setting `input.value = "X"` directly does NOT work. React tracks the previous value via its synthetic event system; assigning to `.value` updates the DOM but the React state — and therefore the underlying form submission — still holds the old value.
+
+The fix is to invoke the **native** value setter (the one from `HTMLInputElement.prototype`, before React monkey-patched it) so React's `onChange` handler fires with the new value.
+
+### Canonical pattern
+
+```javascript
+const input = /* find your input element */;
+const proto = Object.getPrototypeOf(input);                          // HTMLInputElement.prototype
+const setter = Object.getOwnPropertyDescriptor(proto, "value").set;  // native setter
+setter.call(input, "<new value>");                                   // bypasses React's intercept
+input.dispatchEvent(new Event("input", { bubbles: true }));          // notify React
+input.dispatchEvent(new Event("change", { bubbles: true }));         // notify validators
+input.blur();                                                        // commit (some forms auto-save on blur)
+```
+
+For `<textarea>` use `HTMLTextAreaElement.prototype` instead (same shape).
+
+### When to use it
+
+- **Programmatic value setting on any React-controlled input.** If you set `.value` directly and the form behaves like nothing changed (or reverts on submit), you've hit the React-controlled-input wall. Use this pattern.
+- **Examples in this repo:** `_shared/buffer-schedule-edit/buffer-schedule-edit.sh` (`window.__setGoal`); HN submit form fix in `crosspost-newsletter` (per memory `feedback_clipboard_paste_pattern.md` — "batched gstack typing freezes the renderer; React-native value setter via JS works first try").
+
+### When this is NOT the right tool
+
+- **Radix popup menus / dropdowns** — these aren't `<input>` elements. Use `PointerEvent` + `MouseEvent` dispatch on the trigger button, then click the menu item (see `__radixClick` in `_shared/buffer-schedule-edit/`).
+- **Contenteditable rich-text editors** (Medium body, LinkedIn post composer body) — these intercept paste and resist value injection. Use the `osascript HTML to NSPasteboard + cmd+v` pattern documented in memory `feedback_clipboard_paste_pattern.md`.
+- **Form fields that auto-save on every keystroke and block automation** — these usually need full keystroke simulation via `$B type` (gstack browse), not value-set.
+
+### Why this works
+
+React's controlled inputs override the prototype's `value` setter to track changes. The override stores the new value in React's fiber state. Direct `.value = "X"` bypasses React's tracking — React still thinks the value is the old one, so its `onChange` doesn't fire and form submission uses the stale value. The native setter (`Object.getOwnPropertyDescriptor(proto, "value").set`) is the original, un-overridden setter; calling it with `setter.call(input, "X")` writes to the DOM AND triggers React's change-tracking when paired with the `input` event dispatch.

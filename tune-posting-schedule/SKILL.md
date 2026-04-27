@@ -181,7 +181,7 @@ Compare the returned schedule to the proposed JSON. If any day's `times` array d
 
 **Apply per-channel, not in one batch.** Run `apply` then `verify` for each channel before moving to the next. If one fails, the user can intervene without losing the others.
 
-**Posting goal (handled in same helper):** the `postingGoal` on `Channel` (e.g. "21 posts/wk") is editable on the same Settings page (numeric input under the "Posting Goal" heading — set via React-native value setter + `input`/`change` events; auto-saves on blur). The schedule helper supports both modes:
+**Posting goal (handled in same helper):** the `postingGoal` on `Channel` (e.g. "21 posts/wk") is editable on the same Settings page (numeric input under the "Posting Goal" heading) using the [React form input setter pattern](../PATTERNS.md#pattern-react-form-input-setter); auto-saves on blur. The schedule helper supports both modes:
 
 ```bash
 # Schedule + goal in one call:
