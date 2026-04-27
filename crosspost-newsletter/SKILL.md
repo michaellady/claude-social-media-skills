@@ -1095,9 +1095,9 @@ or inform the user and pause via handoff.
 
 ---
 
-### Phase 4.5 — Adversarial review per platform (REQUIRED before user review)
+### Adversarial review per platform (REQUIRED before user review)
 
-Apply the **[Adversarial Review pattern](../PATTERNS.md#pattern-adversarial-review-phase-45)** ONCE PER PLATFORM (each platform's submission has its own rules + artifact shape). Skill provides:
+Apply the **[Adversarial Review pattern](../PATTERNS.md#pattern-adversarial-review)** ONCE PER PLATFORM (each platform's submission has its own rules + artifact shape). Skill provides:
 
 - **SOURCE_LABEL:** "SOURCE BEEHIIV ARTICLE"
 - **SOURCE_CONTENT:** the full article body + title + subtitle
@@ -1130,7 +1130,7 @@ Per-platform RULES_LIST + ISSUE_GUIDANCE:
 - Flair selection appropriate for the article's content type
 - ISSUE_GUIDANCE: "Flag automod-trigger patterns word by word; flag flair mismatches."
 
-This is what catches LinkedIn accompanying posts saying "second of these" when the article doesn't say that — happened on the 2026-04-26 Tokens From Our Past run, caught manually by the user. Phase 4.5 prevents that next time.
+This is what catches LinkedIn accompanying posts saying "second of these" when the article doesn't say that — happened on the 2026-04-26 Tokens From Our Past run, caught manually by the user. The adversarial review prevents that next time.
 
 ### Closed-loop attribution note (no Buffer tag for this skill)
 

@@ -130,9 +130,9 @@ For each slide:
 
 The render script handles Chrome's 87px window-chrome offset and crops via `sips`. Don't reinvent it.
 
-### Phase 4.5 — Adversarial review (REQUIRED before user review)
+### Adversarial review (REQUIRED before user review)
 
-Apply the **[Adversarial Review pattern](../PATTERNS.md#pattern-adversarial-review-phase-45)** with these per-skill specifics:
+Apply the **[Adversarial Review pattern](../PATTERNS.md#pattern-adversarial-review)** with these per-skill specifics:
 
 - **SOURCE_LABEL:** "SOURCE ARTICLE"
 - **SOURCE_CONTENT:** the full beehiiv article body, verbatim

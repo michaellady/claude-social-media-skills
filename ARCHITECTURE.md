@@ -7,7 +7,7 @@ The skills in this repo are designed as a **closed loop**, not as independent on
 ```
 Compose with format tag (promote-* skills, Phase 6)
           ↓
-Adversarial review (Phase 4.5 — fresh agent vs source + skill rules)
+Adversarial review (fresh agent vs source + skill rules)
           ↓
 User review + publish (Phase 5 + 6)
           ↓
@@ -35,7 +35,7 @@ User accepts → SKILL.md edits committed → next batch better-targeted
 | [`crosspost-newsletter`](crosspost-newsletter/SKILL.md) | Full-article syndication to LinkedIn pulse, Substack, Medium + link submissions to HN, Reddit | (none — publishes directly to platform native editors, not Buffer; closed-loop attribution comes from `linkedin-stats` for the LinkedIn pulse + accompanying post) |
 
 Every compose-and-publish skill has these required phases:
-- **Phase 4.5 — Adversarial review** (spawn fresh subagent to audit drafts against source + skill rules before user sees them; catches fabrications)
+- **Adversarial review** (spawn fresh subagent to audit drafts against source + skill rules before user sees them; catches fabrications)
 - **Phase 6 — Buffer create_post** with `tags: ["format:<name>"]` (attribution prereq)
 
 ### Measure (read side)
@@ -79,7 +79,7 @@ These were derived from the LinkedIn /dashboard/ + Buffer Insights data collecte
 | LinkedIn channels default to `tease-newsletter` | (over `promote-newsletter`) | Top 3 LinkedIn posts past 7d were 0% verbatim quotes; LinkedIn pulse (essentially a teaser) ranked #1 by impressions |
 | LinkedIn pulse runs FIRST in `crosspost-newsletter` | (Phase 4 platform order) | LinkedIn pulse drove the #1-impressions LinkedIn post within hours; primes algorithm for later carousel/snippet posts |
 | Carousel runs AFTER pulse | (`carousel-newsletter` "When to use" section) | Re-engages a primed audience rather than a cold one |
-| Adversarial review required Phase 4.5 in every compose skill | (architecture rule) | User caught a fabrication ("every leader I respect keeps a token on their desk") manually on 2026-04-26 — agent should catch the next one automatically |
+| Adversarial review required in every compose skill | (architecture rule) | User caught a fabrication ("every leader I respect keeps a token on their desk") manually on 2026-04-26 — agent should catch the next one automatically |
 
 ## Why this matters
 
@@ -92,7 +92,7 @@ With the closed loop, **every promotion run feeds the next one's defaults.** The
 If the new skill **creates posts** (compose-and-publish):
 1. Define a new format tag (`format:<name>`) and add it to the table above
 2. Tag every Buffer post the skill creates with `tags: ["format:<name>"]` at `mcp__buffer__create_post` time
-3. Add a Phase 4.5 Adversarial Review (spawn a fresh subagent to audit drafts against source + skill rules before user sees them) — use existing skills as templates
+3. Add an Adversarial Review step (spawn a fresh subagent to audit drafts against source + skill rules before user sees them) — use existing skills as templates
 4. Document the format in `buffer-stats` Phase 5's expected-tags list
 
 If the new skill **reads engagement** (measure side):

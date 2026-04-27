@@ -15,7 +15,7 @@ The transport layer (in [`_shared/`](./_shared/)) handles the deterministic plum
 
 ---
 
-## Pattern: Adversarial review (Phase 4.5)
+## Pattern: Adversarial review
 
 Every compose-and-publish skill spawns a fresh subagent to audit drafted posts BEFORE the user reviews them. The reviewer has no context from the compose phase — fresh eyes catch fabrications and skill-rule violations the composer might have rationalized.
 
@@ -87,7 +87,7 @@ Both paths return the same JSON shape. Parse it; if all verdicts are PASS, proce
 
 ### Why this matters
 
-The user caught a fabrication ("every leader I respect keeps a token on their desk") manually on the 2026-04-26 Tokens From Our Past run. Phase 4.5 prevents the next one automatically. This is the only way to scale up promotion volume without scaling up the user's review burden.
+The user caught a fabrication ("every leader I respect keeps a token on their desk") manually on the 2026-04-26 Tokens From Our Past run. Adversarial review prevents the next one automatically. This is the only way to scale up promotion volume without scaling up the user's review burden.
 
 ---
 

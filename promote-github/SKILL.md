@@ -48,9 +48,11 @@ gh api "search/issues?q=author:{username}+type:pr+is:merged+is:public+merged:{da
 **2. Commits:**
 ```bash
 gh api "search/commits?q=author:{username}+committer-date:{date_qualifier}+is:public&sort=committer-date&per_page=100" \
-  --jq '.items[] | {sha: .sha[:7], message: .commit.message, html_url, repo: .repository.full_name, private: .repository.private}'
+  --jq ".items[] | select(.repository.owner.login == \"{username}\") | {sha: .sha[:7], message: .commit.message, html_url, repo: .repository.full_name, private: .repository.private}"
 ```
-Discard any result where `private` is `true` (belt-and-suspenders — `is:public` should already filter, but verify).
+**Filter to user-owned repos only** (`.repository.owner.login == username`). Without this, the search returns spam from public repos where the user's email happens to appear in commits (e.g. `ading2210-alt/bad-apple-git` returned 100+ unrelated frame-by-frame commits in the 2026-04-27 run). Also discard any result where `private` is `true` (belt-and-suspenders — `is:public` should already filter, but verify).
+
+**Important: this skill SHOULD pick up commits across ALL of the user's owned repos, not just the cwd.** The 2026-04-27 run accidentally fell back to local `git log` of one repo and missed `michaellady/youtube-analytics`'s same-day commit. Always use the `search/commits` API path; never substitute `git log` of the current directory.
 
 **3. Releases:**
 First, get the user's public repos updated in the date range:
@@ -245,9 +247,9 @@ For batch posts on short-form platforms: theme sentence + link to profile. Indiv
 - **Instagram requires an image** — skip Instagram for text-only posts.
 - **Skip TikTok and YouTube** — they require video assets.
 
-### Phase 4.5 — Adversarial review (REQUIRED before user review)
+### Adversarial review (REQUIRED before user review)
 
-Apply the **[Adversarial Review pattern](../PATTERNS.md#pattern-adversarial-review-phase-45)** with these per-skill specifics:
+Apply the **[Adversarial Review pattern](../PATTERNS.md#pattern-adversarial-review)** with these per-skill specifics:
 
 - **SOURCE_LABEL:** "GITHUB CONTRIBUTIONS BEING PROMOTED"
 - **SOURCE_CONTENT:** for each contribution — full title, full body/commit message, files changed, additions/deletions, canonical URL
