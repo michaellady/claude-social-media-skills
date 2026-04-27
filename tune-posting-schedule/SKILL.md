@@ -181,7 +181,17 @@ Compare the returned schedule to the proposed JSON. If any day's `times` array d
 
 **Apply per-channel, not in one batch.** Run `apply` then `verify` for each channel before moving to the next. If one fails, the user can intervene without losing the others.
 
-**Posting goal (separate concern):** the `postingGoal` on `Channel` (e.g. "21 posts/wk") is editable on the same Settings page (numeric input — only one `<input>` on the page) but is *independent* of the slot count. If the apply changes weekly slot count (e.g. drops 21→14), surface to the user that the goal won't auto-update — the Buffer queue will say "OnTrack" for goal=21 even though only 14 slots/wk fire. Recommend the user update the goal in the same UI session, or add a second helper to set the goal field.
+**Posting goal (handled in same helper):** the `postingGoal` on `Channel` (e.g. "21 posts/wk") is editable on the same Settings page (numeric input under the "Posting Goal" heading — set via React-native value setter + `input`/`change` events; auto-saves on blur). The schedule helper supports both modes:
+
+```bash
+# Schedule + goal in one call:
+_shared/buffer-schedule-edit/buffer-schedule-edit.sh <channelId> <schedule.json> <goal>
+
+# Goal only (no schedule edit):
+_shared/buffer-schedule-edit/buffer-schedule-edit.sh <channelId> --goal-only <goal>
+```
+
+Whenever a slot-count change is applied, the goal MUST be updated to match — otherwise Buffer's status will mis-report (a 14-slot week with goal=21 reads "AtRisk" even though it's at intended cadence).
 
 **If a future Buffer schema exposes the mutation:** introspect first; prefer the mutation over the web-UI automation (faster, no browser auth needed).
 

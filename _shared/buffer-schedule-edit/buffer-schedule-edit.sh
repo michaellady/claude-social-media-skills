@@ -1,11 +1,29 @@
 #!/usr/bin/env bash
-# Apply a Buffer posting schedule to one channel via the publish.buffer.com web UI.
-# Usage: buffer_schedule_apply.sh <channelId> <schedule.json>
-# Where schedule.json shape: {"mon": ["09:30","13:30","18:30"], "tue": [...], ...}
+# Edit a Buffer channel's posting schedule and/or weekly goal via publish.buffer.com web UI.
+#
+# Usage:
+#   buffer-schedule-edit.sh <channelId> <schedule.json>           # schedule only
+#   buffer-schedule-edit.sh <channelId> <schedule.json> <goal>    # schedule + numeric goal
+#   buffer-schedule-edit.sh <channelId> --goal-only <goal>        # goal only, leave slots alone
+#
+# schedule.json shape: {"mon": ["09:30","13:30","18:30"], "tue": [...], ...}
+# All times in 24h, channel-local timezone.
 set -euo pipefail
 
 CHANNEL_ID="$1"
-SCHEDULE_JSON="$2"
+MODE="schedule"
+SCHEDULE_JSON=""
+GOAL=""
+
+if [ "${2:-}" = "--goal-only" ]; then
+  MODE="goal_only"
+  GOAL="${3:-}"
+  if [ -z "$GOAL" ]; then echo "missing goal value" >&2; exit 2; fi
+else
+  SCHEDULE_JSON="$2"
+  GOAL="${3:-}"
+fi
+
 B="${B:-$HOME/.claude/skills/gstack/browse/dist/browse}"
 
 # JS helpers we'll inject repeatedly
@@ -33,6 +51,21 @@ window.__pickItem = (label) => {
   window.__radixClick(item);
   return "PICKED:" + label;
 };
+window.__setGoal = (val) => {
+  const heading = [...document.querySelectorAll("h1,h2,h3,h4")].find(h => h.textContent.trim().toLowerCase().includes("posting goal"));
+  if (!heading) return "NO_GOAL_HEADING";
+  let section = heading.parentElement;
+  for (let i = 0; i < 4; i++) { if (section.querySelector("input")) break; section = section.parentElement; }
+  const input = section.querySelector("input");
+  if (!input) return "NO_GOAL_INPUT";
+  const proto = Object.getPrototypeOf(input);
+  const setter = Object.getOwnPropertyDescriptor(proto, "value").set;
+  setter.call(input, String(val));
+  input.dispatchEvent(new Event("input", {bubbles: true}));
+  input.dispatchEvent(new Event("change", {bubbles: true}));
+  input.blur();
+  return "SET:" + input.value;
+};
 '
 
 run_js() {
@@ -50,6 +83,14 @@ clear_all() {
   sleep 1
   run_js 'window.__radixClick(document.querySelector("[data-testid=posting-schedule-clear-all-confirm]"));'
   sleep 2
+}
+
+set_goal() {
+  local val="$1"
+  echo "  → Set posting goal: $val"
+  local r=$(run_js "window.__setGoal($val);")
+  echo "    $r"
+  sleep 2  # auto-save propagation
 }
 
 # Convert "09:30" → ("Monday"-style day, "09", "30", "AM"/"PM")
@@ -118,6 +159,13 @@ day_full() {
 }
 
 navigate
+
+if [ "$MODE" = "goal_only" ]; then
+  set_goal "$GOAL"
+  echo "  → Done."
+  exit 0
+fi
+
 clear_all
 
 for day in mon tue wed thu fri sat sun; do
@@ -127,6 +175,10 @@ for day in mon tue wed thu fri sat sun; do
     add_slot "$(day_full "$day")" "$t"
   done
 done
+
+if [ -n "$GOAL" ]; then
+  set_goal "$GOAL"
+fi
 
 echo "  → Done. Verifying..."
 sleep 2
