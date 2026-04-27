@@ -1097,47 +1097,38 @@ or inform the user and pause via handoff.
 
 ### Phase 4.5 — Adversarial review per platform (REQUIRED before user review)
 
-Before showing each platform's prepared content to the user (Phase 5), **spawn a fresh subagent** (Agent tool, `general-purpose` type) to audit the submission against the source article + platform-specific rules.
+Apply the **[Adversarial Review pattern](../PATTERNS.md#pattern-adversarial-review-phase-45)** ONCE PER PLATFORM (each platform's submission has its own rules + artifact shape). Skill provides:
 
-For full-article platforms (LinkedIn pulse, Substack, Medium):
-- Verify the body matches source (no auto-paraphrased blockquotes, no inverted blockquote attribution, no missing sections, no extra invented sections)
-- Verify the canonical URL points to the original beehiiv post
-- Verify the accompanying post / subtitle is grounded in the source (no fabricated claims like "every leader I respect")
+- **SOURCE_LABEL:** "SOURCE BEEHIIV ARTICLE"
+- **SOURCE_CONTENT:** the full article body + title + subtitle
+- **SKILL_NAME:** `crosspost-newsletter`
+- **ARTIFACT_NAME:** "submission" (one per platform)
 
-For link-submission platforms (Hacker News, Reddit):
-- Verify the title respects the platform's title rules (HN: descriptive, no clickbait; Reddit: matches sub flair conventions)
-- Verify the body text doesn't trip the platform's automod patterns (Reddit specifically: no dollar amounts, no product-name-pitch framing — see Known Issues section)
-- Verify any "Author here" note doesn't duplicate the URL content
+Per-platform RULES_LIST + ISSUE_GUIDANCE:
 
-Agent prompt template (fill in `<<...>>`):
+**LinkedIn (native article):**
+- Body must match source order (no lost blockquotes, no inverted attribution, no missing sections, no invented sections)
+- Canonical URL must point to the original beehiiv post
+- Accompanying post must be grounded in the source (no fabricated claims like "every leader I respect")
+- ISSUE_GUIDANCE: "Cite drift from source. Quote unverifiable claims in the accompanying post."
 
-```
-You are an adversarial reviewer for /crosspost-newsletter <<platform>> submissions.
+**Substack:**
+- Body matches source order; email send enabled
+- ISSUE_GUIDANCE: "Same as LinkedIn — cite drift from source."
 
-SOURCE BEEHIIV ARTICLE:
-<<full article body + title + subtitle>>
+**Medium:**
+- Body source-faithful; canonical URL set; topics chosen from preference memory; subtitle replaces auto-pulled first-paragraph default
+- ISSUE_GUIDANCE: "Cite drift; flag if subtitle is the auto-pulled blockquote rather than the article's actual subtitle."
 
-PLATFORM RULES (for <<platform>>):
-<<paste relevant rules from this skill's platform section>>
+**Hacker News (link submission):**
+- Title is HN-appropriate (descriptive, ≤80 chars, no clickbait, no "Show HN:" misuse)
+- Author note (if any) doesn't duplicate URL content
+- ISSUE_GUIDANCE: "Quote clickbait phrases; flag duplicate-of-URL note content."
 
-PREPARED SUBMISSION:
-<<for full-article: title + subtitle + body HTML + canonical URL + accompanying post (LinkedIn only) + topics (Medium only)>>
-<<for link-submission: title + URL + body text + flair (Reddit only)>>
-
-For the prepared submission, return:
-- VERDICT: PASS or FAIL
-- ISSUES: array of specific problems. Cite exact strings.
-  - Body: any drift from source order, lost blockquotes, fabricated claims.
-  - Accompanying post: unverifiable third-party claims, false framing.
-  - Title (HN/Reddit): platform-fit issues.
-  - Body (Reddit): automod-trigger patterns.
-
-Return only the JSON: {"verdict": "...", "issues": [...]}
-```
-
-**Apply verdicts:**
-- PASS → proceed to Phase 5 user review for that platform.
-- FAIL → fix the issues (re-edit body, rewrite accompanying post, re-trim title, etc.) and re-run reviewer until clean.
+**Reddit (link submission):**
+- Title matches sub conventions; body doesn't trip automod patterns (no dollar amounts, no product-name-pitch framing — see Known Issues for the full list)
+- Flair selection appropriate for the article's content type
+- ISSUE_GUIDANCE: "Flag automod-trigger patterns word by word; flag flair mismatches."
 
 This is what catches LinkedIn accompanying posts saying "second of these" when the article doesn't say that — happened on the 2026-04-26 Tokens From Our Past run, caught manually by the user. Phase 4.5 prevents that next time.
 

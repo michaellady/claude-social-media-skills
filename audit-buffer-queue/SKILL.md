@@ -59,9 +59,21 @@ Surface bunched pairs with a recommendation: cancel one, OR reschedule one to a 
 
 Posts about the same article/topic going out too close together = audience fatigue.
 
-For each pair of queued posts on the same channel, check for shared distinctive phrases (4-8 word substrings). If 3+ posts on the same channel share a distinctive phrase within a 5-day window, flag as theme over-saturation.
+**Transport (`_shared/buffer-queue-check`):** the deterministic substring matching + per-keyword grouping is delegated to the [Buffer queue check pattern](../PATTERNS.md#pattern-buffer-queue--recently-sent-overlap-check). Pipe the `mcp__buffer__list_posts` JSON into the helper with the candidate distinctive phrases:
 
-Also check: how many queued posts mention the **same article title** (e.g., "Tokens From Our Past and The Great Re-Why-ing"). If >5 on the same channel, recommend cancelling some.
+```bash
+echo "$LIST_POSTS_JSON" | _shared/buffer-queue-check/buffer-queue-check \
+  --keywords "Tokens From Our Past,Mac Pro,paperweight,Trash Can"
+```
+
+**Cognition (skill):** the DECISIONS of which phrases count as "distinctive" + how many matches per channel within what time window count as "over-saturation" stay here.
+
+Defaults:
+- Distinctive phrase = 4-8 word substring that's unique to one article/topic (skip common words like "shipped", "skill", "AI")
+- 3+ matches on the same channel within 5 days = theme over-saturation flag
+- 5+ matches on the same channel for the same article title = aggressive over-saturation; recommend cancelling 2+
+
+The helper output makes this deterministic; the thresholds above are tunable judgment.
 
 ### Phase 4 — Untagged post check
 

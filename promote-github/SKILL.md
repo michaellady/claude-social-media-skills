@@ -247,41 +247,21 @@ For batch posts on short-form platforms: theme sentence + link to profile. Indiv
 
 ### Phase 4.5 — Adversarial review (REQUIRED before user review)
 
-**Spawn a fresh subagent** (Agent tool, `general-purpose` type) to audit each impact-framed post against the underlying GitHub contribution and the skill's value/impact rules.
+Apply the **[Adversarial Review pattern](../PATTERNS.md#pattern-adversarial-review-phase-45)** with these per-skill specifics:
 
-Agent prompt template (fill in `<<...>>`):
-
-```
-You are an adversarial reviewer for /promote-github posts. Your job is to catch fabrications and over-claims.
-
-GITHUB CONTRIBUTIONS BEING PROMOTED:
-<<for each contribution: full title, full body/commit message, files changed, additions/deletions, link>>
-
-SKILL RULES:
-- Posts must be VALUE/IMPACT-framed, not technical. ("Just shipped retry logic so webhooks stop silently failing" not "Merged PR #42: added retry logic with exponential backoff").
-- Claims must be SUPPORTED by the contribution body. No invented features, no inflated metrics.
-- BANNED: emoji unless requested.
-- BANNED: claims about adoption/users/engagement that the source doesn't support ("everyone is using this", "popular among X").
-- REQUIRED: every post links to the canonical GitHub URL.
-- REQUIRED: factual accuracy — if the post says "5 of 5 platforms shipped," verify the source supports 5/5.
-- For batched posts: theme sentence must accurately unify the listed contributions, not stretch them into a narrative they don't support.
-
-DRAFTED POSTS:
-<<list of drafted posts, one per channel + per contribution>>
-
-For each post, return:
-- VERDICT: PASS or FAIL
-- ISSUES: array of specific problems. Cite exact strings.
-  - For unsupported claims: quote the claim and explain why the source doesn't support it.
-  - For technical-jargon framing: quote the post and suggest the value/impact reframe.
-  - For inflated metrics: quote the number and what the source actually shows.
-
-Return only the JSON: {"verdict": [...], "issues": [...]} per post.
-```
-
-**Apply verdicts:**
-- All PASS → proceed to Phase 5.
-- Any FAIL → revise (re-frame technical jargon as value/impact, drop unsupported claims) and re-run the reviewer until clean.
+- **SOURCE_LABEL:** "GITHUB CONTRIBUTIONS BEING PROMOTED"
+- **SOURCE_CONTENT:** for each contribution — full title, full body/commit message, files changed, additions/deletions, canonical URL
+- **SKILL_NAME:** `promote-github`
+- **ARTIFACT_NAME:** "post"
+- **RULES_LIST:**
+  - Posts must be VALUE/IMPACT-framed, not technical. ("Just shipped retry logic so webhooks stop silently failing" not "Merged PR #42: added retry logic with exponential backoff").
+  - Claims must be SUPPORTED by the contribution body. No invented features, no inflated metrics.
+  - BANNED: emoji unless requested.
+  - BANNED: claims about adoption/users/engagement that the source doesn't support ("everyone is using this", "popular among X").
+  - REQUIRED: every post links to the canonical GitHub URL.
+  - REQUIRED: factual accuracy — if the post says "5 of 5 platforms shipped," verify the source supports 5/5.
+  - For batched posts: theme sentence must accurately unify the listed contributions, not stretch them into a narrative they don't support.
+- **ISSUE_GUIDANCE:** "For unsupported claims, quote the claim and explain why the source doesn't support it. For technical-jargon framing, quote the post and suggest the value/impact reframe. For inflated metrics, quote the number and what the source actually shows."
 
 ### Phase 5 — Review Before Publishing
 
@@ -316,16 +296,21 @@ The user can:
    );
    ```
    Silently omitting disconnected channels prevents wasted API calls and avoids posting to channels the user can't actually see.
-3a. **Skip below-threshold channels.** Default `min_followers_to_promote = 50`. Channels with fewer followers (verified via `get_channel`) are silently skipped — the queue spacing cost isn't worth the reach. User overrides with explicit "include all channels."
-4. For each approved post, call `mcp__buffer__create_post` with:
-   - `channelId`: exact ID from `list_channels`
-   - `text`: the composed post text (impact statement + GitHub link)
-   - `mode`: `"shareNow"` — **publishes immediately** (default behavior for this skill). Use `"addToQueue"` only if the user explicitly says "queue it" or "schedule it".
-   - `schedulingType`: `"automatic"` — Buffer publishes directly to the platform. Use `"notification"` only for platforms that require a manual reminder flow (rare).
-   - Do NOT pass `dueAt` when using `shareNow` — the post goes live immediately.
-   - `tags`: **`["format:link-share"]`** for individual contribution posts, **`["format:batch-summary"]`** for batched theme posts. Required for closed-loop measurement — `buffer-stats` uses these tags to compute engagement-per-format.
-   - `assets`: only if user provided an image — `{ images: [{ url: "<image-url>", metadata: { altText: "<contribution-title>" } }] }`
-   - Platform-specific `metadata`:
+
+Apply the **[Buffer create_post pattern](../PATTERNS.md#pattern-buffer-create_post-with-channel-filter--caps)** for the transport layer. Two key differences from the newsletter skills:
+
+- **Mode:** `--mode shareNow` (this skill defaults to instant-publish, not queue). User overrides with explicit "queue it" → `--mode addToQueue`.
+- **Format tag:** `link-share` for individual contribution posts, `batch-summary` for batched theme posts. The skill picks one per post based on whether the user chose individual vs batch mode in Phase 3.
+
+For each approved post, build args via `_shared/buffer-post-prep/buffer-post-prep`, then call `mcp__buffer__create_post` with the resulting JSON. The transport layer enforces:
+
+- Skips disconnected/locked/startPage channels
+- Skips channels below `min_followers_to_promote = 50`
+- Validates the post text against the platform char limit
+- Attaches the appropriate `tags: ["format:link-share"]` or `tags: ["format:batch-summary"]`
+- Sets platform-specific metadata correctly
+
+Legacy create_post details (kept for reference; transport layer handles them):
      - **Facebook**: `metadata.facebook.type: "post"`
      - **Instagram**: `metadata.instagram.type: "post"`, `metadata.instagram.shouldShareToFeed: true`
      - **Pinterest**: `metadata.pinterest.boardServiceId` (get from `get_channel` response, under `metadata.boards[].serviceId`)

@@ -132,39 +132,22 @@ The render script handles Chrome's 87px window-chrome offset and crops via `sips
 
 ### Phase 4.5 — Adversarial review (REQUIRED before user review)
 
-After image generation but before showing the preview grid to the user, **spawn a fresh subagent** (Agent tool, `general-purpose` type) to audit:
+Apply the **[Adversarial Review pattern](../PATTERNS.md#pattern-adversarial-review-phase-45)** with these per-skill specifics:
 
-1. The 10-slide script copy against the source article (every quote slide should be verbatim; section/stat slides should be grounded in the article).
-2. Each illustration's scene description against the slide's text (does the illustration reinforce or contradict the slide's meaning?).
-3. The CTA accent word on slide 10 (must be literally `newsletter` for the DM trigger).
+- **SOURCE_LABEL:** "SOURCE ARTICLE"
+- **SOURCE_CONTENT:** the full beehiiv article body, verbatim
+- **SKILL_NAME:** `carousel-newsletter`
+- **ARTIFACT_NAME:** "slide" (run reviewer over all 10 slides — copy + illustration scene prompt — at once)
+- **RULES_LIST:**
+  - Quote slides (template 03-quote): the QUOTE field MUST be verbatim from the source. No paraphrasing.
+  - Section slides (template 02-section): KICKER + HEADLINE + BODY must be grounded in the source. BODY can paraphrase but must not invent claims.
+  - Stat slides (template 04-stat): the NUMBER + LABEL must come from the source verbatim or be derivable from a fact in the source.
+  - CTA slide (template 05-cta): ACCENT_WORD MUST be literally `newsletter` (case-insensitive). Comment-to-DM trigger depends on this exact string — see [CTA pattern](../PATTERNS.md#pattern-comment-newsletter-cta--dm-trigger).
+  - Illustrations: each scene prompt should reinforce the slide's meaning (the illustration content should be relatable to the slide copy).
+  - BANNED: invented stats, fabricated quotes, claims the source doesn't support.
+- **ISSUE_GUIDANCE:** "For quote slides cite the source line; for invented claims cite both the slide and what the source says."
 
-Agent prompt template (fill in `<<...>>`):
-
-```
-You are an adversarial reviewer for /carousel-newsletter decks. Your job is to find slides that misrepresent the source article OR generate visual mismatches.
-
-SOURCE ARTICLE:
-<<full article body>>
-
-DECK SCRIPT (10 slides):
-<<for each slide: template type, copy keys + values, scene prompt used for illustration, output PNG path>>
-
-SKILL RULES:
-- Quote slides (templates 03-quote): the QUOTE field MUST be verbatim from the source. No paraphrasing.
-- Section slides (template 02-section): KICKER + HEADLINE + BODY must be grounded in the source. BODY can paraphrase but must not invent claims.
-- Stat slides (template 04-stat): the NUMBER + LABEL must come from the source verbatim or be derivable from a fact in the source.
-- CTA slide (template 05-cta): ACCENT_WORD MUST be literally `newsletter` (case-insensitive). Comment-to-DM trigger depends on this exact string.
-- Illustrations: each scene prompt should reinforce the slide's meaning (the illustration content should be relatable to the slide copy).
-- BANNED: invented stats, fabricated quotes, claims the source doesn't support.
-
-For each slide, return:
-- VERDICT: PASS or FAIL
-- ISSUES: array of specific problems. For quote slides cite the source line; for invented claims cite both the slide and what the source says.
-
-Return only the JSON: {"slides": [{slide_number, verdict, issues[]}, ...]}
-```
-
-**Apply verdicts:**
+**Apply verdicts (carousel-specific):**
 - All PASS → proceed to Phase 5 image preview.
 - Any FAIL on copy → fix the copy + re-render the slide PNG (cheap, no Gemini cost) → re-run reviewer.
 - Any FAIL on illustration → regenerate that single illustration (~$0.04) with a revised scene prompt → re-render → re-run reviewer.
