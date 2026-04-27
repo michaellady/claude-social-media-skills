@@ -19,6 +19,8 @@ User says things like:
 
 If they want a **single-image snippet**, use `promote-newsletter`. If they want to **republish the full article**, use `crosspost-newsletter`.
 
+**Recommended sequencing for major article launches:** run `/crosspost-newsletter` FIRST (publishes the LinkedIn pulse article), THEN `/carousel-newsletter` so the carousel re-engages an audience that already has the long-form context. Confirmed 2026-04-27: the LinkedIn pulse accompanying post for "Tokens From Our Past" was the #1-impressions LinkedIn post within hours of publish; following it with a carousel hits a primed audience rather than a cold one. See also `feedback_full_stack_newsletter_launch.md` for the broader 4-skill pipeline.
+
 ## Prerequisites
 
 **Auth (one-time):** Google Cloud Application Default Credentials.
@@ -128,6 +130,45 @@ For each slide:
 
 The render script handles Chrome's 87px window-chrome offset and crops via `sips`. Don't reinvent it.
 
+### Phase 4.5 — Adversarial review (REQUIRED before user review)
+
+After image generation but before showing the preview grid to the user, **spawn a fresh subagent** (Agent tool, `general-purpose` type) to audit:
+
+1. The 10-slide script copy against the source article (every quote slide should be verbatim; section/stat slides should be grounded in the article).
+2. Each illustration's scene description against the slide's text (does the illustration reinforce or contradict the slide's meaning?).
+3. The CTA accent word on slide 10 (must be literally `newsletter` for the DM trigger).
+
+Agent prompt template (fill in `<<...>>`):
+
+```
+You are an adversarial reviewer for /carousel-newsletter decks. Your job is to find slides that misrepresent the source article OR generate visual mismatches.
+
+SOURCE ARTICLE:
+<<full article body>>
+
+DECK SCRIPT (10 slides):
+<<for each slide: template type, copy keys + values, scene prompt used for illustration, output PNG path>>
+
+SKILL RULES:
+- Quote slides (templates 03-quote): the QUOTE field MUST be verbatim from the source. No paraphrasing.
+- Section slides (template 02-section): KICKER + HEADLINE + BODY must be grounded in the source. BODY can paraphrase but must not invent claims.
+- Stat slides (template 04-stat): the NUMBER + LABEL must come from the source verbatim or be derivable from a fact in the source.
+- CTA slide (template 05-cta): ACCENT_WORD MUST be literally `newsletter` (case-insensitive). Comment-to-DM trigger depends on this exact string.
+- Illustrations: each scene prompt should reinforce the slide's meaning (the illustration content should be relatable to the slide copy).
+- BANNED: invented stats, fabricated quotes, claims the source doesn't support.
+
+For each slide, return:
+- VERDICT: PASS or FAIL
+- ISSUES: array of specific problems. For quote slides cite the source line; for invented claims cite both the slide and what the source says.
+
+Return only the JSON: {"slides": [{slide_number, verdict, issues[]}, ...]}
+```
+
+**Apply verdicts:**
+- All PASS → proceed to Phase 5 image preview.
+- Any FAIL on copy → fix the copy + re-render the slide PNG (cheap, no Gemini cost) → re-run reviewer.
+- Any FAIL on illustration → regenerate that single illustration (~$0.04) with a revised scene prompt → re-render → re-run reviewer.
+
 ### Phase 5 — User review gate (IMAGES)
 
 Open a preview grid:
@@ -162,7 +203,7 @@ Reuse patterns from `../promote-newsletter/SKILL.md`. Filter `list_channels` to 
 | Facebook | `{ facebook: { type: "post" } }` | All 10 PNG URLs | Same as IG. |
 | Threads | `{ threads: { type: "post" } }` | All 10 PNG URLs (max 20) | Same as IG. |
 
-`mode: "addToQueue"`, `schedulingType: "automatic"`.
+`mode: "addToQueue"`, `schedulingType: "automatic"`, **`tags: ["format:carousel"]`** (required for closed-loop measurement — `buffer-stats` uses this tag to compute per-format engagement).
 
 **Important — `instagram.type` does NOT accept `carousel` as of 2026-04-26.** The Buffer MCP API rejects it with `"Invalid option: expected one of 'story'|'reel'|'post'"`. Use `instagram.type: "post"` and attach all 10 image URLs in `assets.images` — Instagram automatically renders multi-image posts as a carousel. Earlier skill claim about `PostType.carousel` was inaccurate (that's a top-level `PostType` enum but not valid for `InstagramPostMetadataInput.type`).
 

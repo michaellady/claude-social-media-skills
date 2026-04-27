@@ -273,6 +273,15 @@ Then retry `tabs_context_mcp`. Don't try to do Medium/HN work before the extensi
 
 Complete one platform fully (through publish) before starting the next.
 
+**Required platform order** (highest-leverage first; confirmed 2026-04-27):
+
+1. **LinkedIn (Native Article)** — runs FIRST. Data from 2026-04-27: the LinkedIn pulse accompanying post for "Tokens From Our Past" became the #1-impressions LinkedIn post within hours. The pulse + accompanying post combo is the highest-leverage single move in the cross-post pipeline. Its engagement also primes the algorithm for any subsequent LinkedIn carousel/snippet posts in the same article's promotion cycle.
+2. **Substack + Medium** — runs after LinkedIn. Substack uses gstack browse (manual login if needed). Medium uses Claude in Chrome with osascript clipboard path. Both can be done in parallel from the user's perspective if the user is OK juggling two browser windows; otherwise serialize.
+3. **Hacker News** — runs after the long-form syndication is live. HN comments often link to the LinkedIn or Medium versions for credibility, so having those URLs ready improves the submission body's "Author here..." note.
+4. **Reddit** — runs last. Reddit per-sub takes the longest (CAPTCHA, flair, automod) and benefits least from priming since each subreddit audience is distinct. ~3-5 min per sub with 90s pauses between.
+
+If the user explicitly asks to skip a leg, do so — but keep the relative order of the remaining legs (e.g. if skipping LinkedIn, still run Substack/Medium before HN/Reddit).
+
 ---
 
 #### Platform: LinkedIn (Native Article)
@@ -1085,6 +1094,52 @@ mcp__claude-in-chrome__computer (action: "wait", duration: 90, tabId: <tabId>)
 or inform the user and pause via handoff.
 
 ---
+
+### Phase 4.5 — Adversarial review per platform (REQUIRED before user review)
+
+Before showing each platform's prepared content to the user (Phase 5), **spawn a fresh subagent** (Agent tool, `general-purpose` type) to audit the submission against the source article + platform-specific rules.
+
+For full-article platforms (LinkedIn pulse, Substack, Medium):
+- Verify the body matches source (no auto-paraphrased blockquotes, no inverted blockquote attribution, no missing sections, no extra invented sections)
+- Verify the canonical URL points to the original beehiiv post
+- Verify the accompanying post / subtitle is grounded in the source (no fabricated claims like "every leader I respect")
+
+For link-submission platforms (Hacker News, Reddit):
+- Verify the title respects the platform's title rules (HN: descriptive, no clickbait; Reddit: matches sub flair conventions)
+- Verify the body text doesn't trip the platform's automod patterns (Reddit specifically: no dollar amounts, no product-name-pitch framing — see Known Issues section)
+- Verify any "Author here" note doesn't duplicate the URL content
+
+Agent prompt template (fill in `<<...>>`):
+
+```
+You are an adversarial reviewer for /crosspost-newsletter <<platform>> submissions.
+
+SOURCE BEEHIIV ARTICLE:
+<<full article body + title + subtitle>>
+
+PLATFORM RULES (for <<platform>>):
+<<paste relevant rules from this skill's platform section>>
+
+PREPARED SUBMISSION:
+<<for full-article: title + subtitle + body HTML + canonical URL + accompanying post (LinkedIn only) + topics (Medium only)>>
+<<for link-submission: title + URL + body text + flair (Reddit only)>>
+
+For the prepared submission, return:
+- VERDICT: PASS or FAIL
+- ISSUES: array of specific problems. Cite exact strings.
+  - Body: any drift from source order, lost blockquotes, fabricated claims.
+  - Accompanying post: unverifiable third-party claims, false framing.
+  - Title (HN/Reddit): platform-fit issues.
+  - Body (Reddit): automod-trigger patterns.
+
+Return only the JSON: {"verdict": "...", "issues": [...]}
+```
+
+**Apply verdicts:**
+- PASS → proceed to Phase 5 user review for that platform.
+- FAIL → fix the issues (re-edit body, rewrite accompanying post, re-trim title, etc.) and re-run reviewer until clean.
+
+This is what catches LinkedIn accompanying posts saying "second of these" when the article doesn't say that — happened on the 2026-04-26 Tokens From Our Past run, caught manually by the user. Phase 4.5 prevents that next time.
 
 ### Phase 5 — User Review (per platform)
 

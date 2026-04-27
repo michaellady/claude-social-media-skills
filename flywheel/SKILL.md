@@ -140,6 +140,36 @@ fi
 
 If the latest Buffer snapshot is >14 days old, flag it. Note that Buffer is the fan-out layer (Priority 2's "push viewers to Beehiiv" uses Buffer as the distribution surface for IG/FB/Threads), so its health informs Priority 2's attribution mix — if IG/Threads followers are growing but beehiiv attribution shows 0% from those surfaces, that's a link-in-bio / call-to-action problem, not a Buffer problem.
 
+### Phase 4.6 — Channel ROI score
+
+For each Buffer-connected channel, compute a `channel_roi_score` to surface deprioritization candidates. The score is a per-post engagement-weighted measure adjusted for queue cost:
+
+```
+channel_roi_score = (avg_impressions_per_post * eng_rate * 100) / (sent_count_in_window + 1)
+```
+
+Higher = more reach + engagement per post relative to how often we publish there.
+
+Then categorize:
+- `channel_roi_score >= 100` → 🟢 **High ROI** — keep current cadence, consider increasing.
+- `10 <= score < 100` → 🟡 **Mid ROI** — current cadence is fine.
+- `score < 10 AND followers < 50` → 🔴 **Below threshold** — recommend dropping from fan-out (the `min_followers_to_promote` config in promote-* skills should already handle this; surface as a reminder).
+- `score < 10 AND followers >= 50` → ⚪ **Diminishing returns** — recommend reducing fan-out volume on this channel; consider routing the same content through `tease-newsletter` instead of `promote-newsletter`.
+
+Render as part of the report:
+```markdown
+### Channel ROI
+
+| Channel | Followers | Posts (Nd) | Avg imps | ROI | Status |
+|---|---:|---:|---:|---:|:---:|
+| LinkedIn personal | 2,104 | 8 | 230 | 287 | 🟢 High |
+| Instagram (EVC) | 512 | 5 | 859 | 158 | 🟢 High |
+| Facebook (EVC) | — | 12 | 730 | 47 | 🟡 Mid |
+| LinkedIn page (EVC) | 28 | 8 | 23 | 0.4 | 🔴 Below threshold (recommend skip) |
+```
+
+Use this signal to inform Priority 3 ("cross-post the newsletter to LinkedIn weekly") — if LinkedIn personal is High ROI but LinkedIn page (EVC) is Below threshold, the priority should specifically target LinkedIn personal.
+
 ### Phase 5 — Consulting pipeline
 
 ```bash

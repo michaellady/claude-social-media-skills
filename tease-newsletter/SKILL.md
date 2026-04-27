@@ -18,13 +18,14 @@ Comment "newsletter" to get my latest post, "<Article Title>"
 
 Use when:
 - User says "tease this newsletter", "write teasers for...", "promote with hooks", "summarize and promote", "do tease-newsletter on..."
+- **The article is going to LinkedIn (any kind — page or personal).** LinkedIn data 2026-04-27: top 3 posts past 7 days were 0% verbatim quotes; the LinkedIn pulse accompanying post (essentially a teaser) ranked #1 by impressions within hours. Teasers outperform verbatim quotes on LinkedIn by a wide margin. **Default to `/tease-newsletter` for LinkedIn channels and `/promote-newsletter` for short-form (Threads/Bluesky/Mastodon) where verbatim quotes still work.**
 - The article has been promoted already with verbatim snippets and the user wants a second wave with a different angle
 - The article's strongest snippets are too long, too inside-baseball, or too punchline-heavy to quote raw
 
 Do NOT use when:
-- User wants verbatim quotes → use `promote-newsletter`
+- User wants verbatim quotes for short-form Threads/Bluesky/Mastodon → use `promote-newsletter`
 - User wants full-article syndication on LinkedIn/Substack/Medium/HN/Reddit → use `crosspost-newsletter`
-- User wants illustrated carousels → use the carousel-newsletter skill (if present)
+- User wants illustrated carousels → use `carousel-newsletter`
 
 ## Process
 
@@ -113,6 +114,49 @@ Same Buffer dedupe rules as `promote-newsletter` — each unique image URL can o
 
 Skip Instagram if no image is available for it. Skip TikTok / YouTube channels (video required).
 
+### Phase 4.5 — Adversarial review (REQUIRED before user review)
+
+**Spawn a fresh subagent** (Agent tool, `general-purpose` type) to audit every teaser against the source article + the skill's rules. The reviewer has no context from the compose phase — fresh eyes catch the "every leader I respect" / "second of these" type fabrications.
+
+Agent prompt template (fill in `<<...>>`):
+
+```
+You are an adversarial reviewer for /tease-newsletter posts. Your job is to find problems before the user has to.
+
+SOURCE ARTICLE:
+<<full article body, verbatim from beehiiv>>
+
+SKILL RULES:
+- Teasers are ORIGINAL copy that summarize without spoiling the punchline.
+- BANNED: any contiguous run of 7+ words copied from the source verbatim. Run a sliding window check.
+- BANNED: unverifiable third-party claims ("every leader I respect keeps a token on their desk", "everyone in [industry] knows…", "successful founders all do X").
+- BANNED: claims the article doesn't actually make (fabrication).
+- BANNED: spoiling the punchline (the reader's payoff for clicking through).
+- BANNED: emoji unless explicitly requested.
+- REQUIRED: every post ends with `Comment "newsletter" to get my latest post, "<Article Title>"` (verbatim CTA).
+- REQUIRED: same core message across all channels — only length adapted, not angle.
+- REQUIRED: total post char count within platform budget (e.g. Threads = 500 - CTA - 7 margin).
+
+DRAFTED TEASERS:
+<<list of teasers, one per channel>>
+
+For each teaser, return:
+- VERDICT: PASS or FAIL
+- ISSUES: array of specific problems. Cite exact strings.
+  - For verbatim drift: quote the 7+ word run that matches source.
+  - For fabrication: quote the claim and explain what the source actually says.
+  - For punchline spoilage: quote the line that gives away the takeaway.
+  - For unverifiable claims: quote the third-party assertion.
+
+Return only the JSON: {"verdict": [...], "issues": [...]} per teaser.
+```
+
+**Apply verdicts:**
+- All PASS → proceed to Phase 5.
+- Any FAIL → revise the failing teasers (using the issues as concrete edit guidance), re-run the reviewer until clean, THEN show to user. The user should see only PASS-grade copy at Phase 5.
+
+The first time this skill ran on "Tokens From Our Past" (2026-04-26), the user caught a fabrication ("Every leader I respect keeps a token from a past reskilling on their desk") manually. This phase prevents that next time.
+
 ### Phase 5 — Review Before Publishing
 
 Present all drafted teasers for approval:
@@ -134,10 +178,10 @@ Ask: **"Ready to schedule these to Buffer?"**
 
 ### Phase 6 — Schedule to Buffer
 
-Identical to `promote-newsletter` Phase 6:
+Identical to `promote-newsletter` Phase 6 (including the `min_followers_to_promote`, `max_posts_per_channel_per_article`, and below-threshold/locked channel filters):
 1. `mcp__buffer__get_account` → org ID + timezone
-2. `mcp__buffer__list_channels` → exact channel IDs (filter out `isDisconnected`, `isLocked`, `service: "startPage"`)
-3. Per approved post: `mcp__buffer__create_post` with `mode: "addToQueue"`, `schedulingType: "automatic"`, platform-specific metadata (`facebook.type: "post"`, `instagram.type: "post" + shouldShareToFeed: true`, etc.)
+2. `mcp__buffer__list_channels` → exact channel IDs (filter out `isDisconnected`, `isLocked`, `service: "startPage"`, channels below `min_followers_to_promote=50`)
+3. Per approved post: `mcp__buffer__create_post` with `mode: "addToQueue"`, `schedulingType: "automatic"`, **`tags: ["format:teaser"]`** (required — closed-loop measurement depends on this), platform-specific metadata (`facebook.type: "post"`, `instagram.type: "post" + shouldShareToFeed: true`, etc.)
 4. On HTTP 429 rate limit: stop, save remaining posts to `remaining-posts.md`, report.
 5. Report per-channel success/error.
 

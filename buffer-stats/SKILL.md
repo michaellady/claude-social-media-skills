@@ -355,7 +355,48 @@ For each channel in the current snapshot that also exists in `$PRIOR_SNAP`:
 
 Bootstrap case: first run has no prior snapshot → deltas render as `—`.
 
-### Phase 5 — Render report
+### Phase 5 — Format-performance analysis (closed-loop input)
+
+This is the **measurement** half of the closed loop. The promote-* skills tag every post they create with a `format:<name>` tag (`format:verbatim-quote`, `format:teaser`, `format:carousel`, `format:link-share`, `format:long-form-pulse`, `format:batch-summary`). Group sent posts by tag, compute per-format engagement, and surface which formats are working on which channels.
+
+For each sent post in the window, fetch its tags via `mcp__buffer__get_post`. For each `format:<name>` tag, aggregate:
+- count of posts
+- sum of impressions
+- sum of engagements (reactions + comments + reposts)
+- average impressions per post
+- average engagement rate per post
+
+Group by `(channel, format)` so the output answers "do verbatim quotes work on LinkedIn?" not just "what's the average engagement on LinkedIn?"
+
+Produce a table:
+
+| Channel | Format | Posts | Avg imps | Avg eng | Eng rate |
+|---|---|---:|---:|---:|---:|
+| LinkedIn personal | verbatim-quote | 9 | 23 | 0.4 | 1.7% |
+| LinkedIn personal | teaser | 5 | 188 | 1.2 | 0.6% |
+| LinkedIn personal | long-form-pulse | 1 | 412 | 8 | 1.9% |
+| Instagram | carousel | 1 | 4,293 | 39 | 0.91% |
+| ... | | | | | |
+
+**Surface a verdict** under each `(channel, top-2-formats)` pairing — "long-form-pulse outperforms verbatim-quote 18× on impressions on LinkedIn personal." This is the seed data for Phase 5b's adapt step.
+
+### Phase 5b — Recommend skill changes (closed-loop output)
+
+Based on the format-performance table, generate a **recommendations block** in the snapshot output:
+
+```
+## Skill recommendations (auto-generated from this week's data)
+
+- promote-newsletter: max_posts_per_channel_per_article currently = 3. Verbatim-quote engagement on LinkedIn personal averaged 0.4 reactions vs teaser at 1.2. **Recommend lowering to 2** for LinkedIn channels OR routing LinkedIn through tease-newsletter exclusively.
+- carousel-newsletter: avg IG impressions 4,293 (1 post) vs IG verbatim avg 269 (9 posts). **Recommend running /carousel-newsletter on every newsletter** (current usage is opportunistic).
+- promote-* skills (all): EVC LinkedIn page sent 8 posts past 7d, total 23 impressions across all of them, +0 followers. **Recommend raising min_followers_to_promote from 50 to 100** (the page is at 28; not worth fan-out at any volume).
+```
+
+Each recommendation should include the data citation (numerator/denominator + source format + channel) so the user can verify before adopting. The recommendations are **suggestions, not auto-applied changes** — the user reviews and either accepts (which triggers a SKILL.md edit + commit) or rejects (which gets logged as a "data didn't move us" note for next week).
+
+This phase is what makes the system a closed loop: posts go out tagged → engagement gets attributed by tag → recommendations get generated from the attribution → user accepts/rejects → defaults shift → next batch of posts is better-targeted.
+
+### Phase 5c — Render report
 
 Print markdown to stdout. Fixed structure for diff-ability across weeks:
 
@@ -372,6 +413,14 @@ Print markdown to stdout. Fixed structure for diff-ability across weeks:
 | Instagram (@evc) | 2 | 1 | 512 | +3 | 2.1% | 🟡 AtRisk |
 | …
 
+## Format performance
+
+(See Phase 5 — per-(channel, format) engagement aggregation table.)
+
+## Skill recommendations
+
+(See Phase 5b — auto-generated suggestions based on this week's format-performance data.)
+
 ## Top posts (last N days)
 
 | Rank | Channel | Impressions | Engagement | Rate | Sent | Snippet |
@@ -387,6 +436,7 @@ Print markdown to stdout. Fixed structure for diff-ability across weeks:
 - 🟡 Goals at risk: <list>
 - ⚪ Empty queues: <list> (queue depth <3)
 - ⚪ Stale engagement: <channels with no data for N days>
+- ⚪ Untagged posts: <count> (posts sent without a `format:` tag — closed-loop attribution gap)
 
 ## Raw numbers
 <collapsed JSON path>

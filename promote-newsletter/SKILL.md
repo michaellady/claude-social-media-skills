@@ -116,6 +116,43 @@ For long-form platforms (LinkedIn, Instagram): the full snippet can be used, pot
 
 **Skip TikTok and YouTube channels** — they require video assets, not images.
 
+### Phase 4.5 — Adversarial review (REQUIRED before user review)
+
+**Spawn a fresh subagent** (Agent tool, `general-purpose` type) to audit every drafted post against the source article and the skill's rules. The reviewer agent has no context from the compose phase — it only sees the source + skill rules + drafts.
+
+Agent prompt template (fill in `<<...>>`):
+
+```
+You are an adversarial reviewer for /promote-newsletter posts. Your job is to find problems before the user has to.
+
+SOURCE ARTICLE:
+<<full article body, verbatim from beehiiv>>
+
+SKILL RULES:
+- Each post body (excluding CTA) must be a DIRECT EXCERPT from the source. No rewriting, no paraphrasing.
+- Allowed edits: remove words/sentences (use `…`), add line breaks, truncate from the end.
+- Every post MUST end with: Comment "newsletter" to get my latest post, "<Article Title>"
+- No emoji unless explicitly requested.
+- No unverifiable third-party claims ("every leader I respect…", "everyone in [industry] knows…").
+
+DRAFTED POSTS:
+<<list of drafted posts, one per channel, with snippet + CTA>>
+
+For each post, return:
+- VERDICT: PASS or FAIL
+- ISSUES: array of specific problems (e.g., "Snippet contains the word 'paperweight' which doesn't appear in the source"; "Missing CTA"; "Adds emoji not in source"; "Paraphrases — source says X, snippet says Y")
+
+Be specific. Cite exact strings. If a snippet IS verbatim, confirm by saying "Verbatim match: lines N-M of source." Do not give a PASS without citing the verbatim location.
+
+Return only the JSON: {"verdict": [...], "issues": [...]} per post.
+```
+
+**Apply the verdicts:**
+- All PASS → proceed to Phase 5.
+- Any FAIL → either auto-fix (re-pull the verbatim snippet from the source) and re-run the reviewer, OR surface the FAIL items to the user as warnings before user review. Don't silently ship FAIL items.
+
+This step is what makes "no fabrication" a property of the system rather than a hope.
+
 ### Phase 5 — Review Before Publishing
 
 Present all drafted posts for approval:
@@ -144,11 +181,14 @@ The user can:
 1. Call `mcp__buffer__get_account` to get the organization ID and timezone. If multiple orgs, ask the user which one.
 2. Call `mcp__buffer__list_channels` with the org ID. Never guess channel IDs.
 3. **Filter out disconnected/locked channels before composing or posting.** Each channel has `isDisconnected` and `isLocked` booleans — skip any where either is `true`. Also skip `service: "startPage"` (not a social channel). Silently omit them to avoid wasted API calls and dead posts.
+3a. **Skip below-threshold channels.** For each remaining channel, call `mcp__buffer__get_channel` and check the connected account's audience size. **Default `min_followers_to_promote = 50`.** Channels with fewer followers than the threshold are silently skipped (the post-spacing cost in the queue isn't worth the reach). Confirmed 2026-04-27: the EVC LinkedIn page (28 followers, max post 54 imps, +1 follower in 8 days) is below this threshold and not worth fan-out. User can override with explicit "include all channels" instruction.
+3b. **Cap per-channel post volume.** **Default `max_posts_per_channel_per_article = 3`.** If the user picked more than 3 snippets, the skill schedules the top-3 per channel (using snippet order or user's explicit ranking) and reports the dropped snippets. Buffer Insights data 2026-04-27 showed reactions DOWN 52% M-o-M while posts UP 24.5% — fan-out volume past ~3 posts/channel/article hits diminishing returns and fatigues the audience. User can override with explicit "schedule all" instruction.
 4. For each approved post, call `mcp__buffer__create_post` with:
    - `channelId`: exact ID from `list_channels`
    - `text`: the composed post text (snippet + CTA)
    - `mode`: `"addToQueue"`
    - `schedulingType`: `"automatic"`
+   - `tags`: tag the post with the format identifier so `buffer-stats` can later compute engagement-per-format. **Required tag: `format:verbatim-quote`** (this skill always produces verbatim quotes). Get/create the tag via `mcp__buffer__list_tags` + `execute_mutation` if needed.
    - `assets`: `{ images: [{ url: "<image-url>", metadata: { altText: "<article-title>" } }] }`
    - Platform-specific `metadata`:
      - **Facebook**: `metadata.facebook.type: "post"`
