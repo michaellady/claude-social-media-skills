@@ -99,6 +99,15 @@ Inspect the Buffer queue for health issues that aren't caught by the per-skill s
 /audit-buffer-queue
 ```
 
+#### `/tune-posting-schedule`
+
+Analyze each Buffer channel's `postingSchedule` (the time slots Buffer drops queued posts into) and propose + apply a better one. Pairs with `/audit-buffer-queue`: that skill cancels/reschedules individual bunched posts; this one fixes the **slots** so bunches stop recurring. Uses gap-spacing rules + (optional) engagement-by-hour data from `/buffer-stats`. Applies via Buffer's GraphQL mutation after explicit per-channel approval.
+
+```
+/tune-posting-schedule
+/tune-posting-schedule threads-mikelady,facebook-evc
+```
+
 ## Setup
 
 1. Install [Claude Code](https://claude.ai/code)
@@ -113,7 +122,8 @@ Inspect the Buffer queue for health issues that aren't caught by the per-skill s
    ```bash
    for skill in promote-newsletter tease-newsletter carousel-newsletter \
                 promote-github crosspost-newsletter \
-                buffer-stats linkedin-stats flywheel audit-buffer-queue; do
+                buffer-stats linkedin-stats flywheel \
+                audit-buffer-queue tune-posting-schedule; do
      ln -s /path/to/claude-social-media-skills/$skill ~/.claude/skills/$skill
    done
    ```
