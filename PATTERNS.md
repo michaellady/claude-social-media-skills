@@ -219,6 +219,22 @@ _shared/buffer-post-prep/buffer-post-prep \
 
 Outputs validated JSON ready to pass as `mcp__buffer__create_post` args. Exits non-zero on validation failure (caller stops).
 
+### Hard rule: ALWAYS go through `buffer-post-prep`
+
+Skills MUST NOT call `mcp__buffer__create_post` directly with hand-rolled args. Bypassing the helper bypasses pre-validation — confirmed 2026-05-03 when promote-github sent direct `create_post` calls and Buffer rejected 2 Threads posts at 700+ chars (the helper's `platformLimits` check would have caught this before the API round-trip). Even single-post calls go through the helper.
+
+### Retry handling for known transient + idempotent failures
+
+The Buffer API has three failure modes the caller must handle deterministically. Build these into every promote-/crosspost-* publish loop:
+
+| Failure | Detection | Action |
+|---|---|---|
+| **Char-limit rejection** | `error.message` contains `"posts cannot exceed"` or `"Invalid post"` paired with a length-shaped phrase | The helper's pre-validation should have caught this; if it slipped through, the caller has a content bug. Log + skip the post (do NOT silently truncate — that's an editorial change). Surface to the user with the offending channel + length. |
+| **Timeout (10000ms exceeded)** | `error.message` contains `"timed out"` or `"timeout of"` | **The post likely DID land** — Buffer's API timeout is on the response side, not the action. Wait 5 sec, retry the SAME payload exactly once. If retry returns `"posted that one recently"` / `"duplicate"` error, treat as success (the original timed-out call went through). If retry returns a fresh post ID, that's the canonical post (the timeout was real and the post didn't land the first time). Confirmed 2026-05-03 on a FB batch-2 short post — timed out, retry confirmed already-sent. |
+| **Rate limit (HTTP 429)** | `error.code == 429` or `error.message` contains `"rate limit"` | Stop immediately. Do NOT retry in a loop. Save remaining posts to `remaining-posts.md` in the project dir with full payload (channel ID, text, tags, mode, metadata) so a later session can resume. Report to user which posts succeeded and which are queued for retry. |
+
+Variant selection for batched posts hitting different platform limits: when a single batch produces both a long-form (LinkedIn, 3000 chars) and short-form (Threads, 500 chars) version of the same content, pass each variant + channel through the helper individually. Don't hand-pick variants — the helper's `platformLimits` map is authoritative; a draft that's 700 chars routed to a 500-char channel will fail and surface the mismatch immediately.
+
 ---
 
 ## Pattern: Per-skill format tag

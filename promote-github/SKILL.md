@@ -370,6 +370,8 @@ _shared/buffer-post-prep/buffer-post-prep \
   --mode shareNow
 ```
 
+**🚦 MANDATORY — every post MUST go through `buffer-post-prep` before `mcp__buffer__create_post`.** Do not hand-roll `create_post` args directly. Confirmed 2026-05-03: a direct-call run sent 700+ char Threads posts because the helper's `platformLimits` pre-validation was bypassed. Even single-post calls and per-channel batched fan-out variants route through the helper — that's the only way `platformLimits` catches char-limit overruns before the API round-trip.
+
 For each approved post, build args via `_shared/buffer-post-prep/buffer-post-prep`, then call `mcp__buffer__create_post` with the resulting JSON. The transport layer enforces:
 
 - Skips disconnected/locked/startPage channels
