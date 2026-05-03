@@ -90,12 +90,18 @@ For each untagged post, classify by text content:
 - 10-image multi-image post → `format:carousel`
 - contains `github.com/` URL → `format:link-share` (or `format:batch-summary` if the post unifies multiple contributions with a theme sentence)
 
-**Auto-backfill (since 2026-04-27, Stage A complete):** the 5 format tags exist on the org and their IDs are in `_shared/buffer-post-prep/tag-ids.local.json`. For each untagged post, you CAN auto-apply the right tag via the Buffer GraphQL `editPost` mutation — but with two important caveats:
+**Auto-backfill applies to SCHEDULED posts only** (since 2026-04-27, Stage A complete). The 5 format tags exist on the org and their IDs are in `_shared/buffer-post-prep/tag-ids.local.json`. For each **scheduled** untagged post, you CAN auto-apply the right tag via the Buffer GraphQL `editPost` mutation — caveats:
 
-1. **`editPost` is full-replace, NOT partial-update.** If you only pass `id + tagIds`, the post's text + assets + metadata get wiped. Always fetch the full post first via `mcp__buffer__get_post` and pass `text + assets + metadata + tagIds` together. See `/tmp/queue_audit/backfill_tags.sh` for a working reference implementation (the curl-based script used for the original 53-post backfill).
+1. **`editPost` is full-replace, NOT partial-update.** If you only pass `id + tagIds`, the post's text + assets + metadata get wiped. Always fetch the full post first via `mcp__buffer__get_post` and pass `text + assets + metadata + tagIds` together. See `/tmp/queue_audit/backfill_tags.sh` for a working reference implementation (the curl-based script used for the original ~53-post backfill — those were all in the queue).
 2. **Buffer enforces a 15-min sliding rate-limit window** on the OIDC token (~50-100 calls per 15 min before HTTP 429). For a backfill of more than ~25 posts, expect to hit it; build a poll-retry loop with 180s sleep between attempts (also at `/tmp/queue_audit/poll_retry.sh`).
 
-If the user prefers manual control, surface the recommendations and let them apply individually — `mcp__buffer__edit_post` is not exposed as a domain tool, so they'd use Buffer's web UI tag picker.
+**Sent posts: no API backfill path.** Confirmed 2026-05-03: `editPost` returns `"Account is not allowed to perform this action on post"` for any post with `status: "sent"`, regardless of `tagIds` payload. Reason: sent posts' `allowedActions` lists `updatePostTags` (UI-side affordance) but NOT `updatePost` (which is what `editPost` mutation requires). The `updatePostTags` capability has no public GraphQL or REST equivalent — only Buffer's web UI tag picker can do it.
+
+For sent-post tag backfill, you have two choices:
+1. **Manual** (recommended for ≤20 posts): user opens Buffer's posts dashboard, clicks each post, picks the right `format:` tag from the dropdown. ~30 sec per post.
+2. **Web-UI driver** (justified for ≥50 posts): build `_shared/buffer-tag-edit/` analogous to the `_shared/buffer-schedule-edit/` driver — a gstack-driven script that opens each post in the Buffer UI and clicks the tag picker. Significant skill-build investment; only worth it at scale.
+
+For sent-post gaps below the web-driver threshold: surface the list to the user as "manual backfill needed" rather than attempting `editPost` (which silently fails for the user — better to be explicit).
 
 ### Phase 5 — Dead-channel check
 
