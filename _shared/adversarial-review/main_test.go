@@ -170,6 +170,32 @@ func TestSelectReviewers_OptInAgent(t *testing.T) {
 	}
 }
 
+func TestSelectReviewers_OptInGemini(t *testing.T) {
+	got, err := selectReviewers("claude,codex,gemini")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 || got[2].name != "gemini" {
+		t.Fatalf("want gemini included, got %#v", got)
+	}
+}
+
+func TestSelectReviewers_AllFour(t *testing.T) {
+	got, err := selectReviewers("claude,codex,agent,gemini")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"claude", "codex", "agent", "gemini"}
+	if len(got) != 4 {
+		t.Fatalf("want 4 reviewers, got %d", len(got))
+	}
+	for i, r := range got {
+		if r.name != want[i] {
+			t.Fatalf("at %d: want %s, got %s", i, want[i], r.name)
+		}
+	}
+}
+
 func TestSelectReviewers_Unknown(t *testing.T) {
 	if _, err := selectReviewers("claude,bogus"); err == nil {
 		t.Fatal("expected error for unknown reviewer")

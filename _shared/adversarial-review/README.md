@@ -2,8 +2,8 @@
 
 Multi-reviewer adversarial-review transport: dispatches the same prompt to
 every selected reviewer CLI in parallel (default `claude,codex`; opt-in
-`agent` for Cursor), parses each reviewer's JSON verdict, and emits a merged
-canonical response.
+`agent` for Cursor and `gemini` for Google), parses each reviewer's JSON
+verdict, and emits a merged canonical response.
 
 This directory is **vendored from**
 [`mike-skills/adversarial-review`](https://github.com/michaellady/mike-skills/tree/main/adversarial-review)
@@ -29,6 +29,7 @@ _shared/adversarial-review/
     claude/claude.go               # claude CLI provider
     codex/codex.go                 # codex exec provider
     agent/agent.go                 # Cursor agent CLI provider (opt-in)
+    gemini/gemini.go               # Google Gemini CLI provider (opt-in)
 ```
 
 ## Build
@@ -48,16 +49,25 @@ printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review
 
 Flags:
 
-- `--reviewers <csv>` — which reviewers to dispatch (default `claude,codex`; opt-in `agent`)
+- `--reviewers <csv>` — which reviewers to dispatch (default `claude,codex`; opt-in `agent`, `gemini`)
 - `--prompt-file PATH` — read prompt from file instead of stdin
 - `--timeout SECONDS` — per-reviewer timeout (default 300)
 - `--quiet` — suppress provider heartbeat lines on stderr
 
-To enable the Cursor agent reviewer:
+To enable the additional opt-in reviewers:
 
 ```bash
+# Add Cursor agent
 printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review \
   --reviewers claude,codex,agent
+
+# Add Google Gemini
+printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review \
+  --reviewers claude,codex,gemini
+
+# Maximum redundancy (4-way)
+printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review \
+  --reviewers claude,codex,agent,gemini
 ```
 
 See [SKILL.md](SKILL.md) for the contract (input requirements, output JSON

@@ -42,6 +42,7 @@ import (
 	"github.com/michaellady/mike-skills/llm-provider/agent"
 	"github.com/michaellady/mike-skills/llm-provider/claude"
 	"github.com/michaellady/mike-skills/llm-provider/codex"
+	"github.com/michaellady/mike-skills/llm-provider/gemini"
 	"github.com/michaellady/mike-skills/llm-provider/provider"
 )
 
@@ -76,15 +77,16 @@ type reviewerSpec struct {
 }
 
 // registeredReviewers is every provider the binary knows how to dispatch.
-// The default --reviewers selection is `claude,codex` — `agent` is registered
-// but opt-in (pass --reviewers claude,codex,agent to enable it). Reasoning:
-// claude+codex is the validated default for this transport; agent is a
-// recently-added reviewer kept available for experimentation without
-// changing the default merge behavior.
+// The default --reviewers selection is `claude,codex` — `agent` and `gemini`
+// are registered but opt-in (pass --reviewers claude,codex,agent,gemini to
+// enable everything). Reasoning: claude+codex is the validated default for
+// this transport; the other reviewers are kept available for experimentation
+// or high-stakes drafts without changing the default merge behavior.
 var registeredReviewers = []reviewerSpec{
 	{name: "claude", cli: "claude", make: func() provider.Provider { return claude.New() }},
 	{name: "codex", cli: "codex", make: func() provider.Provider { return codex.New() }},
 	{name: "agent", cli: "agent", make: func() provider.Provider { return agent.New() }},
+	{name: "gemini", cli: "gemini", make: func() provider.Provider { return gemini.New() }},
 }
 
 // defaultReviewers is the comma-separated default for the --reviewers flag.
@@ -99,7 +101,7 @@ func main() {
 	flag.IntVar(&timeoutSec, "timeout", 300, "per-reviewer timeout (seconds)")
 	flag.BoolVar(&quiet, "quiet", false, "suppress provider heartbeat lines on stderr")
 	flag.StringVar(&reviewersCSV, "reviewers", defaultReviewers,
-		"comma-separated reviewers to dispatch (registered: claude,codex,agent)")
+		"comma-separated reviewers to dispatch (registered: claude,codex,agent,gemini)")
 	flag.Parse()
 
 	selected, err := selectReviewers(reviewersCSV)

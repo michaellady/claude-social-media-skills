@@ -17,7 +17,7 @@ The transport layer (in [`_shared/`](./_shared/)) handles the deterministic plum
 
 ## Pattern: Adversarial review
 
-Every compose-and-publish skill spawns multiple fresh reviewers in parallel — by default Claude + Codex CLIs (Cursor `agent` is registered but opt-in) — to audit drafted posts BEFORE the user reviews them. None of the reviewers has context from the compose phase. Their verdicts are merged with a FAIL-OR rule (any FAIL from any reviewer → FAIL). Different model families catch different failure modes (Claude → tone/voice/CTA; Codex → logical inconsistency, unsupported quantitative claims; agent → third independent perspective for high-stakes drafts).
+Every compose-and-publish skill spawns multiple fresh reviewers in parallel — by default Claude + Codex CLIs (Cursor `agent` and Google `gemini` are registered but opt-in) — to audit drafted posts BEFORE the user reviews them. None of the reviewers has context from the compose phase. Their verdicts are merged with a FAIL-OR rule (any FAIL from any reviewer → FAIL). Different model families catch different failure modes (Claude → tone/voice/CTA; Codex → logical inconsistency, unsupported quantitative claims; agent + gemini → additional independent perspectives for high-stakes drafts).
 
 ### Generic prompt scaffold
 
@@ -66,9 +66,17 @@ cd _shared/adversarial-review && go build .
 # Default: claude + codex in parallel
 printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review
 
-# Opt-in: also include Cursor agent as a third reviewer
+# Opt-in: also include Cursor agent
 printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review \
   --reviewers claude,codex,agent
+
+# Opt-in: also include Google Gemini
+printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review \
+  --reviewers claude,codex,gemini
+
+# Maximum redundancy (4-way)
+printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review \
+  --reviewers claude,codex,agent,gemini
 ```
 
 The binary fans out to every selected reviewer in parallel via the shared `mike-skills/llm-provider/` transport, parses each reviewer's JSON, and merges with the FAIL-OR rule (any FAIL from any reviewer → FAIL). Issues are clustered by overlap and prefixed `[<r1>+<r2>+...]` (e.g. `[claude]`, `[codex]`, `[claude+codex]`, `[claude+codex+agent]`). If a selected CLI is missing on PATH the binary degrades gracefully — entries appear in `skipped: {<name>: "<reason>"}` and the merged verdict is computed from the remaining reviewers.
