@@ -16,6 +16,22 @@ If a platform offers the option to send the article as an email to subscribers, 
 
 `/crosspost-newsletter <beehiiv-post-url>` or `/crosspost-newsletter latest`
 
+## Required up-front auth handoff (for "review at end" / autonomous mode)
+
+If the user asks for a fully autonomous run ("kick off and only review at end"), surface this prerequisite up-front and pause for the picker selection — don't try to silently skip platforms whose auth couldn't be established. Caught 2026-05-03.
+
+| Platform | Auth path | Cost |
+|---|---|---|
+| LinkedIn | gstack `cookie-import-browser chrome linkedin.com` | ~10 sec, picker UI |
+| Reddit | gstack `cookie-import-browser chrome reddit.com` + UA spoof | ~10 sec, picker UI |
+| Medium | already-logged-in real Chrome (Claude in Chrome) | usually free |
+| Hacker News | already-logged-in real Chrome (Claude in Chrome) | usually free |
+| Substack | gstack `$B handoff` (cookies don't work — see Known Issues) | **2 min in-window login required mid-run** |
+
+**Optimal flow:** open the gstack cookie picker ONCE before any platform work and tell the user to select linkedin.com + reddit.com at the same time, then close it. Substack is the only platform that requires a mid-run handoff (its session cookies are HttpOnly).
+
+**If running fully autonomous and Substack login is missing:** SKIP Substack and document in the Phase 7 summary as `SKIPPED: requires manual login + cookies don't work`. Do NOT silently fail.
+
 ## Before You Begin — Run in a Dedicated Claude Instance
 
 This skill executes **hundreds of tool calls** (content extraction, image uploads, multi-step browser automation, per-subreddit submissions). Approving each permission prompt interactively is painfully slow and breaks flow.
@@ -1321,12 +1337,18 @@ When `<img src="https://media.beehiiv.com/...">` tags are part of the pasted HTM
 ### Medium canonical URL field needs explicit "Edit canonical link" click
 The canonical URL textbox is in display mode by default after the "originally published elsewhere" checkbox is checked — it shows Medium's auto-generated URL but doesn't accept input. **Workflow:** click the "Edit canonical link" button next to the textbox first (this enters edit mode), THEN triple_click the textbox + Delete + type the beehiiv URL. The button text changes to "Save canonical link" once the value differs from the auto-generated one — click it to commit.
 
-### Medium topic autocomplete is finicky
+### Medium topic autocomplete is finicky — use Down + Return keyboard pattern
 - Tab key removes focus from the topic combobox WITHOUT committing the typed text as a chip. Don't use Tab.
 - Chained sequence "type X / Enter / type Y / Enter" can merge X and Y into one corrupted chip ("AI AgentAgentic Ai"). Wait between operations, or split into separate find+click+type cycles.
-- Coordinate-based clicks on the autocomplete dropdown options sometimes close the dropdown without committing — Medium's React component is sensitive to event provenance.
-- **Most reliable pattern:** type tag, wait 1-2 sec for dropdown to render, find the autocomplete option by exact text match (`"Agentic Ai (3.9K)"`), click via ref. If that fails, hand off the last tag for the user to click manually.
-- 4 of 5 desired topics is acceptable; the AI cluster (AI, Artificial Intelligence, AI Agent, Agentic Ai, Agents) all funnel into similar discovery feeds.
+- **Coordinate-based clicks AND `click(ref)` on the autocomplete dropdown options consistently fail to commit** the chip — the dropdown closes but no chip appears in the topics field. Medium's React component is sensitive to event provenance and rejects synthetic clicks.
+- **Working pattern (confirmed 2026-05-03 after click-based pattern failed for ~10 min):**
+  1. `left_click` the combobox (ref via `find "Add a topic..."` or `"Add more topics..."`)
+  2. `type "<topic>"`
+  3. `wait 2` (let dropdown render)
+  4. `key "Down Return"` — Down highlights the first dropdown option, Return commits it as a chip
+  5. Repeat for each topic
+  Worked on all 5 topics (AI, Artificial Intelligence, AI Agent, Agentic Ai, Agents) without a single miss.
+- 4 of 5 desired topics is acceptable as fallback; the AI cluster (AI, Artificial Intelligence, AI Agent, Agentic Ai, Agents) all funnel into similar discovery feeds.
 
 ### Medium naive copy-paste from beehiiv requires manual user action (LEGACY — use osascript path above instead)
 The simplest way to get a beehiiv article into Medium with images is copy-paste from a second tab. BUT **Claude in Chrome's programmatic `cmd+c`/`cmd+v` across tabs does not work**. Chrome's clipboard operations require the tab to be OS-focused, and the extension sends keyboard events to a tabId regardless of which tab the user is actually looking at. Empirical confirmation: `navigator.clipboard.write()` from a non-focused tab fails with "Document is not focused." A keyboard-level `cmd+c` on a backgrounded tab leaves the system clipboard empty (or copies whatever was in the focused tab).
@@ -1420,6 +1442,14 @@ The Claude in Chrome extension refuses to navigate to `reddit.com` with the mess
 
 ### Reddit gstack handoff + resume clears all form fields
 When you do `$B handoff "..."` on a Reddit submit page and then `$B resume`, all form fields (Title, Link URL, Body text) and any selected flair get wiped. This is different from the flair-modal clearing issue — the handoff itself triggers a soft page refresh. **Workaround:** after resuming from a Reddit handoff, re-fill every field from scratch (title, URL, body, post flair, user tag) as if starting over. Don't assume anything survived.
+
+### Reddit flair-modal Add button: shadow-walk .click() does NOT close the modal (2026-05-03)
+
+Confirmed 2026-05-03 on r/ClaudeAI: even after walking the shadow DOM, finding the visible "Add" button (`offsetParent !== null`), and dispatching the full `pointerdown → mousedown → pointerup → mouseup → click` sequence with `composed: true`, the modal stayed open and the flair button kept its `*` (required) marker. Direct `.click()` returned `clickedDirect: true` but didn't actually trigger the React handler.
+
+This is a regression (or a flair-modal-specific quirk) vs. the 2026-04-26 working pattern below. **If the shadow-walk approach fails twice in a row, fall back to a `$B handoff` for manual flair-modal Add + Post**. Per the user's "review at end" directive, that becomes a final summary item ("Reddit draft saved with flair selected — needs manual click to commit"). Don't burn more than 2 attempts on this.
+
+Future investigation: try `dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', composed: true}))` after focusing the Add button, or trace what mousedown listener Reddit's Lit-element actually attaches.
 
 ### Reddit flair modal — minimum-friction flow (confirmed 2026-04-26)
 After a real run on r/vibecoding (no flair required) and r/ClaudeAI (Philosophy flair), the friction was 80% from refs going stale during probing. Here's the minimum-friction flow:
