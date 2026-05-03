@@ -74,7 +74,7 @@ These were derived from the LinkedIn /dashboard/ + Buffer Insights data collecte
 
 | Default | Value | Reason (data citation) |
 |---|---|---|
-| `max_posts_per_channel_per_article` | 3 | Buffer Insights: reactions ↓52% M-o-M while posts ↑24.5% — fan-out past ~3/channel/article fatigues audiences |
+| `max_posts_per_channel_per_article` | **ask user up-front** ("1/ch, 3/ch, or all snippets/ch?") | Buffer Insights: reactions ↓52% M-o-M while posts ↑24.5% suggests caution past ~3/ch — but major-launch articles often want max saturation. Surface the choice rather than baking in a number; the user picks per-article. |
 | `min_followers_to_promote` | 50 | EVC LinkedIn page (28 followers) got max 54 imps per post and +1 follower in 8 days — not worth fan-out cost |
 | LinkedIn channels default to `tease-newsletter` | (over `promote-newsletter`) | Top 3 LinkedIn posts past 7d were 0% verbatim quotes; LinkedIn pulse (essentially a teaser) ranked #1 by impressions |
 | LinkedIn pulse runs FIRST in `crosspost-newsletter` | (Phase 4 platform order) | LinkedIn pulse drove the #1-impressions LinkedIn post within hours; primes algorithm for later carousel/snippet posts |

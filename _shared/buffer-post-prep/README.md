@@ -46,7 +46,9 @@ Each tag's `id` is a 24-char hex string.
 
 ### 3. Write `tag-ids.local.json`
 
-Copy `tag-ids.example.json` to `tag-ids.local.json` (gitignored — IDs are per-organization) and replace the placeholders with real IDs:
+**Path:** `<repo-root>/_shared/buffer-post-prep/tag-ids.local.json` (gitignored — IDs are per-organization). Whenever a SKILL.md mentions `_shared/buffer-post-prep/tag-ids.local.json`, that path is **always relative to the repo root**, never to `~/.claude/skills/` (skills are symlinked from the repo, but the data file lives in the repo, not the skill cache). Use `git rev-parse --show-toplevel` if you need to resolve it programmatically.
+
+Copy `tag-ids.example.json` to `tag-ids.local.json` and replace the placeholders with real IDs:
 
 ```json
 {

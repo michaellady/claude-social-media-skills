@@ -1100,7 +1100,7 @@ or inform the user and pause via handoff.
 Apply the **[Adversarial Review pattern](../PATTERNS.md#pattern-adversarial-review)** ONCE PER PLATFORM (each platform's submission has its own rules + artifact shape). Skill provides:
 
 - **SOURCE_LABEL:** "SOURCE BEEHIIV ARTICLE"
-- **SOURCE_CONTENT:** the full article body + title + subtitle
+- **SOURCE_CONTENT:** the full article body + title + subtitle. **Prepend a `Publication: Enterprise Vibe Code` line** above the title so reviewers know the publication name is in scope when validating bylines, attributions, and "from <publication>" framing in cross-posted copy (Gemini in particular treats the article body as a strict whitelist).
 - **SKILL_NAME:** `crosspost-newsletter`
 - **ARTIFACT_NAME:** "submission" (one per platform)
 

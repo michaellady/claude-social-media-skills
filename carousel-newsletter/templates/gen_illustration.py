@@ -32,6 +32,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import time
 
 TEMPLATES_DIR = pathlib.Path(__file__).resolve().parent
 BANNER_SRC = pathlib.Path.home() / "Pictures" / "evc_banner2.png"
@@ -92,13 +93,15 @@ def ensure_banner() -> bytes:
     return BANNER_CACHED.read_bytes()
 
 
-def generate(scene: str, output: pathlib.Path, aspect: str = "4:5") -> None:
+def generate(scene: str, output: pathlib.Path, aspect: str = "4:5",
+             retry_429: int = 3, backoff_s: int = 30) -> None:
     # Late import so --help works without deps
     os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "true"
     os.environ.setdefault("GOOGLE_CLOUD_PROJECT", PROJECT)
     os.environ.setdefault("GOOGLE_CLOUD_LOCATION", LOCATION)
 
     from google import genai
+    from google.genai import errors as genai_errors
     from google.genai import types
 
     banner = ensure_banner()
@@ -106,16 +109,33 @@ def generate(scene: str, output: pathlib.Path, aspect: str = "4:5") -> None:
 
     prompt = f"{BRAND_PROMPT}\n\nSCENE (aspect {aspect}):\n{scene}"
 
-    resp = client.models.generate_content(
-        model=MODEL,
-        contents=[
-            types.Content(role="user", parts=[
-                types.Part.from_text(text=prompt),
-                types.Part.from_bytes(data=banner, mime_type="image/png"),
-            ])
-        ],
-        config=types.GenerateContentConfig(response_modalities=["IMAGE"]),
-    )
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            resp = client.models.generate_content(
+                model=MODEL,
+                contents=[
+                    types.Content(role="user", parts=[
+                        types.Part.from_text(text=prompt),
+                        types.Part.from_bytes(data=banner, mime_type="image/png"),
+                    ])
+                ],
+                config=types.GenerateContentConfig(response_modalities=["IMAGE"]),
+            )
+            break
+        except genai_errors.ClientError as e:
+            # 429 RESOURCE_EXHAUSTED — Vertex enforces ~5 req/min for new
+            # projects on this model. Back off and retry up to retry_429
+            # times before giving up.
+            is_429 = getattr(e, "status_code", None) == 429 or "429" in str(e)
+            if is_429 and attempt <= retry_429:
+                wait = backoff_s * attempt
+                print(f"  429 RESOURCE_EXHAUSTED (attempt {attempt}/{retry_429}); sleeping {wait}s",
+                      file=sys.stderr)
+                time.sleep(wait)
+                continue
+            raise
 
     for cand in resp.candidates or []:
         for part in (cand.content.parts if cand.content else []):
@@ -133,13 +153,18 @@ def main() -> None:
     ap.add_argument("output", type=pathlib.Path, help="Where to save the PNG")
     ap.add_argument("--aspect", default="4:5", choices=["1:1", "4:3", "3:4", "4:5", "16:9", "9:16"])
     ap.add_argument("--force", action="store_true", help="Regenerate even if output exists")
+    ap.add_argument("--retry-on-429", type=int, default=3, dest="retry_429",
+                    help="Retries on 429 RESOURCE_EXHAUSTED before giving up (default: 3)")
+    ap.add_argument("--backoff-s", type=int, default=30, dest="backoff_s",
+                    help="Base backoff seconds; multiplied by attempt number (default: 30)")
     args = ap.parse_args()
 
     if args.output.exists() and not args.force:
         print(f"{args.output} (cached, use --force to regenerate)")
         return
 
-    generate(args.scene, args.output, args.aspect)
+    generate(args.scene, args.output, args.aspect,
+             retry_429=args.retry_429, backoff_s=args.backoff_s)
 
 
 if __name__ == "__main__":

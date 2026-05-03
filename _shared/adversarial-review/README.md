@@ -90,9 +90,14 @@ The script honors `MIKE_SKILLS_DIR` if your upstream checkout isn't at
 ## Tests
 
 ```bash
-go test ./...
+go test ./...                         # pure logic only — fast, no CLIs invoked
+./smoke.sh                            # end-to-end against every CLI provider (burns a few cents)
+./smoke.sh claude codex               # specific N-way combo
 ```
 
-Tests cover the pure logic (JSON parsing, merge rule, issue dedup); they do
-NOT invoke the Claude or Codex CLIs (and so don't burn tokens or require
-either CLI to be installed for CI).
+Pure-logic Go tests cover JSON parsing, merge rule, and issue dedup. They
+do NOT invoke the actual `claude` / `codex` / `agent` / `gemini` CLIs
+(so they don't burn tokens or require any CLI installed for CI). End-to-end
+provider smoke is a separate `./smoke.sh` — required after every change to
+provider code or after upgrading a provider CLI. Caught the cursor `agent`
+provider needing `--model auto` on free plans (2026-05-03).

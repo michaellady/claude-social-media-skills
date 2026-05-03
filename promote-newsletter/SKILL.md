@@ -164,7 +164,7 @@ Apply the **[Buffer create_post pattern](../PATTERNS.md#pattern-buffer-create_po
 - `format-tag = verbatim_quote` (always — per [Per-skill format tag table](../PATTERNS.md#pattern-per-skill-format-tag))
 - For each approved post, build args via `_shared/buffer-post-prep/buffer-post-prep`, then call `mcp__buffer__create_post` with the resulting JSON.
 
-The skill's cognition for this phase is choosing WHICH approved posts go to which channels in what order, which images to attach, and how many snippets to drop if the user picked more than `max_posts_per_channel_per_article` (default 3). The transport layer enforces:
+The skill's cognition for this phase is choosing WHICH approved posts go to which channels in what order and which images to attach. **Ask the user up-front** in Phase 3: "Fan-out level — 1 snippet/channel, up to 3/channel, or all approved snippets per channel?" Defaulting silently can both undershoot (when the user wants max saturation on a major launch) and overshoot (when audience fatigue matters). Surface the choice; don't bake in a number — see [PATTERNS.md fan-out cap entry](../PATTERNS.md#pattern-buffer-create_post-with-channel-filter--caps). The transport layer enforces:
 
 - Skips channels with `isDisconnected: true`, `isLocked: true`, or `service: "startPage"`
 - Skips channels below `min_followers_to_promote = 50` (verified via `mcp__buffer__get_channel`)

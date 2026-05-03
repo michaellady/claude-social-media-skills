@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Pre-commit drift detector for vendored skills.
+#
+# Install once with:
+#   git config core.hooksPath .githooks
+#
+# Currently checks:
+# - _shared/adversarial-review/  (vendored from mike-skills/adversarial-review/ + mike-skills/llm-provider/)
+#
+# Skip on a one-off (e.g. you intentionally bumped only the vendored copy):
+#   git commit --no-verify
+set -euo pipefail
+
+repo=$(git rev-parse --show-toplevel)
+
+# Only run if mike-skills upstream is reachable. CI environments without the
+# upstream checkout shouldn't fail; they should just skip the check.
+if [[ ! -d "${MIKE_SKILLS_DIR:-$HOME/dev/mike-skills}" ]]; then
+  echo "pre-commit: mike-skills upstream not found; skipping vendor drift check" >&2
+  exit 0
+fi
+
+# Adversarial-review drift
+if ! "$repo/_shared/adversarial-review/sync.sh" --check >/dev/null 2>&1; then
+  echo "" >&2
+  echo "pre-commit: _shared/adversarial-review/ has drifted from mike-skills upstream." >&2
+  echo "  Run: $repo/_shared/adversarial-review/sync.sh        # interactive" >&2
+  echo "    or: $repo/_shared/adversarial-review/sync.sh --apply  # overwrite without prompt" >&2
+  echo "  Bypass once: git commit --no-verify" >&2
+  exit 1
+fi

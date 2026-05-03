@@ -186,7 +186,7 @@ When adding a new compose skill, define a new format tag and update both files (
 Every promote-* skill that calls `mcp__buffer__create_post` should pre-filter channels and validate args via `_shared/buffer-post-prep`. The transport layer enforces:
 
 - `min_followers_to_promote = 50` (skip below-threshold channels)
-- `max_posts_per_channel_per_article = 3` (cap fan-out per article)
+- `max_posts_per_channel_per_article` — fan-out per article. **Ask the user up-front** ("fan-out level: 1/channel, 3/channel, all snippets per channel?") rather than assuming a default. Buffer Insights showed reactions ↓52% M-o-M when posts ↑24.5% (2026-04-27), but for major-launch articles the user often wants maximum saturation. Surface the choice; don't bake in a number.
 - `format:<name>` tag attached
 - Platform-specific metadata (Facebook `type: "post"`, Instagram `type: "post" + shouldShareToFeed: true`, Pinterest `boardServiceId`, etc.)
 
