@@ -17,7 +17,7 @@ The transport layer (in [`_shared/`](./_shared/)) handles the deterministic plum
 
 ## Pattern: Adversarial review
 
-Every compose-and-publish skill spawns a fresh subagent to audit drafted posts BEFORE the user reviews them. The reviewer has no context from the compose phase — fresh eyes catch fabrications and skill-rule violations the composer might have rationalized.
+Every compose-and-publish skill spawns TWO fresh reviewers in parallel — a Claude subagent and a Codex `exec` run — to audit drafted posts BEFORE the user reviews them. Neither reviewer has context from the compose phase. Their verdicts are merged: any FAIL from either reviewer → FAIL. Different model families catch different failure modes (Claude → tone/voice/CTA; Codex → logical inconsistency, unsupported quantitative claims).
 
 ### Generic prompt scaffold
 
@@ -52,23 +52,32 @@ Return ONLY this JSON object, no surrounding prose:
 
 ### How to invoke
 
-The reviewer MUST be a fresh subagent with no context from the compose phase. Two equivalent paths:
+The reviewers MUST be fresh — no context from the compose phase. Two equivalent paths:
 
-**Option A (recommended): the standalone `/adversarial-review` skill** (in `~/dev/mike-skills/adversarial-review/`). It accepts SOURCE + RULES + DRAFTS as inputs and returns the JSON verdict. Reusable across projects.
+**Option A (recommended): the standalone `/adversarial-review` skill** (in `~/dev/mike-skills/adversarial-review/`). It dispatches BOTH Claude (via Agent) and Codex (via `codex exec`) in parallel with the same prompt, then merges verdicts (any FAIL from either reviewer → FAIL). Reusable across projects.
 
 ```
 Use the Skill tool: Skill name "adversarial-review", args = JSON containing
 {source_label, source_content, skill_name, artifact_name, rules_list, issue_guidance, drafts}
 ```
 
-**Option B (inline): use the Task / Agent tool with a `general-purpose` subagent.** Construct the prompt by substituting all `<<...>>` placeholders in the scaffold above, then send it as the agent's task input.
+If `codex` is missing on the host, the skill degrades gracefully to a Claude-only review and sets `codex_skipped: true` in the response.
+
+**Option B (inline dual-reviewer): dispatch both reviewers yourself in parallel.** Construct the prompt by substituting all `<<...>>` placeholders in the scaffold above, then in the SAME conversation turn send it to both:
 
 ```
-Tool: Agent (subagent_type: general-purpose)
-Prompt: <the assembled scaffold with placeholders filled in>
+Tool 1: Agent (subagent_type: general-purpose)
+        Prompt: <the assembled scaffold>
+
+Tool 2: Bash
+        Command: cat <<'PROMPT' | codex exec --skip-git-repo-check -
+                 <the assembled scaffold>
+                 PROMPT
 ```
 
-Both paths return the same JSON shape. Parse it; if all verdicts are PASS, proceed to Phase 5. If any FAIL, fix the cited issues and re-run — never surface FAIL items to the user.
+Merge: for each draft_id, FAIL if either reviewer marked FAIL; PASS only if both PASS. Issues are the deduplicated union, prefixed `[claude]`, `[codex]`, or `[both]`. If `codex` is unavailable, fall back to Claude-only.
+
+Both paths return the same JSON shape (with the additional `reviewers: ["claude", "codex"]` field). Parse it; if all verdicts are PASS, proceed to Phase 5. If any FAIL, fix the cited issues and re-run — never surface FAIL items to the user.
 
 ### Per-skill specifics
 
