@@ -17,7 +17,7 @@ The transport layer (in [`_shared/`](./_shared/)) handles the deterministic plum
 
 ## Pattern: Adversarial review
 
-Every compose-and-publish skill spawns TWO fresh reviewers in parallel — a Claude subagent and a Codex `exec` run — to audit drafted posts BEFORE the user reviews them. Neither reviewer has context from the compose phase. Their verdicts are merged: any FAIL from either reviewer → FAIL. Different model families catch different failure modes (Claude → tone/voice/CTA; Codex → logical inconsistency, unsupported quantitative claims).
+Every compose-and-publish skill spawns multiple fresh reviewers in parallel — by default Claude + Codex CLIs (Cursor `agent` is registered but opt-in) — to audit drafted posts BEFORE the user reviews them. None of the reviewers has context from the compose phase. Their verdicts are merged with a FAIL-OR rule (any FAIL from any reviewer → FAIL). Different model families catch different failure modes (Claude → tone/voice/CTA; Codex → logical inconsistency, unsupported quantitative claims; agent → third independent perspective for high-stakes drafts).
 
 ### Generic prompt scaffold
 
@@ -63,10 +63,15 @@ cd _shared/adversarial-review && go build .
 **Invoke per audit:** assemble the prompt by substituting all `<<...>>` placeholders in the scaffold above, then pipe into the binary:
 
 ```bash
+# Default: claude + codex in parallel
 printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review
+
+# Opt-in: also include Cursor agent as a third reviewer
+printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review \
+  --reviewers claude,codex,agent
 ```
 
-The binary fans out to both `claude` and `codex` CLIs in parallel via the shared `mike-skills/llm-provider/` transport, parses each reviewer's JSON, and merges with the FAIL-OR rule (any FAIL from either reviewer → FAIL). Issues are deduplicated and prefixed `[claude]`, `[codex]`, or `[both]`. If either CLI is missing on PATH the binary degrades gracefully — `claude_skipped: true` / `codex_skipped: true` flags in the response, single-reviewer verdict still emitted.
+The binary fans out to every selected reviewer in parallel via the shared `mike-skills/llm-provider/` transport, parses each reviewer's JSON, and merges with the FAIL-OR rule (any FAIL from any reviewer → FAIL). Issues are clustered by overlap and prefixed `[<r1>+<r2>+...]` (e.g. `[claude]`, `[codex]`, `[claude+codex]`, `[claude+codex+agent]`). If a selected CLI is missing on PATH the binary degrades gracefully — entries appear in `skipped: {<name>: "<reason>"}` and the merged verdict is computed from the remaining reviewers.
 
 **No inline path.** The hand-rolled bash + Agent dispatch was deprecated when this binary landed — keeping divergent code in 5+ skill files instead of one Go binary defeats the point of the shared transport. Skills MUST invoke the binary.
 

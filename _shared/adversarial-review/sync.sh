@@ -33,6 +33,7 @@ pairs=(
   "$upstream/llm-provider/provider/provider.go::$dir/internal/llm-provider/provider/provider.go"
   "$upstream/llm-provider/claude/claude.go::$dir/internal/llm-provider/claude/claude.go"
   "$upstream/llm-provider/codex/codex.go::$dir/internal/llm-provider/codex/codex.go"
+  "$upstream/llm-provider/agent/agent.go::$dir/internal/llm-provider/agent/agent.go"
 )
 
 drift=0

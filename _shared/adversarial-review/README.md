@@ -1,8 +1,9 @@
 # adversarial-review (vendored)
 
-Dual-reviewer adversarial-review transport: dispatches the same prompt to both
-the Claude and Codex CLIs in parallel, parses each reviewer's JSON verdict,
-and emits a merged canonical response.
+Multi-reviewer adversarial-review transport: dispatches the same prompt to
+every selected reviewer CLI in parallel (default `claude,codex`; opt-in
+`agent` for Cursor), parses each reviewer's JSON verdict, and emits a merged
+canonical response.
 
 This directory is **vendored from**
 [`mike-skills/adversarial-review`](https://github.com/michaellady/mike-skills/tree/main/adversarial-review)
@@ -27,6 +28,7 @@ _shared/adversarial-review/
     provider/provider.go           # Provider interface + Options + Error
     claude/claude.go               # claude CLI provider
     codex/codex.go                 # codex exec provider
+    agent/agent.go                 # Cursor agent CLI provider (opt-in)
 ```
 
 ## Build
@@ -46,9 +48,17 @@ printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review
 
 Flags:
 
+- `--reviewers <csv>` — which reviewers to dispatch (default `claude,codex`; opt-in `agent`)
 - `--prompt-file PATH` — read prompt from file instead of stdin
 - `--timeout SECONDS` — per-reviewer timeout (default 300)
 - `--quiet` — suppress provider heartbeat lines on stderr
+
+To enable the Cursor agent reviewer:
+
+```bash
+printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review \
+  --reviewers claude,codex,agent
+```
 
 See [SKILL.md](SKILL.md) for the contract (input requirements, output JSON
 shape, merge rule, when to use, when not to use).

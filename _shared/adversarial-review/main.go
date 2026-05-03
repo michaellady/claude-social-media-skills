@@ -1,6 +1,6 @@
-// Command adversarial-review dispatches the SAME prompt to both the Claude
-// and Codex CLIs in parallel, parses each reviewer's JSON verdict, and emits
-// a merged canonical response on stdout.
+// Command adversarial-review dispatches the SAME prompt to every available
+// reviewer CLI in parallel (claude, codex, agent), parses each reviewer's
+// JSON verdict, and emits a merged canonical response on stdout.
 //
 // Usage:
 //
@@ -12,17 +12,18 @@
 //	{
 //	  "summary": "all_pass" | "some_fail" | "parse_error",
 //	  "verdicts": [
-//	    {"draft_id": "<id>", "verdict": "PASS"|"FAIL", "issues": ["[claude] ...", "[codex] ...", "[both] ..."]}
+//	    {"draft_id": "<id>", "verdict": "PASS"|"FAIL",
+//	     "issues": ["[claude] ...", "[codex] ...", "[claude+agent] ...", "[claude+codex+agent] ..."]}
 //	  ],
-//	  "reviewers": ["claude", "codex"],
-//	  "claude_skipped": bool, "claude_skip_reason": string,
-//	  "codex_skipped":  bool, "codex_skip_reason":  string,
-//	  "claude_parse_error": bool, "codex_parse_error": bool,
+//	  "reviewers": ["claude", "codex", "agent"],
+//	  "skipped": {"<reviewer>": "<reason>"},
+//	  "parse_error": ["<reviewer>", ...],
 //	  "error": string, "raw_response": string
 //	}
 //
-// Merge rule: a draft is FAIL if either reviewer flagged it FAIL.
-// Issues are deduplicated and prefixed [claude] / [codex] / [both].
+// Merge rule: a draft is FAIL if ANY reviewer flagged it FAIL.
+// Issues are clustered by overlap and prefixed with the reviewers that raised
+// them, e.g. "[claude+codex] ..." when both flag the same problem.
 package main
 
 import (
@@ -38,6 +39,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/michaellady/mike-skills/llm-provider/agent"
 	"github.com/michaellady/mike-skills/llm-provider/claude"
 	"github.com/michaellady/mike-skills/llm-provider/codex"
 	"github.com/michaellady/mike-skills/llm-provider/provider"
@@ -55,27 +57,55 @@ type reviewerResp struct {
 }
 
 type mergedResp struct {
-	Summary           string    `json:"summary"`
-	Verdicts          []verdict `json:"verdicts"`
-	Reviewers         []string  `json:"reviewers"`
-	ClaudeSkipped     bool      `json:"claude_skipped,omitempty"`
-	ClaudeSkipReason  string    `json:"claude_skip_reason,omitempty"`
-	CodexSkipped      bool      `json:"codex_skipped,omitempty"`
-	CodexSkipReason   string    `json:"codex_skip_reason,omitempty"`
-	ClaudeParseError  bool      `json:"claude_parse_error,omitempty"`
-	CodexParseError   bool      `json:"codex_parse_error,omitempty"`
-	Error             string    `json:"error,omitempty"`
-	RawResponse       string    `json:"raw_response,omitempty"`
+	Summary     string            `json:"summary"`
+	Verdicts    []verdict         `json:"verdicts"`
+	Reviewers   []string          `json:"reviewers"`
+	Skipped     map[string]string `json:"skipped,omitempty"`
+	ParseError  []string          `json:"parse_error,omitempty"`
+	Error       string            `json:"error,omitempty"`
+	RawResponse string            `json:"raw_response,omitempty"`
 }
+
+// reviewerSpec describes one reviewer the binary knows how to dispatch.
+// Order in `registeredReviewers` is the canonical reviewer order — also the
+// order that issue attribution is rendered in (e.g. "[claude+codex+agent]").
+type reviewerSpec struct {
+	name string
+	cli  string // CLI name on PATH
+	make func() provider.Provider
+}
+
+// registeredReviewers is every provider the binary knows how to dispatch.
+// The default --reviewers selection is `claude,codex` — `agent` is registered
+// but opt-in (pass --reviewers claude,codex,agent to enable it). Reasoning:
+// claude+codex is the validated default for this transport; agent is a
+// recently-added reviewer kept available for experimentation without
+// changing the default merge behavior.
+var registeredReviewers = []reviewerSpec{
+	{name: "claude", cli: "claude", make: func() provider.Provider { return claude.New() }},
+	{name: "codex", cli: "codex", make: func() provider.Provider { return codex.New() }},
+	{name: "agent", cli: "agent", make: func() provider.Provider { return agent.New() }},
+}
+
+// defaultReviewers is the comma-separated default for the --reviewers flag.
+const defaultReviewers = "claude,codex"
 
 func main() {
 	var promptFile string
 	var timeoutSec int
 	var quiet bool
+	var reviewersCSV string
 	flag.StringVar(&promptFile, "prompt-file", "", "path to prompt file; if empty, read from stdin")
 	flag.IntVar(&timeoutSec, "timeout", 300, "per-reviewer timeout (seconds)")
 	flag.BoolVar(&quiet, "quiet", false, "suppress provider heartbeat lines on stderr")
+	flag.StringVar(&reviewersCSV, "reviewers", defaultReviewers,
+		"comma-separated reviewers to dispatch (registered: claude,codex,agent)")
 	flag.Parse()
+
+	selected, err := selectReviewers(reviewersCSV)
+	if err != nil {
+		die("%v", err)
+	}
 
 	promptPath, cleanup, err := resolvePromptPath(promptFile)
 	if err != nil {
@@ -83,81 +113,108 @@ func main() {
 	}
 	defer cleanup()
 
-	out := mergedResp{Verdicts: []verdict{}, Reviewers: []string{}}
-
-	_, claudeAvailable := lookCLI("claude")
-	_, codexAvailable := lookCLI("codex")
-	if !claudeAvailable {
-		out.ClaudeSkipped = true
-		out.ClaudeSkipReason = "claude CLI not on PATH"
-	}
-	if !codexAvailable {
-		out.CodexSkipped = true
-		out.CodexSkipReason = "codex CLI not on PATH"
+	out := mergedResp{
+		Verdicts:  []verdict{},
+		Reviewers: []string{},
+		Skipped:   map[string]string{},
 	}
 
-	var (
-		wg                   sync.WaitGroup
-		claudeOut, codexOut  string
-		claudeErr, codexErr  error
-	)
-	if claudeAvailable {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			claudeOut, claudeErr = runProvider(claude.New(), promptPath, timeoutSec, quiet)
-		}()
+	type result struct {
+		name string
+		out  string
+		err  error
 	}
-	if codexAvailable {
+	resultsCh := make(chan result, len(selected))
+	var wg sync.WaitGroup
+
+	for _, r := range selected {
+		if _, ok := lookCLI(r.cli); !ok {
+			out.Skipped[r.name] = fmt.Sprintf("%s CLI not on PATH", r.cli)
+			continue
+		}
 		wg.Add(1)
+		r := r
 		go func() {
 			defer wg.Done()
-			codexOut, codexErr = runProvider(codex.New(), promptPath, timeoutSec, quiet)
+			s, e := runProvider(r.make(), promptPath, timeoutSec, quiet)
+			resultsCh <- result{name: r.name, out: s, err: e}
 		}()
 	}
 	wg.Wait()
+	close(resultsCh)
 
-	var claudeResp, codexResp *reviewerResp
-	if claudeAvailable {
-		if claudeErr != nil {
-			out.ClaudeParseError = true
-			out.RawResponse += fmt.Sprintf("[claude error] %v\n", claudeErr)
-		} else if r, perr := parseResponse(claudeOut); perr != nil {
-			out.ClaudeParseError = true
-			out.RawResponse += fmt.Sprintf("[claude raw]\n%s\n", claudeOut)
-		} else {
-			claudeResp = r
+	parsed := map[string]*reviewerResp{}
+	for res := range resultsCh {
+		if res.err != nil {
+			out.ParseError = append(out.ParseError, res.name)
+			out.RawResponse += fmt.Sprintf("[%s error] %v\n", res.name, res.err)
+			continue
 		}
-	}
-	if codexAvailable {
-		if codexErr != nil {
-			out.CodexParseError = true
-			out.RawResponse += fmt.Sprintf("[codex error] %v\n", codexErr)
-		} else if r, perr := parseResponse(codexOut); perr != nil {
-			out.CodexParseError = true
-			out.RawResponse += fmt.Sprintf("[codex raw]\n%s\n", codexOut)
-		} else {
-			codexResp = r
+		r, perr := parseResponse(res.out)
+		if perr != nil {
+			out.ParseError = append(out.ParseError, res.name)
+			out.RawResponse += fmt.Sprintf("[%s raw]\n%s\n", res.name, res.out)
+			continue
 		}
+		parsed[res.name] = r
 	}
 
-	if claudeResp == nil && codexResp == nil {
+	if len(parsed) == 0 {
 		out.Summary = "parse_error"
-		out.Error = "both reviewers unavailable, errored, or returned malformed JSON"
+		out.Error = "no reviewers returned a usable verdict (all skipped, errored, or malformed JSON)"
 		emit(out)
 		os.Exit(2)
 	}
 
-	merged := merge(claudeResp, codexResp)
+	merged := merge(parsed, selected)
 	out.Summary = merged.Summary
 	out.Verdicts = merged.Verdicts
-	if claudeResp != nil {
-		out.Reviewers = append(out.Reviewers, "claude")
+	for _, r := range selected {
+		if _, ok := parsed[r.name]; ok {
+			out.Reviewers = append(out.Reviewers, r.name)
+		}
 	}
-	if codexResp != nil {
-		out.Reviewers = append(out.Reviewers, "codex")
+
+	if len(out.Skipped) == 0 {
+		out.Skipped = nil
 	}
 	emit(out)
+}
+
+// selectReviewers parses the comma-separated --reviewers flag against the
+// registered set and returns specs in the user's requested order.
+func selectReviewers(csv string) ([]reviewerSpec, error) {
+	csv = strings.TrimSpace(csv)
+	if csv == "" {
+		return nil, fmt.Errorf("--reviewers cannot be empty")
+	}
+	byName := map[string]reviewerSpec{}
+	knownNames := []string{}
+	for _, r := range registeredReviewers {
+		byName[r.name] = r
+		knownNames = append(knownNames, r.name)
+	}
+	out := []reviewerSpec{}
+	seen := map[string]bool{}
+	for _, raw := range strings.Split(csv, ",") {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			continue
+		}
+		spec, ok := byName[name]
+		if !ok {
+			return nil, fmt.Errorf("unknown reviewer %q (registered: %s)", name, strings.Join(knownNames, ","))
+		}
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, spec)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("--reviewers selected no reviewers")
+	}
+	return out, nil
 }
 
 func resolvePromptPath(p string) (string, func(), error) {
@@ -233,47 +290,53 @@ func parseResponse(s string) (*reviewerResp, error) {
 	return &r, nil
 }
 
-func merge(claudeR, codexR *reviewerResp) mergedResp {
-	type slot struct {
-		id      string
-		claudeV *verdict
-		codexV  *verdict
-	}
-	order := []string{}
-	slots := map[string]*slot{}
-
-	addAll := func(reviewer string, r *reviewerResp) {
-		if r == nil {
-			return
+// merge consolidates verdicts across N reviewers using the FAIL-OR rule:
+// a draft is FAIL if ANY reviewer flagged it FAIL. Issues are clustered by
+// overlap and attributed to every reviewer that raised them.
+//
+// `selected` is the canonical reviewer order for this invocation — defines
+// the prefix order on rendered issues (e.g. "[claude+codex]" vs "[codex+claude]").
+func merge(parsed map[string]*reviewerResp, selected []reviewerSpec) mergedResp {
+	reviewerOrder := []string{}
+	for _, r := range selected {
+		if _, ok := parsed[r.name]; ok {
+			reviewerOrder = append(reviewerOrder, r.name)
 		}
+	}
+
+	// Index verdicts: draft_id → reviewer → *verdict.
+	type slot struct {
+		perReviewer map[string]*verdict
+	}
+	draftOrder := []string{}
+	slots := map[string]*slot{}
+	for _, name := range reviewerOrder {
+		r := parsed[name]
 		for i := range r.Verdicts {
 			v := &r.Verdicts[i]
-			if _, ok := slots[v.DraftID]; !ok {
-				order = append(order, v.DraftID)
-				slots[v.DraftID] = &slot{id: v.DraftID}
+			s, ok := slots[v.DraftID]
+			if !ok {
+				draftOrder = append(draftOrder, v.DraftID)
+				s = &slot{perReviewer: map[string]*verdict{}}
+				slots[v.DraftID] = s
 			}
-			switch reviewer {
-			case "claude":
-				slots[v.DraftID].claudeV = v
-			case "codex":
-				slots[v.DraftID].codexV = v
-			}
+			s.perReviewer[name] = v
 		}
 	}
-	addAll("claude", claudeR)
-	addAll("codex", codexR)
 
 	out := mergedResp{Verdicts: []verdict{}}
 	anyFail := false
-	for _, id := range order {
+	for _, id := range draftOrder {
 		s := slots[id]
 		v := verdict{DraftID: id, Verdict: "PASS", Issues: []string{}}
-		if (s.claudeV != nil && s.claudeV.Verdict == "FAIL") ||
-			(s.codexV != nil && s.codexV.Verdict == "FAIL") {
-			v.Verdict = "FAIL"
-			anyFail = true
+		for _, rn := range reviewerOrder {
+			if rv, ok := s.perReviewer[rn]; ok && rv.Verdict == "FAIL" {
+				v.Verdict = "FAIL"
+				anyFail = true
+				break
+			}
 		}
-		v.Issues = mergeIssues(s.claudeV, s.codexV)
+		v.Issues = clusterIssues(s.perReviewer, reviewerOrder)
 		out.Verdicts = append(out.Verdicts, v)
 	}
 	if anyFail {
@@ -284,42 +347,49 @@ func merge(claudeR, codexR *reviewerResp) mergedResp {
 	return out
 }
 
-// mergeIssues attributes each issue to its source. If an issue from Claude
-// substantially overlaps an issue from Codex, the pair collapses into a
-// single [both] entry; otherwise each issue is prefixed with its origin.
-func mergeIssues(claudeV, codexV *verdict) []string {
-	var c, x []string
-	if claudeV != nil {
-		c = claudeV.Issues
+// clusterIssues collects every (reviewer, issue) pair, clusters issues that
+// overlap (same underlying problem flagged by multiple reviewers), and
+// renders each cluster as "[r1+r2+...] <issue text>" using the canonical
+// reviewer order.
+func clusterIssues(perReviewer map[string]*verdict, reviewerOrder []string) []string {
+	type cluster struct {
+		reviewers map[string]bool
+		text      string
 	}
-	if codexV != nil {
-		x = codexV.Issues
-	}
-	out := []string{}
-	used := map[int]bool{}
-	for _, ci := range c {
-		match := -1
-		for j, xi := range x {
-			if used[j] {
-				continue
-			}
-			if issueOverlaps(ci, xi) {
-				match = j
-				break
+	clusters := []*cluster{}
+
+	add := func(reviewer, issue string) {
+		for _, c := range clusters {
+			if issueOverlaps(c.text, issue) {
+				c.reviewers[reviewer] = true
+				return
 			}
 		}
-		if match >= 0 {
-			used[match] = true
-			out = append(out, "[both] "+ci)
-		} else {
-			out = append(out, "[claude] "+ci)
-		}
+		clusters = append(clusters, &cluster{
+			reviewers: map[string]bool{reviewer: true},
+			text:      issue,
+		})
 	}
-	for j, xi := range x {
-		if used[j] {
+
+	for _, rn := range reviewerOrder {
+		v, ok := perReviewer[rn]
+		if !ok || v == nil {
 			continue
 		}
-		out = append(out, "[codex] "+xi)
+		for _, issue := range v.Issues {
+			add(rn, issue)
+		}
+	}
+
+	out := []string{}
+	for _, c := range clusters {
+		ordered := []string{}
+		for _, rn := range reviewerOrder {
+			if c.reviewers[rn] {
+				ordered = append(ordered, rn)
+			}
+		}
+		out = append(out, "["+strings.Join(ordered, "+")+"] "+c.text)
 	}
 	return out
 }
