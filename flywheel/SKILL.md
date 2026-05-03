@@ -10,10 +10,18 @@ Aggregate signal from YouTube, beehiiv, LinkedIn, and the consulting log into on
 
 ## Usage
 
-`/flywheel` — full report for the last 7 days, saves snapshot
+`/flywheel` — read cached snapshots + compose report (fast — ~30 sec). Flags any source older than `stale_snapshot_days` (default 14d) but does NOT refresh.
+`/flywheel --refresh` — refresh ALL upstream snapshots first (yt-analytics fetch + fetch-analytics --all + cohort auto, buffer-stats engagement scrape, linkedin-stats dashboard scrape), then compose. **The canonical Sunday weekly review** — single command, single artifact, everything fresh. ~10-15 min wall-clock end-to-end.
+`/flywheel --refresh-stale` — only refresh upstream snapshots older than `stale_snapshot_days`. Cheaper than `--refresh`; flags any sources still stale after the conditional refresh.
 `/flywheel --days 30` — custom window
 `/flywheel --no-save` — produce the report but don't overwrite today's snapshot
 `/flywheel --compare 2026-04-12` — diff against a specific older snapshot
+
+### When to use which mode
+
+- **Daily / mid-week check:** `/flywheel` (cached, fast — answers "where do we stand right now")
+- **Sunday weekly review:** `/flywheel --refresh` (canonical — everything fresh, replaces running each sub-skill manually)
+- **Catch-up after a few days:** `/flywheel --refresh-stale` (only refreshes what's actually stale)
 
 ## Data sources
 
@@ -29,6 +37,43 @@ Aggregate signal from YouTube, beehiiv, LinkedIn, and the consulting log into on
 If any source fails or is stale, note it in the report — don't silently drop the row.
 
 ## Process
+
+### Phase 0 — (Optional) Refresh upstream snapshots
+
+Skip when `/flywheel` was invoked without a refresh flag. Otherwise, decide which sub-skills need to run BEFORE composing the report.
+
+**`--refresh` (full):** run all three unconditionally.
+**`--refresh-stale`:** check each cache's mtime against `stale_snapshot_days`; only refresh the stale ones.
+
+Sub-skill invocation order (each has its own auth + scrape; they don't share session):
+
+1. **YouTube data refresh** (~3-5 min, no browser):
+   ```bash
+   cd ~/dev/youtube_analytics
+   go run . fetch                       # video metadata, snapshots automatically
+   go run . fetch-analytics --all       # aggregate + per-day + traffic-sources + sub-status
+   go run . cohort auto                 # refresh cohort assignments from rules
+   ```
+   Cached at `data/videos.json` + `data/snapshots/videos-<UTC>.json`.
+
+2. **Buffer engagement refresh** (~3-5 min, gstack browser):
+   Invoke `/buffer-stats` skill. It writes `~/dev/claude-social-media-skills/buffer-stats/cache/snapshot-<date>.{json,md}`.
+   Auth: `cookie-import-browser chrome buffer.com` (one-time picker click); cookies carry from buffer.com to publish.buffer.com and analyze.buffer.com.
+
+3. **LinkedIn refresh** (~2-3 min, gstack browser):
+   Invoke `/linkedin-stats` skill (or scrape `linkedin.com/dashboard` directly for the headline numbers if the full skill isn't required). Writes `~/dev/claude-social-media-skills/linkedin-stats/cache/snapshot-<date>.json`.
+   Auth: gstack browser must be logged in to LinkedIn (cookies usually carry from a prior session).
+
+4. **YouTube weekly review** (closed-loop, optional):
+   ```bash
+   cd ~/dev/youtube_analytics
+   go run . insights pending            # past-due hypotheses; grade them in the report's narrative
+   go run . cohort report --since <last-monday>
+   ```
+
+If a sub-skill fails (auth lapsed, cookie picker not closed, gstack process dropped), surface the failure clearly and continue with the OTHER sub-skills + cached data for the failed one. Don't abort the whole flywheel composition over one stale source.
+
+After Phase 0 completes (or is skipped), proceed to Phase 1 with the freshly-written cache files in scope.
 
 ### Phase 1 — Resolve window
 
