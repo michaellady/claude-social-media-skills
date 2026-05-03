@@ -155,8 +155,14 @@ func TestSelectReviewers_Default(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || got[0].name != "claude" || got[1].name != "codex" {
-		t.Fatalf("default should be [claude, codex], got %#v", got)
+	want := []string{"claude", "codex", "agent", "gemini"}
+	if len(got) != len(want) {
+		t.Fatalf("default should be %v, got %d items", want, len(got))
+	}
+	for i, w := range want {
+		if got[i].name != w {
+			t.Fatalf("default at %d: want %s, got %s", i, w, got[i].name)
+		}
 	}
 }
 

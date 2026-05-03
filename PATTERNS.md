@@ -100,6 +100,17 @@ The output is the canonical merged JSON (with `reviewers: ["claude", "codex"]` a
 - All PASS → proceed to Phase 5 user review
 - Any FAIL → fix the failing drafts using the cited issues, re-run the reviewer until clean. **Do not surface FAIL items to the user; the user should see only PASS-grade copy at Phase 5.**
 
+### Round cap: 5 iterations max
+
+After **5 fix-and-re-run cycles**, stop iterating and surface remaining FAIL items as **deadlocks** to the user. A persistent FAIL after 5 rounds means one of:
+- The reviewer has the rule wrong (pattern is over-strict for context — e.g. flagging a domain-appropriate term as jargon for a tech audience). User decides to override.
+- The composer is missing source context that would make the claim verifiable. User adds the missing context to the source prompt and the next run resolves.
+- The claim genuinely can't be supported. User decides to drop or restructure.
+
+Rationale: today (2026-05-03) a single batch hit round 7 of nitpicking on diminishing-return issues (e.g. "deeper discharge in flight" — claim was true per the user's task list but task-list evidence wasn't in the review source). Each round costs ~30s + tokens × 4 reviewers, and the marginal improvement asymptotes after round 3-4. Surface deadlocks instead of spinning.
+
+When surfacing deadlocks, group by draft_id and per-issue list the (a) claim, (b) reviewer(s) flagging, (c) suggested rephrase if any, (d) one-sentence judgment — "deadlock — claim is true but source didn't include task-list evidence; either drop the claim or accept it." Let the user pick per-deadlock.
+
 ### Why this matters
 
 The user caught a fabrication ("every leader I respect keeps a token on their desk") manually on the 2026-04-26 Tokens From Our Past run. Adversarial review prevents the next one automatically. This is the only way to scale up promotion volume without scaling up the user's review burden.

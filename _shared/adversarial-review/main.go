@@ -90,7 +90,14 @@ var registeredReviewers = []reviewerSpec{
 }
 
 // defaultReviewers is the comma-separated default for the --reviewers flag.
-const defaultReviewers = "claude,codex"
+// As of 2026-05-03 we default to ALL registered providers — Claude is the
+// only paid plan; the rest (Codex, Cursor agent, Gemini) are low-tier or
+// free-tier accounts that may quota-fail or auth-fail at runtime. The
+// per-provider runner already returns per-provider errors that the merge
+// step routes into `parse_error: [<name>]` instead of crashing the whole
+// run. So defaulting to "use everything we can" is safe: when quota runs
+// out on any single reviewer, the others still produce a verdict.
+const defaultReviewers = "claude,codex,agent,gemini"
 
 func main() {
 	var promptFile string
