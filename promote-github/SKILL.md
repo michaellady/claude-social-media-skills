@@ -340,6 +340,10 @@ The user can:
 
 ### Phase 6 — Post to Buffer
 
+**🔒 HARD GATE — adversarial review must have returned `summary == "all_pass"` before this phase.**
+
+If the prior `_shared/adversarial-review/adversarial-review` run returned `some_fail` for any draft in this batch, you MUST NOT call `mcp__buffer__create_post` for that draft. Iterate fixes per the [round cap](../PATTERNS.md#round-cap-5-iterations-max) (5 rounds max), then surface deadlocks to the user. Spot-checking claims manually does NOT substitute — confirmed 2026-05-03 when promote-github skipped review and shipped 3 posts with "30+ PRs" inflated metric (actual was 30), voice mismatch ("Today the actual code shipped" vs first-person), and "on every public method" overstatement, all caught by the 4-way reviewer on first re-run.
+
 1. Call `mcp__buffer__get_account` to get the organization ID and timezone. If multiple orgs, ask the user which one.
 2. Call `mcp__buffer__list_channels` with the org ID. Never guess channel IDs.
 3. **Filter out disconnected and locked channels before composing or posting.** Each channel has `isDisconnected` and `isLocked` booleans — skip any where either is `true`. Also skip `service: "startPage"` (not a social channel).

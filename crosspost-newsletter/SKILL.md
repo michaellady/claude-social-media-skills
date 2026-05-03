@@ -1217,6 +1217,10 @@ D) Abort all remaining submissions
 
 ### Phase 6 — Publish
 
+**🔒 HARD GATE — per-platform adversarial review must have returned `summary == "all_pass"` for THIS platform's submission before its publish step.**
+
+Each platform's submission is reviewed independently (the per-platform adversarial review block above runs once per platform). If `_shared/adversarial-review/adversarial-review` returned `some_fail` for a platform, you MUST NOT execute its publish step. Iterate fixes per the [round cap](../PATTERNS.md#round-cap-5-iterations-max) (5 rounds max), then surface deadlocks to the user. The per-platform isolation matters — you can publish LinkedIn (PASSed) while a different platform (e.g. Reddit, FAILed on automod-trigger language) is still being iterated.
+
 See platform-specific publish steps above (LinkedIn Step 6, Substack Step 8).
 
 ### Phase 7 — Summary

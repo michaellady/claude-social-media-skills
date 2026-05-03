@@ -159,6 +159,10 @@ The user can:
 
 ### Phase 6 — Schedule to Buffer
 
+**🔒 HARD GATE — adversarial review must have returned `summary == "all_pass"` before this phase.**
+
+If the prior `_shared/adversarial-review/adversarial-review` run returned `some_fail` for any draft in this batch, you MUST NOT call `mcp__buffer__create_post` for that draft. Iterate fixes per the [round cap](../PATTERNS.md#round-cap-5-iterations-max), then re-run. After 5 rounds, surface remaining FAILs as deadlocks to the user; only proceed once the user explicitly accepts each deadlocked claim. Spot-checking claims manually does NOT substitute — the 4-way independent review catches issues a careful manual review misses (today's run caught "30+ PRs" inflated metric vs actual 30, voice drift, "on every public method" overstatement — all caught by reviewers and missed by the composer's manual check).
+
 Apply the **[Buffer create_post pattern](../PATTERNS.md#pattern-buffer-create_post-with-channel-filter--caps)** for the transport layer (channel filter, min_followers, max_posts cap, format tag attachment, platform metadata). The skill provides:
 
 - `format-tag = verbatim_quote` (always — per [Per-skill format tag table](../PATTERNS.md#pattern-per-skill-format-tag))

@@ -193,6 +193,10 @@ Raw URL: `https://raw.githubusercontent.com/<owner>/<repo>/main/generated/<YYYY-
 
 ### Phase 7 — Post to Buffer
 
+**🔒 HARD GATE — adversarial review must have returned `summary == "all_pass"` for ALL slides before this phase.**
+
+If the prior `_shared/adversarial-review/adversarial-review` run returned `some_fail` for any slide draft, you MUST NOT call `mcp__buffer__create_post`. Iterate fixes per the [round cap](../PATTERNS.md#round-cap-5-iterations-max) (5 rounds max), then surface deadlocks to the user. Both copy AND illustration scene prompts go through review; both must PASS before the carousel ships.
+
 Reuse patterns from `../promote-newsletter/SKILL.md`. Filter `list_channels` to `isDisconnected=false AND isLocked=false`. Per-channel:
 
 All captions use the canonical CTA — generate via `_shared/cta.sh "<Article Title>"` and concatenate. Do NOT add a trailing period or other punctuation; PATTERNS.md warns that ad-hoc edits to the CTA risk breaking the Manychat trigger silently.

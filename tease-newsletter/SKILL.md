@@ -183,6 +183,10 @@ Ask: **"Ready to schedule these to Buffer?"**
 
 ### Phase 6 — Schedule to Buffer
 
+**🔒 HARD GATE — adversarial review must have returned `summary == "all_pass"` before this phase.**
+
+If the prior `_shared/adversarial-review/adversarial-review` run returned `some_fail` for any draft in this batch, you MUST NOT call `mcp__buffer__create_post` for that draft. Iterate fixes per the [round cap](../PATTERNS.md#round-cap-5-iterations-max) (5 rounds max), then surface deadlocks to the user. Spot-checking claims manually does NOT substitute.
+
 Identical to `promote-newsletter` Phase 6 (including the `min_followers_to_promote`, **ask-user-up-front fan-out level** (1/ch, 3/ch, or all-snippets/ch), and below-threshold/locked channel filters):
 1. `mcp__buffer__get_account` → org ID + timezone
 2. `mcp__buffer__list_channels` → exact channel IDs (filter out `isDisconnected`, `isLocked`, `service: "startPage"`, channels below `min_followers_to_promote=50`)
