@@ -52,32 +52,25 @@ Return ONLY this JSON object, no surrounding prose:
 
 ### How to invoke
 
-The reviewers MUST be fresh — no context from the compose phase. Two equivalent paths:
+The reviewers MUST be fresh — no context from the compose phase. The transport is the **`_shared/adversarial-review/adversarial-review` Go binary** (vendored from `mike-skills/adversarial-review/` + `mike-skills/llm-provider/`; see [`_shared/adversarial-review/README.md`](./_shared/adversarial-review/README.md) for layout + sync).
 
-**Option A (recommended): the standalone `/adversarial-review` skill** (in `~/dev/mike-skills/adversarial-review/`). It dispatches BOTH Claude (via Agent) and Codex (via `codex exec`) in parallel with the same prompt, then merges verdicts (any FAIL from either reviewer → FAIL). Reusable across projects.
+**Build once:**
 
-```
-Use the Skill tool: Skill name "adversarial-review", args = JSON containing
-{source_label, source_content, skill_name, artifact_name, rules_list, issue_guidance, drafts}
-```
-
-If `codex` is missing on the host, the skill degrades gracefully to a Claude-only review and sets `codex_skipped: true` in the response.
-
-**Option B (inline dual-reviewer): dispatch both reviewers yourself in parallel.** Construct the prompt by substituting all `<<...>>` placeholders in the scaffold above, then in the SAME conversation turn send it to both:
-
-```
-Tool 1: Agent (subagent_type: general-purpose)
-        Prompt: <the assembled scaffold>
-
-Tool 2: Bash
-        Command: cat <<'PROMPT' | codex exec --skip-git-repo-check -
-                 <the assembled scaffold>
-                 PROMPT
+```bash
+cd _shared/adversarial-review && go build .
 ```
 
-Merge: for each draft_id, FAIL if either reviewer marked FAIL; PASS only if both PASS. Issues are the deduplicated union, prefixed `[claude]`, `[codex]`, or `[both]`. If `codex` is unavailable, fall back to Claude-only.
+**Invoke per audit:** assemble the prompt by substituting all `<<...>>` placeholders in the scaffold above, then pipe into the binary:
 
-Both paths return the same JSON shape (with the additional `reviewers: ["claude", "codex"]` field). Parse it; if all verdicts are PASS, proceed to Phase 5. If any FAIL, fix the cited issues and re-run — never surface FAIL items to the user.
+```bash
+printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review
+```
+
+The binary fans out to both `claude` and `codex` CLIs in parallel via the shared `mike-skills/llm-provider/` transport, parses each reviewer's JSON, and merges with the FAIL-OR rule (any FAIL from either reviewer → FAIL). Issues are deduplicated and prefixed `[claude]`, `[codex]`, or `[both]`. If either CLI is missing on PATH the binary degrades gracefully — `claude_skipped: true` / `codex_skipped: true` flags in the response, single-reviewer verdict still emitted.
+
+**No inline path.** The hand-rolled bash + Agent dispatch was deprecated when this binary landed — keeping divergent code in 5+ skill files instead of one Go binary defeats the point of the shared transport. Skills MUST invoke the binary.
+
+The output is the canonical merged JSON (with `reviewers: ["claude", "codex"]` added). Parse it; if all verdicts are PASS, proceed to Phase 5. If any FAIL, fix the cited issues and re-run — never surface FAIL items to the user.
 
 ### Per-skill specifics
 

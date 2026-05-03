@@ -11,19 +11,28 @@ See [PATTERNS.md](../PATTERNS.md) for cross-skill workflows that DO involve cogn
 | `cta.sh` | Print the canonical "Comment newsletter" CTA for a beehiiv article title | Shell |
 | `format_tags.json` | Authoritative list of `format:<name>` Buffer post tag values | JSON data |
 | `gstack_auth.sh` | Verify gstack browse is logged in; attempt cookie import once if not | Shell |
+| `adversarial-review/` | Dual-reviewer (Claude + Codex CLIs in parallel) audit of drafted artifacts; vendored from `mike-skills` | Go |
 | `buffer-post-prep/` | Validate + shape arguments for `mcp__buffer__create_post` | Go |
 | `buffer-queue-check/` | Filter Buffer posts (queued + sent) by distinctive phrases | Go |
+| `buffer-schedule-edit/` | Web-UI driver for Buffer's posting schedule (no API mutation exists) | gstack browse |
+| `voice-corpus/` | Fetch + cache recent beehiiv newsletters as voice reference for original-copy skills | Go |
 
 ## Build
 
 The Go binaries need to be built before first use:
 
 ```bash
-cd _shared/buffer-post-prep && go build .
-cd _shared/buffer-queue-check && go build .
+cd _shared/adversarial-review  && go build .
+cd _shared/buffer-post-prep    && go build .
+cd _shared/buffer-queue-check  && go build .
+cd _shared/voice-corpus        && go build .
 ```
 
 Built binaries are gitignored — each user builds locally. The Go source is the source of truth.
+
+## Vendored dependencies
+
+`adversarial-review/` includes a vendored copy of `mike-skills/llm-provider/` so that the dual-reviewer transport works without a separate `mike-skills` checkout. Keep it fresh with `_shared/adversarial-review/sync.sh` (interactive) or `--check` (CI-friendly drift detector).
 
 ## Why these are pure transport
 
