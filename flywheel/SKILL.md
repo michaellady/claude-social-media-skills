@@ -171,19 +171,60 @@ BF_CACHE=~/dev/claude-social-media-skills/buffer-stats/cache
 LATEST_BF=$(ls -1 "$BF_CACHE"/snapshot-*.json 2>/dev/null | tail -1)
 if [ -n "$LATEST_BF" ]; then
   BF_SNAP_DATE=$(basename "$LATEST_BF" .json | sed 's/snapshot-//')
-  BF_CHANNELS=$(jq -r '.channels | length' "$LATEST_BF")
-  BF_TOTAL_FOLLOWERS=$(jq -r '[.channels[].engagement.followers // 0] | add' "$LATEST_BF")
+  # CRITICAL: distinguish "channels Buffer Analyze can scrape engagement for"
+  # (subset — only FB pages, IG business, LinkedIn pages — NOT LinkedIn personal,
+  # NOT Threads) from "channels we post to" (full set, includes everything).
+  # Conflating these caused the 2026-05-03 flywheel report to show
+  # total_followers=26 when actual was ~2,200 across all surfaces.
+  BF_ENGAGEMENT_TRACKED_CHANNELS=$(jq -r '.engagement_tracked_channels // (.channels | length)' "$LATEST_BF")
+  BF_POSTING_CHANNELS=$(jq -r '.posting_channels // .channels_active // (.channels | length)' "$LATEST_BF")
+  BF_BUFFER_TRACKED_FOLLOWERS=$(jq -r '[.channels[].engagement.followers // 0] | add' "$LATEST_BF")
   BF_TOTAL_FOLLOWERS_DELTA=$(jq -r '[.channels[].engagement.followers_delta // 0] | add' "$LATEST_BF")
   BF_AVG_ENG_RATE=$(jq -r '[.channels[].engagement.engagement_rate // 0] | add / length' "$LATEST_BF")
   BF_TOP_POST=$(jq -r '.top_posts[0] | "\(.service): \(.text_snippet) (\(.engagement) engagement)"' "$LATEST_BF")
   # Stale-data flag (same 14-day threshold as LinkedIn)
   BF_STALE=$(( $(date -u +%s) - $(date -j -f "%Y-%m-%d" "$BF_SNAP_DATE" +%s 2>/dev/null || date -d "$BF_SNAP_DATE" +%s) > 14*86400 ))
 else
-  BF_CHANNELS=""; BF_STALE=1
+  BF_BUFFER_TRACKED_FOLLOWERS=""; BF_STALE=1
 fi
 ```
 
+**Render the buffer-tracked subset as `BF_BUFFER_TRACKED_FOLLOWERS`, NOT as a channel-wide total.** The difference matters: today (2026-05-03) `BF_BUFFER_TRACKED_FOLLOWERS=26` (FB page + IG business + LinkedIn page only) but the actual cross-channel follower count is ~2,200 (LinkedIn personal alone is 2,104). Reporting "Total followers: 26" misleads.
+
 If the latest Buffer snapshot is >14 days old, flag it. Note that Buffer is the fan-out layer (Priority 2's "push viewers to Beehiiv" uses Buffer as the distribution surface for IG/FB/Threads), so its health informs Priority 2's attribution mix — if IG/Threads followers are growing but beehiiv attribution shows 0% from those surfaces, that's a link-in-bio / call-to-action problem, not a Buffer problem.
+
+### Phase 4.7 — Cross-source follower reconciliation
+
+Each surface has its own follower count source — reconcile them before reporting any "total followers" number:
+
+| Surface | Authoritative source | Why |
+|---|---|---|
+| LinkedIn personal | `linkedin-stats` (LinkedIn dashboard scrape) | Buffer Analyze does not track LI personal |
+| LinkedIn EVC page | `linkedin-stats` company section | Buffer Analyze tracks but linkedin-stats has the canonical number |
+| Instagram (EVC) | `buffer-stats` (Buffer Analyze) | only source we have for IG followers |
+| Facebook (EVC) | `buffer-stats` (Buffer Analyze) | only source for FB |
+| Threads (×2) | none — neither source tracks Threads followers | report as "unavailable" |
+| YouTube subscribers | `yt-analytics` (`subscribers_gained` + lifetime) | independent surface |
+| Beehiiv | `beehiiv-mcp` `subscribers.current` | authoritative |
+
+**Compose the cross-channel total from the authoritative source per channel — never sum buffer-tracked alone and call it the total.** Document each row in the output with its source so the user can audit:
+
+```markdown
+## Cross-channel reach (with provenance)
+
+| Channel | Followers | Δ7d | Source |
+|---|---:|---:|:---:|
+| LinkedIn personal | 2,104 | +4 | linkedin-stats |
+| LinkedIn EVC page | 28 | +1 | linkedin-stats |
+| Instagram (EVC) | 512 | +3 | buffer-stats |
+| Facebook (EVC) | — | — | buffer-stats (not surfaced) |
+| Threads (mikelady + EVC) | unavailable | — | — |
+| YouTube | 800 | +12 | yt-analytics |
+| Beehiiv | 186 | +7 | beehiiv-mcp |
+| **Total (excluding unavailable)** | **3,630** | **+27** | reconciled |
+```
+
+When two sources disagree on the same channel (e.g. linkedin-stats says LinkedIn page has 28 followers, buffer-stats says 23), prefer the source with the more recent fetch timestamp; flag the discrepancy in the output.
 
 ### Phase 4.6 — Channel ROI score
 

@@ -276,13 +276,16 @@ Normalize metric names across services (e.g. LinkedIn's "Eng. Rate" and Facebook
 
 ### Phase 3 — Compose snapshot
 
-Combine operational + engagement data into a single JSON object:
+Combine operational + engagement data into a single JSON object. **CRITICAL schema rule (added 2026-05-03 after the flywheel reported total_followers=26 when the actual was ~2,200):** distinguish "channels Buffer Analyze can scrape engagement for" (the engagement-tracked subset) from "channels we post to" (the full posting set). Conflating the two gives downstream consumers like `/flywheel` a false total.
 
 ```json
 {
   "fetched_at": "2026-04-20T17:00:00Z",
   "window_days": 7,
   "organization": { "id": "...", "name": "..." },
+  "engagement_tracked_channels": 3,    // count of channels whose engagement section is populated (FB pages, IG business, LinkedIn pages)
+  "posting_channels": 6,                // count of channels we actually post to (full set, includes LinkedIn personal + Threads which Analyze doesn't scrape)
+  "channels_engagement_unavailable": ["linkedin/profile (mikelady)", "threads/profile (mikelady)", "threads/profile (enterprisevibecode)"],
   "channels": [
     {
       "id": "...",

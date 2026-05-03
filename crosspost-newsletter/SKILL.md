@@ -32,6 +32,21 @@ If the user asks for a fully autonomous run ("kick off and only review at end"),
 
 **If running fully autonomous and Substack login is missing:** SKIP Substack and document in the Phase 7 summary as `SKIPPED: requires manual login + cookies don't work`. Do NOT silently fail.
 
+### Substack: known-broken in autonomous mode (2026-04-26 + 2026-05-03 confirmed)
+
+Substack has hit the same auth wall in two consecutive crosspost runs. Confirmed paths that don't work:
+- gstack `cookie-import-browser chrome substack.com` — picker accepts substack.com but the imported cookies don't authenticate the gstack browser (HttpOnly session cookies)
+- Claude in Chrome navigation to `substack.com/sign-in` — JavaScript access blocked with "Cannot access a chrome-extension:// URL of different extension" extension conflict
+- Mid-run `$B handoff` for manual login — works but requires user attention; cannot be done in "review at end" autonomous mode
+
+**Three viable resolutions, in increasing cost order:**
+
+1. **Pre-session login prerequisite (cheapest, recommended):** When the user invokes `/crosspost-newsletter` and selects Substack, the skill should immediately verify Substack auth in Phase 3a (before any platform work). If not authenticated, **handoff up-front** with: "Substack needs manual login before this run can proceed autonomously. I'll wait." Converts the recurring mid-run interruption into a single up-front prereq.
+2. **OAuth API path (medium cost):** Substack has a private API used by their mobile app (`substack.com/api/v1/...`). Reverse-engineering the auth flow is non-trivial. Defer until ≥3 sessions have been blocked by the manual-login requirement.
+3. **Mark Substack as manual-only (cheapest "give up"):** Remove Substack from the autonomous platform list. Print at end of `/crosspost-newsletter`: "Substack: post via web editor manually. Article body at `/tmp/<slug>/article-body.html`." Closes recurring breakage at the cost of one platform's auto-syndication.
+
+**Default behavior (2026-05-03+):** option 1 (pre-session prereq up-front), with option 3's print as fallback. Escalate to option 2 (OAuth) if a 4th session hits this wall.
+
 ## Before You Begin — Run in a Dedicated Claude Instance
 
 This skill executes **hundreds of tool calls** (content extraction, image uploads, multi-step browser automation, per-subreddit submissions). Approving each permission prompt interactively is painfully slow and breaks flow.
