@@ -1443,13 +1443,48 @@ The Claude in Chrome extension refuses to navigate to `reddit.com` with the mess
 ### Reddit gstack handoff + resume clears all form fields
 When you do `$B handoff "..."` on a Reddit submit page and then `$B resume`, all form fields (Title, Link URL, Body text) and any selected flair get wiped. This is different from the flair-modal clearing issue — the handoff itself triggers a soft page refresh. **Workaround:** after resuming from a Reddit handoff, re-fill every field from scratch (title, URL, body, post flair, user tag) as if starting over. Don't assume anything survived.
 
-### Reddit flair-modal Add button: shadow-walk .click() does NOT close the modal (2026-05-03)
+### Reddit flair-modal: Lit components reject synthetic events — use Playwright shadow-piercing CSS (2026-05-03)
 
-Confirmed 2026-05-03 on r/ClaudeAI: even after walking the shadow DOM, finding the visible "Add" button (`offsetParent !== null`), and dispatching the full `pointerdown → mousedown → pointerup → mouseup → click` sequence with `composed: true`, the modal stayed open and the flair button kept its `*` (required) marker. Direct `.click()` returned `clickedDirect: true` but didn't actually trigger the React handler.
+The Reddit flair modal uses Lit-element custom components (`r-post-flairs-modal`, `faceplate-radio-input`, `faceplate-form`). They check `event.isTrusted === true`, so any JS-dispatched click / pointer / keyboard event on the Add button is silently ignored. Confirmed 2026-05-03 after attempting:
 
-This is a regression (or a flair-modal-specific quirk) vs. the 2026-04-26 working pattern below. **If the shadow-walk approach fails twice in a row, fall back to a `$B handoff` for manual flair-modal Add + Post**. Per the user's "review at end" directive, that becomes a final summary item ("Reddit draft saved with flair selected — needs manual click to commit"). Don't burn more than 2 attempts on this.
+- `$B click @e<Add-ref>` → "Selector matched multiple elements" (snapshot ref ambiguous due to shadow-DOM dups)
+- Shadow-walk `.click()` on the inner Add button → reports clicked, modal stays open
+- Full `pointerdown→mousedown→pointerup→mouseup→click` event sequence with `composed: true` → reports dispatched, modal stays open
+- `keydown/keypress/keyup Enter` on focused Add button → modal stays open
+- `dispatchEvent(new Event('submit'))` on the inner `<faceplate-form>` → modal stays open
 
-Future investigation: try `dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', composed: true}))` after focusing the Add button, or trace what mousedown listener Reddit's Lit-element actually attaches.
+**The trick that works: pass the inner button's id directly to `$B click` as a CSS selector.** Playwright's `page.locator()` pierces shadow DOM via element ID lookups:
+
+```bash
+$B click '#post-flair-modal-apply-button'
+```
+
+This dispatches a real Playwright/CDP-driven mouse click (`isTrusted: true`), which Lit accepts. Modal closes, flair commits, the "Add flair and tags *" required-marker disappears.
+
+**Pre-requisite: the flair radio must actually be checked first.** The Reddit flair "radios" are `<faceplate-radio-input name="flairId" value="<uuid>">` custom elements, not real `<input type="radio">`. Clicking them via `@e<radio-ref>` from the snapshot does NOT flip `.checked`. Use full pointer events on the faceplate-radio-input itself (these DO work for the radio — only the form submit button rejected synthetic events):
+
+```js
+const modal = document.querySelector('r-post-flairs-modal');
+const root = modal.shadowRoot;
+const radios = [...root.querySelectorAll('faceplate-radio-input[name="flairId"]')];
+const target = radios.find(r => r.closest('label, li, div')?.textContent?.trim() === 'Philosophy');
+const r = target.getBoundingClientRect();
+const opts = { bubbles: true, cancelable: true, composed: true, view: window,
+               clientX: r.x + r.width/2, clientY: r.y + r.height/2,
+               button: 0, buttons: 1, pointerType: 'mouse', pointerId: 1, isPrimary: true };
+target.dispatchEvent(new PointerEvent('pointerdown', opts));
+target.dispatchEvent(new MouseEvent('mousedown', opts));
+target.dispatchEvent(new PointerEvent('pointerup', opts));
+target.dispatchEvent(new MouseEvent('mouseup', opts));
+target.dispatchEvent(new MouseEvent('click', opts));
+target.checked;  // → true
+```
+
+Then `$B click '#post-flair-modal-apply-button'` to commit.
+
+After commit: title + URL persist, **body field clears** (re-fill it before clicking Post). The "Add flair and tags *" button is replaced with `[button] "Philosophy"` + `[button] "edit flair"` confirming success.
+
+**Why two paths:** the radios are interactive controls inside the modal; Lit listens for mousedown/click on them. The Add button is a `type="submit"` for the `<faceplate-form>`; the form's submit handler likely guards `event.isTrusted`. Different guard layers, different bypass.
 
 ### Reddit flair modal — minimum-friction flow (confirmed 2026-04-26)
 After a real run on r/vibecoding (no flair required) and r/ClaudeAI (Philosophy flair), the friction was 80% from refs going stale during probing. Here's the minimum-friction flow:
