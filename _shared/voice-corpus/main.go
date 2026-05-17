@@ -150,7 +150,7 @@ func loadConfig(defaultPath, localPath string) (config, error) {
 	cfg := config{
 		FeedURL:         "https://rss.beehiiv.com/feeds/9AbhG8CTgD.xml",
 		NumRecent:       0, // 0 = all items in the feed (~50 for beehiiv)
-		MaxCharsPerPost: 2000,
+		MaxCharsPerPost: 50000,
 		StaleDays:       7,
 		CachePath:       "cache.json",
 	}
