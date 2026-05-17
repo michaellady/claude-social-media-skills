@@ -233,12 +233,26 @@ Platforms are processed one at a time, sequentially. Full-article platforms run 
 
 ### Phase 3 — Browser Setup & Authentication
 
-#### 3a. Initialize the browse binary
+#### 3a. Initialize the browse binary AND connect headed
 
 ```bash
 B=~/.claude/skills/gstack/browse/dist/browse
 if [ -x "$B" ]; then echo "READY"; else echo "NEEDS_SETUP"; fi
 ```
+
+**Then immediately bring up a visible browser window via `$B connect`** (headed mode), unless the run is fully autonomous and no user-visible edits are expected. See the `/open-gstack-browser` skill for Step 0 pre-flight cleanup + Step 1 connect.
+
+```bash
+# Step 0: pre-flight (kill stale launched server, clean profile locks)
+# Step 1: connect headed
+$B connect
+$B status  # confirm Mode: headed
+$B focus   # bring window forward
+```
+
+**Why headed by default:** the LinkedIn accompanying-post paragraph-break handoff is unavoidable (the field strips all programmatic line breaks). With launched mode the Chromium window is invisible to the user, so `$B handoff` opens an about:blank popup as a workaround — and the popup drops the LinkedIn session cookies on the way (confirmed 2026-05-17). Headed mode lets the user edit the textbox directly without any handoff/recovery cycle. Same logic applies to Substack's mid-run manual login and Reddit's CAPTCHA prompts.
+
+**Mode is sticky.** Do NOT call `$B connect` after the skill has already been running in launched mode — it forks a new browser process and orphans the prior tabs (you lose the LinkedIn draft state). And `$B disconnect` of a headed instance force-cleans the launched server too. Pick the mode at 3a and stay in it.
 
 #### 3b. Verify authentication for each selected platform
 
@@ -1282,6 +1296,18 @@ Cover, body, all figures, blockquotes, and links are autosaved continuously. If 
 
 ### LinkedIn auth can drop after `$B handoff` to a new browser window
 Confirmed 2026-04-26: when `$B handoff` triggers a new about:blank window (which it does whenever the previous session was already in headed mode but the new handoff request opens a fresh instance), the gstack browser's LinkedIn session cookies get reset. After `$B resume`, navigating back to `linkedin.com/article/edit/<id>` will redirect to `linkedin.com/uas/login` with a session_redirect param. **Recovery:** re-import linkedin.com cookies via the picker, then re-navigate. Total cost ~30s. The article draft itself is intact (see autosave above).
+
+### LinkedIn run: default to `$B connect` (headed) from Phase 3a, not launched mode (2026-05-17)
+Confirmed 2026-05-17 on the Fix-Forward run: launched-mode Chromium renders no visible window to the user, which breaks every flow that needs the user to see what's happening — the unavoidable accompanying-post paragraph-break handoff in particular. The recovery cascade was: `$B handoff` opens an about:blank popup (visible but useless), the user can't find the actual LinkedIn editor, the handoff drops LinkedIn cookies, re-import requires a cookie-picker round-trip, and the user has to re-enter the typing flow. With `$B connect` headed mode the Chrome window is visible the whole time, the user can do paragraph breaks directly in the editor without any handoff, and the cookie session survives. **Rule:** for `crosspost-newsletter`, always `$B connect` at Phase 3a (with Step 0 pre-flight cleanup from `/open-gstack-browser`). Mention launched mode only as a fallback for headless CI contexts that don't need user-visible edits.
+
+### LinkedIn run: `$B connect` ↔ `$B disconnect` destroy launched-mode sessions (2026-05-17)
+The two browser modes are not interoperable. On the Fix-Forward run, calling `$B connect` mid-skill to surface a visible window forked a new browser process — the launched-mode tab holding the LinkedIn draft was orphaned (gstack lost reference to it; the underlying process kept running but couldn't be driven). Then `$B disconnect` of the headed instance also force-cleaned the prior launched server. **Rule:** pick the mode at Phase 3a and stay in it. Switching mid-run loses your tab state; the only recovery is to re-navigate to the autosaved draft URL in the new mode (and re-import auth).
+
+### LinkedIn run: verify Publish by canonical signal, never by URL change alone (2026-05-17)
+On the Fix-Forward run I prematurely reported "Published!" because the URL changed from `/article/edit/<id>/` to `/newsletters/<page-id>/` after what I thought was a Publish click. It wasn't — the Publish ref grep had returned empty (the snapshot output line `  @e8 [button] "Publish"` has leading whitespace that broke my `awk -F'@' '{print $2}'`-then-`awk '{print $1}'` pattern when the line started with two spaces — the first awk-split gave `""` for `$2`). `$B click "@"` returned `Clicked → now at <URL>` indistinguishable from a successful click. The URL change came from an unrelated background action. The actual Publish click later returned `/pulse/<slug>/?published=t` with a "Congrats on publishing" dialog — the canonical post-publish signals. **Rule:** after every Publish/Submit click, assert the URL contains the platform's canonical published-state token (`/pulse/<slug>/` + `?published=t` for LinkedIn pulse, `/p/<slug>` for Substack, `/item?id=<N>` for HN, `/comments/<id>/` for Reddit) before reporting success. Also: always validate ref strings are non-empty before passing to `$B click` — an empty `@` click is a no-op that returns success-shaped output.
+
+### LinkedIn run: accompanying-post field clears when revisiting the editor (2026-05-17)
+After publishing fails (or any back-navigation to the editor page followed by Next), the accompanying-post textbox returns empty. You must re-type the full post each time you reach the publish page. The body, cover, and figures DO persist via autosave; only the accompanying-post field is ephemeral.
 
 ### LinkedIn @e<N> refs go stale within seconds
 After any modal interaction (image upload, dismiss, click into a different field), LinkedIn re-renders enough of the DOM that snapshot refs from BEFORE the interaction may point to different elements (or no element). Always re-snapshot immediately before clicking a ref that was captured before any DOM-changing action. Symptoms of stale refs: `$B click @e3` reports "now at <unchanged URL>" but the click had no visible effect, OR the click hits a wrong element entirely (e.g., the editor toolbar's Next instead of the modal's Next).
