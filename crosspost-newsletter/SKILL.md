@@ -777,13 +777,32 @@ mcp__claude-in-chrome__navigate (url: "https://medium.com/new-story", tabId: <ta
 ```
 If not logged in, the user must log in manually in Chrome — Medium sessions are in the real browser.
 
-**Step 3 — Fill the title:**
-Use `read_page` with `filter: "interactive"` to find the textbox element. Click it and type:
-```
-mcp__claude-in-chrome__computer (action: "left_click", ref: "<textbox ref>")
-mcp__claude-in-chrome__computer (action: "type", text: "<article title>")
-mcp__claude-in-chrome__computer (action: "key", text: "Enter")
-```
+**Step 3 — Fill the title (do this AFTER the body paste in Step 4, not before):**
+
+⚠️ **Critical ordering — confirmed 2026-05-17.** The Medium editor has TWO different "Title" surfaces:
+1. An outer Title textbox surfaced by `mcp__claude-in-chrome__find` / `read_page` (often `ref_14` on a fresh `/new-story` page).
+2. An empty `<h3 class="graf--title">` element **inside** the body's main `[contenteditable="true"]` editor.
+
+**Only the inner `.graf--title` matters.** Typing into the outer textbox AND pressing Enter before pasting can land your text in the outer textbox while the inner `.graf--title` stays empty — and the inner one is what Medium saves as the story title. On the Fix-Forward run I confirmed the inner `.graf--title` was `graf--empty` after the outer-textbox flow, so Medium auto-pulled the body's first paragraph as the title and pushed it into the SEO description preview. (The publish dialog showed "47/100" for the title field because the title was correct, but only after we explicitly clicked the inner `.graf--title` and re-typed.)
+
+**Reliable flow:**
+1. Run the body paste first (Step 4 — osascript+cmd+v lands all 92+ paragraphs).
+2. Then find the inner title element:
+   ```js
+   const editor = [...document.querySelectorAll('[contenteditable="true"]')][0];
+   const titleEl = editor.querySelector('.graf--title');
+   titleEl.scrollIntoView({block: 'center'});
+   const r = titleEl.getBoundingClientRect();
+   ({x: Math.round(r.x + 20), y: Math.round(r.y + r.height/2)})  // coords
+   ```
+3. Real click at those coords:
+   ```
+   mcp__claude-in-chrome__computer (action: "left_click", coordinate: [x, y])
+   mcp__claude-in-chrome__computer (action: "type", text: "<article title>")
+   ```
+4. **Verify** by querying `document.querySelector('.graf--title').textContent`. The `graf--empty` modifier class should be gone and `.textContent` should match the article title.
+
+If the title field is left empty when Publish is clicked, Medium will auto-pull the body's first paragraph as both the story title AND the URL slug — usually wrong (e.g. "Two weeks ago I started talking about…" instead of the actual article title). The publish-confirmation page shows the title field char count near the preview — verify there too before clicking Publish.
 
 **Step 4 — Insert the article body via naive copy-paste from beehiiv (REQUIRES MANUAL USER ACTION):**
 
