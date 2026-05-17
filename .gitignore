@@ -4,6 +4,7 @@ linkedin-stats/cache/
 linkedin-stats/config.local.json
 buffer-stats/cache/
 buffer-stats/config.local.json
+audit-buffer-queue/cache/
 data/reviews/
 
 # Runtime lock files
