@@ -6,7 +6,7 @@ user_invocable: true
 
 # promote-newsletter
 
-Extract the strongest snippets from a beehiiv newsletter post and create platform-specific social media posts via Buffer MCP. Never rewrite content — only trim to fit.
+Extract the strongest snippets from a beehiiv newsletter post and schedule each selected snippet to every eligible Buffer channel. Never rewrite content — only trim to fit each channel's char budget.
 
 ## Usage
 
@@ -65,15 +65,16 @@ Users often kick off `/promote-newsletter` when earlier promotion runs (crosspos
 ### Phase 3 — User Snippet Selection
 
 Ask the user:
-- Which snippet(s) to use
-- Whether to use the same snippet for all platforms or assign different snippets to short-form vs long-form platforms
-- Which image to attach (default: hero image)
+- Which snippet(s) to approve for posting (default: all `✅ new` snippets)
+- Which image to attach to each snippet (default: hero image for the first, then walk through the article's other images in order; remaining snippets go text-only)
+
+**Default fan-out behavior:** every approved snippet posts to every eligible Buffer channel — one post per (snippet × channel) pair. Do not ask the user to assign different snippets to different platforms; the user picks which snippets are good, and every approved snippet ships to every channel.
 
 **Wait for user input before proceeding.**
 
-### Phase 4 — Compose Platform-Specific Posts
+### Phase 4 — Compose Posts (full fan-out: every approved snippet × every eligible channel)
 
-For each connected Buffer channel, compose a post from the selected snippet.
+For each approved snippet, compose one post per eligible Buffer channel — same snippet text, trimmed (or expanded) to fit that channel's char budget. The matrix is **snippets × channels**, not "one snippet per platform."
 
 **CRITICAL RULE — No Rewriting:**
 Never rewrite, paraphrase, or rephrase the author's words. You may only:
@@ -105,13 +106,13 @@ Comment "newsletter" to get my latest post, "<Article Title>"
 
 Calculate the actual CTA length using the article title to determine snippet budgets. The CTA format is `Comment "newsletter" to get my latest post, "<title>"` — count the full string including the title.
 
-For short-form platforms (Twitter, Bluesky, Pinterest): pick the most concise snippet or trim aggressively.
+For short-form platforms (Twitter, Bluesky, Pinterest): when a snippet exceeds the budget, trim from the end with `…` while preserving complete sentences. If even the first sentence won't fit, drop that snippet for that channel and surface the skip — never paraphrase to fit.
 For long-form platforms (LinkedIn, Instagram): the full snippet can be used, potentially with multiple paragraphs.
 
-**Media attachment:**
-- **IMPORTANT — Buffer duplicate detection:** Buffer will reject posts that share the same image URL, treating them as duplicate content. When scheduling multiple posts from the same article, each post must use a **different image** or go text-only. Ask the user which post should get which image.
-- If the newsletter has fewer images than posts, only attach images to the user's chosen posts and send the rest as text-only.
-- Instagram requires an image — only schedule to Instagram on posts that have an image attached. Skip Instagram for text-only posts.
+**Media attachment (snippet × channel fan-out has a tight image budget):**
+- **IMPORTANT — Buffer duplicate detection:** Buffer will reject posts that share the same image URL, treating them as duplicate content. Each (snippet × channel) cell needs either a **unique** image URL or to be text-only across the whole batch.
+- **Default distribution:** the article's inline images are a shared pool. Distribute them across the snippet × channel matrix with this priority order, never reusing a URL: (1) **Instagram cells first** — Instagram requires an image, so every snippet's Instagram cell must get one before other channels; (2) **LinkedIn cells next** — visuals lift engagement most here; (3) **Facebook cells**; (4) **Threads cells** — Threads is conversational, text-only is fine. Cells that don't receive an image go text-only.
+- **Out of images:** if the pool runs dry, remaining cells go text-only. If a snippet has no image left for its Instagram cell, **skip Instagram for that snippet** rather than sending text-only (Buffer will reject) or reusing a URL (Buffer dedups).
 - Attach images via `assets.images` with `metadata.altText` set to the article title.
 
 **Skip TikTok and YouTube channels** — they require video assets, not images.
@@ -168,7 +169,7 @@ Apply the **[Buffer create_post pattern](../PATTERNS.md#pattern-buffer-create_po
 - `format-tag = verbatim_quote` (always — per [Per-skill format tag table](../PATTERNS.md#pattern-per-skill-format-tag))
 - For each approved post, build args via `_shared/buffer-post-prep/buffer-post-prep`, then call `mcp__buffer__create_post` with the resulting JSON.
 
-The skill's cognition for this phase is choosing WHICH approved posts go to which channels in what order and which images to attach. **Ask the user up-front** in Phase 3: "Fan-out level — 1 snippet/channel, up to 3/channel, or all approved snippets per channel?" Defaulting silently can both undershoot (when the user wants max saturation on a major launch) and overshoot (when audience fatigue matters). Surface the choice; don't bake in a number — see [PATTERNS.md fan-out cap entry](../PATTERNS.md#pattern-buffer-create_post-with-channel-filter--caps). The transport layer enforces:
+The skill's cognition for this phase is **image assignment** (which snippet × channel cell gets which image, since Buffer dedups image URLs) and **scheduling order** (typically snippet-by-snippet across all channels, so each snippet's fan-out goes out together). Fan-out level is no longer a per-run question — the default is "every approved snippet → every eligible channel." The user controls saturation by approving more or fewer snippets in Phase 3. The transport layer enforces:
 
 - Skips channels with `isDisconnected: true`, `isLocked: true`, or `service: "startPage"`
 - Skips channels below `min_followers_to_promote = 50` (verified via `mcp__buffer__get_channel`)
