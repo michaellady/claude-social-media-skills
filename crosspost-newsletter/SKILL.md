@@ -829,11 +829,26 @@ Expect: ~45+ paragraphs, 4-5 images (Medium auto-promotes the first body image t
 
 **Do NOT attempt the programmatic cmd+c/cmd+v sequence** — it silently fails (the Medium body ends up empty or with garbage like "22)"), and each failed attempt wastes a dozen tool calls. Go straight to the manual handoff.
 
-**Step 5 — Clean up empty H3s that appear before each image:**
+**Step 5 — Conditionally clean up empty H3s that appear before each image (skip if none):**
 
-The paste leaves an empty `<h3>` before each figure. These render as extra vertical space in the final article. Remove them with real keyboard actions (NOT direct DOM manipulation — `.remove()` triggers Medium's "Something is wrong and we cannot save your story" automation-detection error).
+The osascript+cmd+v paste path **usually does not** produce empty `<h3>` siblings before figures (confirmed 2026-05-17: 11 figures, 0 empty H3 siblings). Older paste paths (notably the legacy manual cmd+c-from-beehiiv path) did leave them. **First query for them, then only clean up if any are found.**
 
-For each figure:
+Query:
+```javascript
+const editor = [...document.querySelectorAll('[contenteditable="true"]')].find(el => el.querySelectorAll('p').length > 0);
+const figs = [...editor.querySelectorAll('figure')];
+const dirty = figs.filter(f => {
+  const idx = [...f.parentElement.children].indexOf(f);
+  const prev = f.parentElement.children[idx - 1];
+  return prev?.tagName === 'H3' && !prev.textContent.trim();
+}).map(f => figs.indexOf(f));
+JSON.stringify({figCount: figs.length, dirtyFigIndices: dirty});
+```
+
+If `dirty` is empty: skip the rest of this step entirely.
+
+If `dirty` is non-empty, for EACH figure in the `dirty` list, do real-click + Backspace (NOT direct DOM manipulation — `.remove()` triggers Medium's "Something is wrong and we cannot save your story" automation-detection error):
+
 1. Find the preceding empty `<h3>` and its screen coordinates:
    ```javascript
    const figs = [...document.querySelector('[contenteditable="true"]').querySelectorAll('figure')];
@@ -848,7 +863,7 @@ For each figure:
    mcp__claude-in-chrome__computer (action: "left_click", coordinate: [x, y])
    mcp__claude-in-chrome__computer (action: "key", text: "Backspace")
    ```
-3. Repeat for each figure. The clicks + Backspace go through Medium's keyboard handlers and don't trigger the automation-detection error.
+3. Repeat for each figure in `dirty`. The clicks + Backspace go through Medium's keyboard handlers and don't trigger the automation-detection error.
 
 Verify after cleanup:
 ```javascript
@@ -1159,7 +1174,22 @@ or inform the user and pause via handoff.
 
 ---
 
-### Adversarial review per platform (REQUIRED before user review)
+### Adversarial review per platform (REQUIRED before user review — when there's LLM synthesis to validate)
+
+**Skip the formal adversarial review for a platform's submission when ALL of its surface content is either (a) verbatim source paste or (b) deterministic memory-preference output with no LLM-generated synthesis.** The adversarial review exists to catch fabrications, drifts, and unverifiable claims in LLM-generated copy — when there's no such copy, the review has nothing to catch and adds latency + cost.
+
+Examples of when to skip per platform:
+- **Medium / Substack full-article paste:** body is verbatim source, title is verbatim source, subtitle is verbatim auto-pull from source, topics are from `feedback_medium_topics.md` memory → skip. Confirmed 2026-05-17 on Fix-Forward Medium leg.
+- **HN link submission with no author-note:** title + URL only, both deterministic → skip.
+- **Reddit link submission with no author-note:** same logic.
+
+Examples of when to run the review:
+- **LinkedIn pulse accompanying post:** LLM synthesizes 2-4 paragraphs framing the article for feed readers → MUST review. Caught fabricated specificity on the 2026-05-17 run ("three signals from the conference" — actually only two were from the conference).
+- **HN author-note ("Author here — …"):** even 2-3 sentences of synthesis → MUST review.
+- **Reddit body text (2-3 sentence hook):** synthesis → MUST review.
+- **Custom subtitle on Medium** (when overriding the auto-pull) → MUST review.
+
+**Rule of thumb:** if Claude wrote the words from scratch (not just trimmed from source), run the review. If Claude only selected, trimmed, or arranged verbatim source/memory content, skip and note "no synthesis → no review" in the Phase 5 summary so the user knows it was a deliberate skip, not an oversight.
 
 Apply the **[Adversarial Review pattern](../PATTERNS.md#pattern-adversarial-review)** ONCE PER PLATFORM (each platform's submission has its own rules + artifact shape). Skill provides:
 
@@ -1404,8 +1434,18 @@ Confirmed 2026-05-17 on the Fix-Forward run: even with `$B connect` (headed Chro
 ### Medium run: osascript+cmd+v paste lands cleaner than the skill expected (2026-05-17)
 Confirmed 2026-05-17: a single osascript-NSPasteboard + cmd+v on the Medium editor produced 92 paragraphs, 13 h3s (12 from source `<h2>` headings + 1 trailing), 11 figures, 11 imgs, "Saved" indicator within 1 second, zero empty-H3-before-figure artifacts. The skill's older "Step 5 — Clean up empty H3s that appear before each image" was expecting 5 figures with empty H3 siblings; on this run there were 11 figures and **0 empty H3 siblings**. The cleanup step may have been an artifact of a different paste source (the legacy manual cmd+c-from-beehiiv path). **Rule:** after the paste, query for empty `<h3>` siblings before figures. If count is 0, skip the cleanup step entirely. Only run the real-click + Backspace pattern on figures whose previous sibling is an empty `<h3>`.
 
-### Medium canonical URL UI changed — no "originally published" checkbox; canonical is an unlabeled SEO input (2026-05-17)
-**The skill's older "Edit canonical link" / "originally published elsewhere checkbox" flow is stale.** As of 2026-05-17, Medium's Advanced Settings page no longer surfaces an "originally published elsewhere" checkbox. The canonical URL field is now an unlabeled text input that lives inside the "SEO Settings" section, pre-populated with Medium's auto-generated URL (`https://medium.com/@<handle>/<storyId>?source=...`). To find it: enumerate all `input[type="text"]` on the settings page; the canonical field is the one whose `.value` starts with `https://medium.com/`. To set it: triple_click + Delete + type the beehiiv URL. Confirmed 2026-05-17.
+### Medium Advanced Settings panel is collapsed by default — must expand before canonical URL is reachable (2026-05-17 CORRECTED)
+**Self-correction on the earlier "Medium canonical URL UI changed" entry: the UI did NOT change.** The "Customize Canonical Link" section + "This story was originally published elsewhere" checkbox + "Edit canonical link" button are all still present. The reason I initially missed them is that the **Advanced Settings panel is COLLAPSED by default** in the new settings page layout — you have to click the "Advanced Settings ⌄" header to expand it. The unlabeled `https://medium.com/...` text input I initially thought was canonical is actually the **Friend Link** field (Promotion section, above Advanced Settings).
+
+**Working flow:**
+1. Scroll the settings page until you see "Advanced Settings ⌄" (between Content Licensing and Delete Story).
+2. Click the "Advanced Settings" header to expand the panel.
+3. Click the "This story was originally published elsewhere" checkbox under "Customize Canonical Link".
+4. Click "Edit canonical link" button to enter the URL field's edit mode.
+5. triple_click the URL field + `key Delete` + `type` the beehiiv URL.
+6. Click "Save canonical link". A toast appears: "Canonical link successfully updated".
+
+Confirmed 2026-05-17 on the Fix-Forward run. The older "Edit canonical link" flow note below was correct all along — just incomplete on the "expand the panel first" step.
 
 ### Medium run: Claude in Chrome `javascript_tool` blocks responses containing URL-shaped values (2026-05-17)
 Confirmed 2026-05-17: calling `mcp__claude-in-chrome__javascript_tool` with code that returns a JSON object containing `https://medium.com/@.../?source=...` (the pre-populated canonical URL) returns `[BLOCKED: Cookie/query string data]` instead of the value. The privacy guard interprets `?source=...` query strings as tracking data and blocks the entire response. **Workaround:** to read or set the canonical URL field via JS, return a redacted/derived signal (`{count, firstChar, lastChar}` etc.) rather than the URL itself. For setting the value, use coordinate-based `triple_click` + `key Delete` + `type` instead of the JS React-native setter pattern — keyboard-driven flows don't trigger the response-blocking guard because the JS doesn't need to return the URL.
