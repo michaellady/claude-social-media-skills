@@ -135,9 +135,14 @@ func main() {
 		args["dueAt"] = *dueAt
 	}
 	if *imageURL != "" {
-		args["assets"] = map[string]any{
-			"images": []map[string]any{
-				{
+		// mcp__buffer__create_post expects assets as an ARRAY of asset objects,
+		// each tagged with its asset kind (image/video/document/link). The old
+		// {"images": [...]} shape did NOT match the MCP schema; the LLM
+		// invoking create_post was silently translating it. Confirmed
+		// 2026-05-17 against the live MCP schema while running promote-newsletter.
+		args["assets"] = []map[string]any{
+			{
+				"image": map[string]any{
 					"url":      *imageURL,
 					"metadata": map[string]any{"altText": *imageAlt},
 				},

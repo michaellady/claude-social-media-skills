@@ -16,15 +16,41 @@ Extract the strongest snippets from a beehiiv newsletter post and schedule each 
 
 ### Phase 1 — Fetch Newsletter Content
 
-**If URL provided:**
-Use `WebFetch` with the beehiiv post URL. Extract:
-- Article title and subtitle
-- All body paragraphs (verbatim text, preserve exact wording)
-- All image URLs (hero image, inline images, any visuals in the article)
+**Always try `_shared/voice-corpus` first for the body text.** The binary fetches the user's beehiiv RSS feed and caches every post's plain-text body — no rate limits, no copyright guardrails, no LLM-mediated summarization. Confirmed 2026-05-17: `WebFetch` on the user's own newsletter URL refused to return the article verbatim ("substantial reproduction of copyrighted material"), which broke the verbatim-quote rule. The RSS cache has no such problem.
+
+```bash
+_shared/voice-corpus/voice-corpus --refresh  # fetch fresh feed
+# then jq to pull the article body:
+jq -r '.posts[] | select(.url | contains("<slug>")) | .body_text' \
+  _shared/voice-corpus/cache.json > /tmp/newsletter-body.txt
+```
+
+**WebFetch is still needed for image URLs**, since voice-corpus strips HTML. Make a SECOND WebFetch call to the article URL with a tightly-scoped prompt:
+
+```
+List EVERY image URL that appears in the article — hero, inline images,
+graphs/charts, screenshots. For each one tell me: (a) full URL, (b) what
+it depicts (one short phrase), (c) approximately where it appears. Do not
+summarize the article. Just enumerate the image URLs.
+```
+
+**Pre-validate every image URL with a HEAD request** before adding it to the image pool. beehiiv's `media.beehiiv.com/cdn-cgi/image/...` URLs occasionally return a 307 redirect to a 403, and Buffer's image-dimensions fetcher rejects them at `create_post` time with "Failed to fetch image dimensions: Not Found". Confirmed 2026-05-17 on the Magic-section image of "The Fix-Forward Solutions to AI Coding Problems."
+
+```bash
+for url in "${IMAGE_URLS[@]}"; do
+  code=$(curl -sI "$url" -o /dev/null -w "%{http_code}")
+  if [[ "$code" == "200" ]]; then echo "OK  $url"
+  else echo "DROP ($code) $url"
+  fi
+done
+```
+
+Drop any non-200 URL from the image pool. Note the drop count in Phase 2 so the user sees how many images were filtered.
 
 **If "latest" or no URL:**
-Fetch the beehiiv RSS feed via `WebFetch` (URL of the form `https://rss.beehiiv.com/feeds/<feed-id>.xml` — the feed ID is specific to the user's publication and will be provided in their settings or first message).
-List recent articles with titles and dates. Ask the user which one to promote, then fetch that article's URL.
+Refresh the voice-corpus cache and list the recent articles with titles and dates. Ask the user which one to promote, then proceed with that article's URL.
+
+**If the article isn't on beehiiv** (rare — this skill is beehiiv-first): fall back to the full WebFetch flow. Be aware its content-policy guardrails may refuse full-body extraction.
 
 ### Phase 2 — Identify Candidate Snippets & Media
 
@@ -75,6 +101,21 @@ Ask the user:
 ### Phase 4 — Compose Posts (full fan-out: every approved snippet × every eligible channel)
 
 For each approved snippet, compose one post per eligible Buffer channel — same snippet text, trimmed (or expanded) to fit that channel's char budget. The matrix is **snippets × channels**, not "one snippet per platform."
+
+**Prep manifest format.** Snippet bodies are multi-line; bash arrays + `read -r IFS='|'` truncate at the first newline. Use a JSON manifest instead — one object per cell, then iterate in Python:
+
+```json
+[
+  {"id": "01", "channel_id": "692438d9...", "service": "linkedin",
+   "text": "We as an industry...\n\n…\n\nWhat can you add to tokens that someone else can't? Your perspective.\n\nComment \"newsletter\" to get my latest post, \"<Article Title>\"",
+   "image_url": null, "image_alt": null},
+  {"id": "02", "channel_id": "6934230229...", "service": "linkedin",
+   "text": "We as an industry...", "image_url": "https://media.beehiiv.com/...",
+   "image_alt": "<Article Title>"}
+]
+```
+
+A Python loop calling `buffer-post-prep` once per cell handles multi-line bodies safely. Confirmed 2026-05-17: a bash array-based prep silently truncated all 6 long-form bodies to their first line.
 
 **CRITICAL RULE — No Rewriting:**
 Never rewrite, paraphrase, or rephrase the author's words. You may only:
@@ -137,25 +178,27 @@ This is what makes "no fabrication" a property of the system rather than a hope.
 
 ### Phase 5 — Review Before Publishing
 
-Present all drafted posts for approval:
+Render the snippet × channel matrix as a single table — at 4 snippets × 6 channels = 24 posts, the per-channel narrative format used to drown in scroll. Show one row per cell with the cell's character count, image assignment, and a body preview:
 
 ```
-Channel: @handle (Twitter)
-Post (247/280 chars):
----
-[snippet text]
+Snippet × Channel matrix (24 cells)
 
-Comment "newsletter" to get my latest post, "<Article Title>"
----
-Image: [image URL]
+# | snippet | channel        | chars/limit | image                  | body preview
+01 | A      | LinkedIn (Mike)| 613/3000    | text-only              | We as an industry need…
+02 | A      | LinkedIn (EVC) | 613/3000    | Open Secret (#2)       | We as an industry need…
+03 | A      | Threads (mike) | 307/500     | text-only              | The key question for…
+...
 ```
 
-Repeat for each channel. Ask: **"Ready to schedule these to Buffer?"**
+Follow the table with the full body of each unique snippet variant (long-form vs short-form per snippet — typically 2 variants × N snippets = 6–10 unique bodies, not 24), so the user can scan once per snippet rather than once per cell.
+
+Ask: **"Ready to schedule all N posts to Buffer?"**
 
 The user can:
 - Approve all
-- Edit individual posts
-- Skip specific channels
+- Edit individual cells (by row #)
+- Drop a snippet entirely (removes all of its row entries)
+- Skip a specific channel column
 - Cancel entirely
 
 ### Phase 6 — Schedule to Buffer
