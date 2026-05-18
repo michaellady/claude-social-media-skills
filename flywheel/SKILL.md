@@ -10,27 +10,71 @@ Aggregate signal from YouTube, beehiiv, LinkedIn, and the consulting log into on
 
 ## Usage
 
-`/flywheel` — read cached snapshots + compose report (fast — ~30 sec). Flags any source older than `stale_snapshot_days` (default 14d) but does NOT refresh.
-`/flywheel --refresh` — refresh ALL upstream snapshots first (yt-analytics fetch + fetch-analytics --all + cohort auto, buffer-stats engagement scrape, linkedin-stats dashboard scrape), then compose. **The canonical Sunday weekly review** — single command, single artifact, everything fresh. ~10-15 min wall-clock end-to-end.
-`/flywheel --refresh-stale` — only refresh upstream snapshots older than `stale_snapshot_days`. Cheaper than `--refresh`; flags any sources still stale after the conditional refresh.
+`/flywheel` — **default: auto-detect stale data + prompt to refresh.** Checks each upstream source's snapshot age against `stale_snapshot_days` (default 14d). If anything is stale, surfaces the list and asks "refresh these N stale sources now?" with default = yes. On yes, invokes the relevant sub-skills inline before composing. On no, falls through to cached-only mode. ~30 sec if everything fresh; ~5-15 min if a refresh is needed.
+`/flywheel --refresh` — force-refresh ALL upstream snapshots regardless of staleness. **The canonical Sunday weekly review.** Skips the prompt. ~10-15 min wall-clock end-to-end.
+`/flywheel --refresh-stale` — auto-accept the staleness prompt (refresh anything stale, skip the prompt). Semantically equivalent to plain `/flywheel` + "yes" — useful for scripted / unattended runs.
+`/flywheel --cached` — skip the freshness check entirely. Read whatever's cached, flag staleness in the report, never invoke sub-skills. Fast (~30 sec) and read-only. Use for "where do we stand right now" without paying the refresh cost.
 `/flywheel --days 30` — custom window
 `/flywheel --no-save` — produce the report but don't overwrite today's snapshot
 `/flywheel --compare 2026-04-12` — diff against a specific older snapshot
 
 ### When to use which mode
 
-- **Daily / mid-week check:** `/flywheel` (cached, fast — answers "where do we stand right now")
-- **Sunday weekly review:** `/flywheel --refresh` (canonical — everything fresh, replaces running each sub-skill manually)
-- **Catch-up after a few days:** `/flywheel --refresh-stale` (only refreshes what's actually stale)
+- **Daily / mid-week check:** plain `/flywheel` — if everything's fresh you get the fast read; if a source went stale overnight, you get prompted and can choose to refresh.
+- **Sunday weekly review:** `/flywheel --refresh` — force-refresh everything, no prompts, canonical artifact.
+- **Catch-up after a few days:** plain `/flywheel` (accept the prompt) — same as `--refresh-stale`, just with a confirmation gate.
+- **"Just show me what we have":** `/flywheel --cached` — explicit opt-out of the refresh prompt for a guaranteed fast read.
 
 ## 🟢 Happy Path (read first; everything below is edge-case detail)
 
-The Sunday weekly review flow when every source is healthy. ~10-15 min wall-clock with `--refresh`, ~30 sec cached.
+The default flow auto-detects stale data and prompts to refresh. ~30 sec when nothing's stale, ~5-15 min when something needs refreshing.
 
-**Phase 0 — Refresh upstream snapshots (skip on plain `/flywheel`).** On `--refresh`, run all three sub-skills in sequence; on `--refresh-stale`, run only those whose cache is older than `stale_snapshot_days` (default 14d):
-- YouTube: `cd ~/dev/youtube_analytics && go run . fetch && go run . fetch-analytics --all && go run . cohort auto` (~3-5 min, no browser).
-- Buffer: invoke `/buffer-stats` (~3-5 min, gstack browser; cookies carry from buffer.com — see `Edge: buffer-snapshot-stale`).
-- LinkedIn: invoke `/linkedin-stats` (~2-3 min, gstack browser — see `Edge: linkedin-snapshot-stale`).
+**Phase 0 — Freshness check + conditional sub-skill invocation.** Determine which sources need refreshing, then either prompt the user or skip per the flags:
+
+```bash
+# Check each source's snapshot age. Threshold = stale_snapshot_days (default 14d, configurable).
+STALE_DAYS=${STALE_SNAPSHOT_DAYS:-14}
+LN_CACHE=~/dev/claude-social-media-skills/linkedin-stats/cache
+BF_CACHE=~/dev/claude-social-media-skills/buffer-stats/cache
+YT_DATA=~/dev/youtube_analytics/data/videos.json
+
+age_days() {
+  local f=$1
+  [ ! -e "$f" ] && echo 9999 && return
+  local now=$(date +%s)
+  local mtime=$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f")
+  echo $(( (now - mtime) / 86400 ))
+}
+
+LN_AGE=$(age_days "$(ls -1 $LN_CACHE/snapshot-*.json 2>/dev/null | tail -1)")
+BF_AGE=$(age_days "$(ls -1 $BF_CACHE/snapshot-*.json 2>/dev/null | tail -1)")
+YT_AGE=$(age_days "$YT_DATA")
+
+STALE=()
+[ "$LN_AGE" -ge "$STALE_DAYS" ] && STALE+=("linkedin-stats (age ${LN_AGE}d)")
+[ "$BF_AGE" -ge "$STALE_DAYS" ] && STALE+=("buffer-stats (age ${BF_AGE}d)")
+[ "$YT_AGE" -ge "$STALE_DAYS" ] && STALE+=("yt-analytics videos.json (age ${YT_AGE}d)")
+```
+
+**Routing logic based on flags + staleness:**
+- **`--cached`** → skip Phase 0 entirely; mark stale sources in the report and proceed to Phase 1.
+- **`--refresh`** → refresh ALL three sub-skills unconditionally (skip the prompt). Equivalent to a forced Sunday review.
+- **`--refresh-stale`** → if `STALE[]` is non-empty, refresh those sources without prompting. If empty, skip Phase 0.
+- **Plain `/flywheel`** (no flags) → if `STALE[]` is non-empty, surface the list via `AskUserQuestion`:
+
+  > Found N stale source(s): {list with ages}. Refresh now? Default = yes.
+  > - **Yes, refresh now (Recommended)** — invoke the listed sub-skills inline before composing the report (~5-15 min depending on what's stale).
+  > - **No, use cached and flag in report** — proceed without refreshing; stale sources render as `⚪ stale` in the report.
+  > - **Refresh selectively** — pick which sources to refresh (if some are slower than others).
+
+  Default to "Yes, refresh now" if no user input arrives within the AskUserQuestion timeout.
+
+**Phase 0a — Per-source refresh invocation (only if `STALE[]` contains the source):**
+- **YouTube** (~3-5 min, no browser, no user attention): `cd ~/dev/youtube_analytics && go run . fetch && go run . fetch-analytics --all && go run . cohort auto`. Cached at `data/videos.json`.
+- **Buffer** (~3-5 min, gstack browser, may need cookie picker click): invoke `/buffer-stats` via the `Skill` tool. The sub-skill writes `~/dev/claude-social-media-skills/buffer-stats/cache/snapshot-<date>.{json,md}` then exits. Auth: `cookie-import-browser chrome buffer.com` if cookies expired — see `Edge: buffer-snapshot-stale`.
+- **LinkedIn** (~2-3 min, gstack browser): invoke `/linkedin-stats` via the `Skill` tool. Writes `~/dev/claude-social-media-skills/linkedin-stats/cache/snapshot-<date>.json`. Auth: gstack browser must be logged in to LinkedIn — see `Edge: linkedin-snapshot-stale`.
+
+If a sub-skill fails (auth lapsed, cookie picker not closed, gstack process dropped), surface the failure clearly and continue with the OTHER sub-skills + cached data for the failed one. **Don't abort the whole flywheel composition over one stale source** — the report still has value with 2 of 3 sources fresh.
 
 **Phase 1 — Resolve window.** Default `DAYS=7`; compute `SINCE` / `UNTIL` and `REPORT=$SNAP_DIR/$(date -u +%Y-%m-%d).md`.
 
@@ -67,14 +111,41 @@ If any source fails or is stale, note it in the report — don't silently drop t
 
 ## Process
 
-### Phase 0 — (Optional) Refresh upstream snapshots
+### Phase 0 — Freshness check + conditional refresh (default behavior)
 
-Skip when `/flywheel` was invoked without a refresh flag. Otherwise, decide which sub-skills need to run BEFORE composing the report.
+**As of 2026-05-18, plain `/flywheel` no longer skips this phase.** It checks each source's snapshot age, lists stale ones, and prompts the user (default = yes) before invoking sub-skills. Use `--cached` to opt out of the freshness check.
 
-**`--refresh` (full):** run all three unconditionally.
-**`--refresh-stale`:** check each cache's mtime against `stale_snapshot_days`; only refresh the stale ones.
+**Decision flow:**
 
-Sub-skill invocation order (each has its own auth + scrape; they don't share session):
+| Invocation | Freshness check? | If stale found | If all fresh |
+|---|---|---|---|
+| `/flywheel` | yes | prompt user (default yes) → refresh + compose | skip Phase 0 → compose immediately |
+| `/flywheel --refresh` | no | force-refresh all 3 sources | force-refresh all 3 sources |
+| `/flywheel --refresh-stale` | yes | refresh stale without prompting | skip Phase 0 → compose |
+| `/flywheel --cached` | skipped | use cached + flag in report | skip Phase 0 → compose |
+
+**Freshness check implementation:** compare each source's snapshot `mtime` against `stale_snapshot_days` (default 14, configurable per Phase 0 of the Happy Path). Sources to check:
+- `~/dev/youtube_analytics/data/videos.json` → YouTube freshness
+- `~/dev/claude-social-media-skills/buffer-stats/cache/snapshot-*.json` (newest) → Buffer freshness
+- `~/dev/claude-social-media-skills/linkedin-stats/cache/snapshot-*.json` (newest) → LinkedIn freshness
+
+(Consulting log is not snapshotted — it's read live from markdown each run, never stale by definition.)
+
+**Prompt format (when stale sources found on plain `/flywheel`):**
+
+Surface via `AskUserQuestion` with a single question and the list of stale sources inline:
+
+> "Found {N} stale source(s): {LinkedIn (age 15d), Buffer (age 8d), ...}. Refresh now?"
+>
+> - Yes, refresh now (Recommended) — invoke sub-skills inline, ~5-15 min depending on what's stale
+> - No, use cached and flag in report — proceed immediately with stale data clearly marked
+> - Refresh selectively — pick which sources to refresh (presented as multi-select sub-question)
+
+The recommended option (yes) is the default. If the user has set `AUTO_DECIDE` for this question via `/plan-tune`, accept the default.
+
+**Sub-skill invocation order (only invoke sources actually flagged stale OR selected by user):**
+
+Each has its own auth + scrape; they don't share session:
 
 1. **YouTube data refresh** (~3-5 min, no browser):
    ```bash
