@@ -61,6 +61,8 @@ _shared/voice-corpus/voice-corpus  # auto-refreshes if cache > 7 days old
 
 Output is JSON with `posts: [{title, url, published_at, body_text}]`. Hold onto this output for Phase 4. See [PATTERNS.md#pattern-voice-grounding-for-original-copy-generation](../PATTERNS.md#pattern-voice-grounding-for-original-copy-generation) for the rationale.
 
+**Use `body_text` as-is in Phase 4 prompts — do NOT add a second truncation** (no `body_text[:N]` inline). The binary already caps each post per its config. Stacking a second truncation strips signal silently. See [`_shared/voice-corpus/README.md` § Consumers](../_shared/voice-corpus/README.md#consumers-of-this-binary--do-not-add-a-second-truncation).
+
 ### Phase 2 — Identify the Hook Material (no quoting yet)
 
 Read the whole article and identify:
