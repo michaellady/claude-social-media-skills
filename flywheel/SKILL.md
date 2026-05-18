@@ -295,13 +295,29 @@ else
   # Aggregate by stage and compute content gaps.
   TOTAL_PIPELINE=$(printf '%s' "$CL_JSON" | jq '[.[] | .estimated_value] | add // 0')
   TOTAL_REVENUE=$(printf '%s' "$CL_JSON" | jq '[.[] | .actual_revenue] | add // 0')
-  GAPS=$(printf '%s' "$CL_JSON" | jq '[.[] | select((.status == "delivered" or .status == "closed") and (.content_pieces | length) == 0)] | length')
+  # Exclude deals tagged `nda` — NDA-blocked engagements can't produce content, so flagging them as gaps
+  # is noise. Surface them separately so the user knows the deals exist but the gap count isn't padded
+  # by work that's structurally unpublishable.
+  GAPS=$(printf '%s' "$CL_JSON" | jq '[.[] | select((.status == "delivered" or .status == "closed") and (.content_pieces | length) == 0 and ((.tags // []) | index("nda") | not))] | length')
+  NDA_BLOCKED=$(printf '%s' "$CL_JSON" | jq '[.[] | select((.status == "delivered" or .status == "closed") and (.content_pieces | length) == 0 and ((.tags // []) | index("nda")))] | length')
 fi
 ```
 
 **Priority 5 check** (every engagement → content):
 - gaps == 0 means fully on track
 - status: each gap is a broken flywheel link
+- `NDA_BLOCKED` deals are reported separately as "NDA-blocked, no gap to close" rather than counted as gaps. If you find yourself with many NDA-blocked deals, consider adding a meta-narrative content piece ("how I structure NDA'd engagements", "what I price training at", etc.) that's publishable without breaching any specific deal.
+
+**Render the Priority 5 section like this when NDA-blocked deals exist:**
+
+```markdown
+## Priority 5 — Every engagement → content
+- Active pipeline: $X (N deals)
+- Realized revenue this window: $Y
+- Content gaps: N deals delivered without attached content pieces (excludes NDA-blocked)
+- NDA-blocked (no gap to close): N deals — content publication is structurally blocked
+- Status: 🟢 zero gaps | 🟡 N gaps | 🔴 ≥3 gaps
+```
 
 ### Phase 6 — Compose report
 
