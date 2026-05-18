@@ -10,7 +10,7 @@ Aggregate signal from YouTube, beehiiv, LinkedIn, and the consulting log into on
 
 ## Usage
 
-`/flywheel` — **default: auto-detect stale data + prompt to refresh.** Checks each upstream source's snapshot age against `stale_snapshot_days` (default 14d). If anything is stale, surfaces the list and asks "refresh these N stale sources now?" with default = yes. On yes, invokes the relevant sub-skills inline before composing. On no, falls through to cached-only mode. ~30 sec if everything fresh; ~5-15 min if a refresh is needed.
+`/flywheel` — **default: auto-detect stale data + prompt to refresh.** Checks each upstream source's snapshot age against `stale_snapshot_days` from the priorities-doc targets block (default 14d). If anything is stale, surfaces the list and asks "refresh these N stale sources now?" with default = yes. On yes, invokes the relevant sub-skills inline before composing. On no, falls through to cached-only mode. ~30 sec if everything fresh; ~5-15 min if a refresh is needed.
 `/flywheel --refresh` — force-refresh ALL upstream snapshots regardless of staleness. **The canonical Sunday weekly review.** Skips the prompt. ~10-15 min wall-clock end-to-end.
 `/flywheel --refresh-stale` — auto-accept the staleness prompt (refresh anything stale, skip the prompt). Semantically equivalent to plain `/flywheel` + "yes" — useful for scripted / unattended runs.
 `/flywheel --cached` — skip the freshness check entirely. Read whatever's cached, flag staleness in the report, never invoke sub-skills. Fast (~30 sec) and read-only. Use for "where do we stand right now" without paying the refresh cost.
@@ -32,8 +32,13 @@ The default flow auto-detects stale data and prompts to refresh. ~30 sec when no
 **Phase 0 — Freshness check + conditional sub-skill invocation.** Determine which sources need refreshing, then either prompt the user or skip per the flags:
 
 ```bash
-# Check each source's snapshot age. Threshold = stale_snapshot_days (default 14d, configurable).
-STALE_DAYS=${STALE_SNAPSHOT_DAYS:-14}
+# Check each source's snapshot age. Threshold = stale_snapshot_days from the priorities-doc
+# targets block (Phase 1.5 parses it). Phase 0 runs BEFORE Phase 1.5 — read the value directly
+# here so the threshold is a single source of truth across both phases.
+PRIORITIES_DOC=~/dev/youtube_analytics/enterprise_vibe_code_growth_priorities.md
+STALE_DAYS=$(awk '/^<!-- flywheel-targets-start -->/{f=1;next} /^<!-- flywheel-targets-end -->/{f=0} f && /^```json/{c=1;next} f && c && /^```/{c=0;next} f && c' "$PRIORITIES_DOC" 2>/dev/null | jq -r '.stale_snapshot_days // 14' 2>/dev/null)
+STALE_DAYS=${STALE_DAYS:-14}
+STALE_DAYS=${STALE_SNAPSHOT_DAYS:-$STALE_DAYS}  # env-var override still wins for debugging
 LN_CACHE=~/dev/claude-social-media-skills/linkedin-stats/cache
 BF_CACHE=~/dev/claude-social-media-skills/buffer-stats/cache
 YT_DATA=~/dev/youtube_analytics/data/videos.json
@@ -78,7 +83,9 @@ If a sub-skill fails (auth lapsed, cookie picker not closed, gstack process drop
 
 **Phase 1 — Resolve window.** Default `DAYS=7`; compute `SINCE` / `UNTIL` and `REPORT=$SNAP_DIR/$(date -u +%Y-%m-%d).md`.
 
-**Phase 2 — YouTube.** `go run . analyze --since $SINCE` in `~/dev/youtube_analytics` (reads `data/videos.json` — see `Edge: youtube-videos-json-stale`). Grep the formatted output for streams/long-form/shorts/views/revenue/subs-gained. Compute Priority 1 (long-form 2-3/wk — counts essays + newsletters) + Priority 4 (1 livestream/wk as supplement, not primary). **Strategy pivoted 2026-05-18** — see `project_content_strategy_pivot_2026_05_18.md` memory.
+**Phase 1.5 — Load priority targets.** Parse the canonical `flywheel-targets` JSON block from `~/dev/youtube_analytics/enterprise_vibe_code_growth_priorities.md` and expose every numeric target as a shell variable. The skill **must not** hardcode targets — the priorities doc is the single source of truth so cadence shifts only need to be made there. See `Edge: targets-block-missing-or-malformed` for the fallback behavior.
+
+**Phase 2 — YouTube.** `go run . analyze --since $SINCE` in `~/dev/youtube_analytics` (reads `data/videos.json` — see `Edge: youtube-videos-json-stale`). Grep the formatted output for streams/long-form/shorts/views/revenue/subs-gained. Compute Priority 1 (`long_form_per_week` against `$P1_MIN`–`$P1_MAX` from the targets block — counts essays + newsletters) + Priority 4 (`livestreams_per_week` against `$P4_PER_WEEK`). **Strategy pivoted 2026-05-18** — see `project_content_strategy_pivot_2026_05_18.md` memory.
 
 **Phase 3 — beehiiv.** Two MCP calls: `beehiiv_stats` (current subs + delta) and `beehiiv_attribution` (source mix). If the tool is missing, hit `Edge: beehiiv-mcp-restart-required`. Compute Priority 2 pace toward 1,800 in 12 months and YouTube attribution %.
 
@@ -186,6 +193,65 @@ mkdir -p "$SNAP_DIR"
 REPORT="$SNAP_DIR/$(date -u +%Y-%m-%d).md"
 ```
 
+### Phase 1.5 — Load priority targets from priorities doc
+
+The priorities doc carries a fenced JSON block between `<!-- flywheel-targets-start -->` and `<!-- flywheel-targets-end -->` anchors. Parse it and expose every value as a shell variable so the rest of the skill never hardcodes a cadence target.
+
+```bash
+PRIORITIES_DOC=~/dev/youtube_analytics/enterprise_vibe_code_growth_priorities.md
+
+TARGETS_JSON=$(awk '
+  /^<!-- flywheel-targets-start -->/ {flag=1; next}
+  /^<!-- flywheel-targets-end -->/   {flag=0}
+  flag && /^```json/                 {in_code=1; next}
+  flag && in_code && /^```/          {in_code=0; next}
+  flag && in_code                    {print}
+' "$PRIORITIES_DOC")
+
+if [ -z "$TARGETS_JSON" ] || ! printf '%s' "$TARGETS_JSON" | jq empty 2>/dev/null; then
+  # Edge: targets-block-missing-or-malformed — fall back to embedded defaults so
+  # /flywheel keeps working even if the priorities doc is mid-edit. The report
+  # MUST surface this fallback so the user knows the numbers aren't authoritative.
+  TARGETS_JSON='{
+    "stale_snapshot_days": 14,
+    "priority_1": {"target_min": 2, "target_max": 3},
+    "priority_2": {"target_total": 1800, "target_horizon_weeks": 52,
+                   "yt_attribution_healthy_pct": 50, "yt_attribution_worrying_pct": 30},
+    "priority_3": {"target_per_week": 1},
+    "priority_4": {"target_per_week": 1, "fallback_long_form_min": 3},
+    "priority_5": {"target_gaps": 0, "yellow_threshold": 1, "red_threshold": 3},
+    "channel_roi": {"high_threshold": 100, "mid_threshold": 10, "below_followers_threshold": 50}
+  }'
+  TARGETS_FALLBACK=1
+fi
+
+STALE_SNAPSHOT_DAYS=$(printf '%s' "$TARGETS_JSON" | jq -r '.stale_snapshot_days')
+P1_MIN=$(printf '%s' "$TARGETS_JSON" | jq -r '.priority_1.target_min')
+P1_MAX=$(printf '%s' "$TARGETS_JSON" | jq -r '.priority_1.target_max')
+P2_TOTAL=$(printf '%s' "$TARGETS_JSON" | jq -r '.priority_2.target_total')
+P2_WEEKS=$(printf '%s' "$TARGETS_JSON" | jq -r '.priority_2.target_horizon_weeks')
+P2_YT_HEALTHY=$(printf '%s' "$TARGETS_JSON" | jq -r '.priority_2.yt_attribution_healthy_pct')
+P2_YT_WORRY=$(printf '%s' "$TARGETS_JSON" | jq -r '.priority_2.yt_attribution_worrying_pct')
+P3_PER_WEEK=$(printf '%s' "$TARGETS_JSON" | jq -r '.priority_3.target_per_week')
+P4_PER_WEEK=$(printf '%s' "$TARGETS_JSON" | jq -r '.priority_4.target_per_week')
+P4_FALLBACK_LF=$(printf '%s' "$TARGETS_JSON" | jq -r '.priority_4.fallback_long_form_min')
+P5_YELLOW=$(printf '%s' "$TARGETS_JSON" | jq -r '.priority_5.yellow_threshold')
+P5_RED=$(printf '%s' "$TARGETS_JSON" | jq -r '.priority_5.red_threshold')
+ROI_HIGH=$(printf '%s' "$TARGETS_JSON" | jq -r '.channel_roi.high_threshold')
+ROI_MID=$(printf '%s' "$TARGETS_JSON" | jq -r '.channel_roi.mid_threshold')
+ROI_BELOW=$(printf '%s' "$TARGETS_JSON" | jq -r '.channel_roi.below_followers_threshold')
+```
+
+Two consequences for the rest of the skill:
+- **Every later phase reads `$P1_MIN`/`$P1_MAX`/…/`$ROI_BELOW`** instead of literal numbers. If you find yourself typing `2-3/week` or `1,800` into status logic, you're doing it wrong — reference the variable so the priorities doc stays the single source of truth.
+- **Phase 0's `STALE_DAYS` should read from `$STALE_SNAPSHOT_DAYS`** if Phase 1.5 has already run; otherwise the env-var override default applies as before.
+
+If `$TARGETS_FALLBACK=1`, prepend the rendered report with a warning line so the user notices:
+
+```markdown
+> ⚠ Targets block missing or malformed in priorities doc — using embedded defaults. Fix `~/dev/youtube_analytics/enterprise_vibe_code_growth_priorities.md` and re-run.
+```
+
 ### Phase 2 — YouTube analytics
 
 Run the existing CLI and capture its report:
@@ -204,16 +270,16 @@ Extract key numbers from the output:
 
 The `analyze` output is human-formatted — use simple grep/awk to pluck numbers. If the format changes, fall back to counting video entries in `data/videos.json` directly with jq.
 
-**Priority 1 check** (long-form 2-3/week — pivoted 2026-05-18 from "streams 3-4×/week"):
+**Priority 1 check** (long-form `$P1_MIN`–`$P1_MAX`/week — pivoted 2026-05-18 from "streams 3-4×/week"):
 - `long_form_per_week = (actual_long_form_videos + actual_newsletters) / DAYS * 7`
 - Newsletters count toward this — long-form essays and newsletters are the same priority. Pull newsletter count from beehiiv stats (Phase 3): `new_subs_in_window > 0 OR recent_posts contains item in window`.
-- target: 2-3/week combined long-form output (essays + newsletters)
-- status: on_track if ≥2, behind otherwise
+- target: `$P1_MIN`–`$P1_MAX`/week combined long-form output (essays + newsletters)
+- status: on_track if `≥ $P1_MIN`, behind otherwise
 
-**Priority 4 check** (1 livestream/week as community surface — pivoted 2026-05-18 from "long-form 2-3/week"):
+**Priority 4 check** (`$P4_PER_WEEK` livestream/week as community surface — pivoted 2026-05-18 from "long-form 2-3/week"):
 - `streams_per_week = actual_lives / DAYS * 7`
-- target: 1/week (was 3-4/week pre-2026-05-18)
-- status: on_track if ≥1, OR if `long_form_per_week ≥ 3` (the priority is "keep the surface alive"; if long-form output is strong, skipping the stream is fine)
+- target: `$P4_PER_WEEK`/week (was 3-4/week pre-2026-05-18)
+- status: on_track if `≥ $P4_PER_WEEK`, OR if `long_form_per_week ≥ $P4_FALLBACK_LF` (the priority is "keep the surface alive"; if long-form output is strong, skipping the stream is fine)
 - Skipping streams entirely for >2 consecutive weeks should flag as 🟡 (not 🔴 — Priority 1 is the primary now)
 
 ### Phase 3 — beehiiv
@@ -234,11 +300,11 @@ From `beehiiv_attribution`:
 - % from YouTube (the Priority 2 success metric)
 
 **Priority 2 check** (push viewers to Beehiiv):
-- target trajectory: from today's count to 1,800 in 12 months
-- needed per week = (1800 - current) / 52 weeks
+- target trajectory: from today's count to `$P2_TOTAL` in `$P2_WEEKS` weeks
+- needed per week = (`$P2_TOTAL` - current) / `$P2_WEEKS` weeks
 - actual this window = attribution.total_subs_in_window
 - status: on_track if actual ≥ needed, behind otherwise
-- Also note: youtube % of new subs (healthy if ≥50%, worrying if <30%)
+- Also note: youtube % of new subs (healthy if `≥ $P2_YT_HEALTHY%`, worrying if `< $P2_YT_WORRY%`)
 
 ### Phase 4 — LinkedIn
 
@@ -257,7 +323,7 @@ else
 fi
 ```
 
-If the latest LinkedIn snapshot is >14 days old, flag it — stale LinkedIn data is less useful than no LinkedIn data.
+If the latest LinkedIn snapshot is older than `$STALE_SNAPSHOT_DAYS` (from the targets block), flag it — stale LinkedIn data is less useful than no LinkedIn data.
 
 **Priority 3 check** (cross-post newsletter to LinkedIn weekly):
 - requires evidence that a LinkedIn article was published in the window
@@ -284,8 +350,8 @@ if [ -n "$LATEST_BF" ]; then
   BF_TOTAL_FOLLOWERS_DELTA=$(jq -r '[.channels[].engagement.followers_delta // 0] | add' "$LATEST_BF")
   BF_AVG_ENG_RATE=$(jq -r '[.channels[].engagement.engagement_rate // 0] | add / length' "$LATEST_BF")
   BF_TOP_POST=$(jq -r '.top_posts[0] | "\(.service): \(.text_snippet) (\(.engagement) engagement)"' "$LATEST_BF")
-  # Stale-data flag (same 14-day threshold as LinkedIn)
-  BF_STALE=$(( $(date -u +%s) - $(date -j -f "%Y-%m-%d" "$BF_SNAP_DATE" +%s 2>/dev/null || date -d "$BF_SNAP_DATE" +%s) > 14*86400 ))
+  # Stale-data flag (same $STALE_SNAPSHOT_DAYS threshold as LinkedIn, from the targets block)
+  BF_STALE=$(( $(date -u +%s) - $(date -j -f "%Y-%m-%d" "$BF_SNAP_DATE" +%s 2>/dev/null || date -d "$BF_SNAP_DATE" +%s) > STALE_SNAPSHOT_DAYS*86400 ))
 else
   BF_BUFFER_TRACKED_FOLLOWERS=""; BF_STALE=1
 fi
@@ -293,7 +359,7 @@ fi
 
 **Render the buffer-tracked subset as `BF_BUFFER_TRACKED_FOLLOWERS`, NOT as a channel-wide total.** The difference matters: today (2026-05-03) `BF_BUFFER_TRACKED_FOLLOWERS=26` (FB page + IG business + LinkedIn page only) but the actual cross-channel follower count is ~2,200 (LinkedIn personal alone is 2,104). Reporting "Total followers: 26" misleads.
 
-If the latest Buffer snapshot is >14 days old, flag it. Note that Buffer is the fan-out layer (Priority 2's "push viewers to Beehiiv" uses Buffer as the distribution surface for IG/FB/Threads), so its health informs Priority 2's attribution mix — if IG/Threads followers are growing but beehiiv attribution shows 0% from those surfaces, that's a link-in-bio / call-to-action problem, not a Buffer problem.
+If the latest Buffer snapshot is older than `$STALE_SNAPSHOT_DAYS` (from the targets block), flag it. Note that Buffer is the fan-out layer (Priority 2's "push viewers to Beehiiv" uses Buffer as the distribution surface for IG/FB/Threads), so its health informs Priority 2's attribution mix — if IG/Threads followers are growing but beehiiv attribution shows 0% from those surfaces, that's a link-in-bio / call-to-action problem, not a Buffer problem.
 
 ### Phase 4.7 — Cross-source follower reconciliation
 
@@ -338,11 +404,11 @@ channel_roi_score = (avg_impressions_per_post * eng_rate * 100) / (sent_count_in
 
 Higher = more reach + engagement per post relative to how often we publish there.
 
-Then categorize:
-- `channel_roi_score >= 100` → 🟢 **High ROI** — keep current cadence, consider increasing.
-- `10 <= score < 100` → 🟡 **Mid ROI** — current cadence is fine.
-- `score < 10 AND followers < 50` → 🔴 **Below threshold** — recommend dropping from fan-out (the `min_followers_to_promote` config in promote-* skills should already handle this; surface as a reminder).
-- `score < 10 AND followers >= 50` → ⚪ **Diminishing returns** — recommend reducing fan-out volume on this channel; consider routing the same content through `tease-newsletter` instead of `promote-newsletter`.
+Then categorize (thresholds from the targets block — `$ROI_HIGH`, `$ROI_MID`, `$ROI_BELOW`):
+- `channel_roi_score >= $ROI_HIGH` → 🟢 **High ROI** — keep current cadence, consider increasing.
+- `$ROI_MID <= score < $ROI_HIGH` → 🟡 **Mid ROI** — current cadence is fine.
+- `score < $ROI_MID AND followers < $ROI_BELOW` → 🔴 **Below threshold** — recommend dropping from fan-out (the `min_followers_to_promote` config in promote-* skills should already handle this; surface as a reminder).
+- `score < $ROI_MID AND followers >= $ROI_BELOW` → ⚪ **Diminishing returns** — recommend reducing fan-out volume on this channel; consider routing the same content through `tease-newsletter` instead of `promote-newsletter`.
 
 Render as part of the report:
 ```markdown
@@ -389,7 +455,7 @@ fi
 - Realized revenue this window: $Y
 - Content gaps: N deals delivered without attached content pieces (excludes NDA-blocked)
 - NDA-blocked (no gap to close): N deals — content publication is structurally blocked
-- Status: 🟢 zero gaps | 🟡 N gaps | 🔴 ≥3 gaps
+- Status: 🟢 zero gaps | 🟡 `≥ $P5_YELLOW` gaps | 🔴 `≥ $P5_RED` gaps
 ```
 
 ### Phase 6 — Compose report
@@ -402,15 +468,15 @@ Build the markdown with a fixed structure so snapshots are diffable week-over-we
 **Window:** YYYY-MM-DD → YYYY-MM-DD (N days)
 **Generated:** YYYY-MM-DDTHH:MM:SSZ
 
-## Priority 1 — Ship 2-3 long-form pieces/week
+## Priority 1 — Ship $P1_MIN-$P1_MAX long-form pieces/week
 - Long-form videos this window: N
 - Newsletters this window: N
-- Combined long-form output: N (target: 2-3/week)
+- Combined long-form output: N (target: $P1_MIN-$P1_MAX/week)
 - Pace: X/week
-- Status: [🟢 on track ≥2 | 🟡 under | 🔴 off]
+- Status: [🟢 on track ≥$P1_MIN | 🟡 under | 🔴 off]
 
 ## Priority 2 — Push viewers to Beehiiv
-- Current subs: N (target: 1,800 in 12mo)
+- Current subs: N (target: $P2_TOTAL in $P2_WEEKS weeks)
 - Net new this window: +M
 - Attribution: YouTube X%, LinkedIn Y%, Direct Z%, …
 - Pace to target: needed ~K/week, getting M/week
@@ -427,12 +493,12 @@ Build the markdown with a fixed structure so snapshots are diffable week-over-we
 - Total followers: N (+Δ this week)
 - Avg engagement rate: X%
 - Top cross-channel post: <service>: <snippet> (<N> engagement)
-- Status: [🟢 fresh | ⚪ no recent Buffer data | 🟡 stale (>14d)]
+- Status: [🟢 fresh | ⚪ no recent Buffer data | 🟡 stale (>$STALE_SNAPSHOT_DAYS d)]
 
-## Priority 4 — 1 livestream/week as community + breakout surface
-- Streams this window: N (target: 1/week)
+## Priority 4 — $P4_PER_WEEK livestream/week as community + breakout surface
+- Streams this window: N (target: $P4_PER_WEEK/week)
 - Pace: X/week
-- Status: [🟢 ≥1/wk OR Priority 1 ≥3 this week | 🟡 0 this week, ≤2 consecutive weeks | 🔴 0 for 3+ consecutive weeks]
+- Status: [🟢 ≥$P4_PER_WEEK/wk OR Priority 1 ≥$P4_FALLBACK_LF this week | 🟡 0 this week, ≤2 consecutive weeks | 🔴 0 for 3+ consecutive weeks]
 - Skipping streams when long-form output is strong is acceptable — this priority is "keep the surface alive," not "force a cadence at the cost of long-form."
 
 ## Priority 5 — Every engagement → content
@@ -490,11 +556,13 @@ After a few weeks of running `/flywheel` every Sunday, the snapshots directory b
 
 - **beehiiv MCP requires Claude Code restart** after `make install`ing the server. If the attribution tool is missing, remind the user.
   *Label: `Edge: beehiiv-mcp-restart-required`*
-- **LinkedIn snapshots must be current.** If `/linkedin-stats` hasn't been run recently, Priority 3 will show stale numbers. The report should flag any snapshot older than 14 days as unreliable.
+- **LinkedIn snapshots must be current.** If `/linkedin-stats` hasn't been run recently, Priority 3 will show stale numbers. The report should flag any snapshot older than `$STALE_SNAPSHOT_DAYS` (from the targets block, default 14d) as unreliable.
   *Label: `Edge: linkedin-snapshot-stale`*
-- **Buffer snapshots must be current.** Same 14-day staleness threshold. If no snapshot exists, the fan-out section shows `⚪ no recent Buffer data` and prompts the user to run `/buffer-stats`. Buffer feeds the fan-out context for Priority 2 — if missing, Priority 2's attribution analysis loses the IG/FB/Threads signal.
+- **Buffer snapshots must be current.** Same `$STALE_SNAPSHOT_DAYS` threshold. If no snapshot exists, the fan-out section shows `⚪ no recent Buffer data` and prompts the user to run `/buffer-stats`. Buffer feeds the fan-out context for Priority 2 — if missing, Priority 2's attribution analysis loses the IG/FB/Threads signal.
   *Label: `Edge: buffer-snapshot-stale`*
 - **YouTube data.** `youtube_analytics` `analyze` reads `data/videos.json` which is only refreshed on `fetch`. If it's stale, the YouTube section will be too. Run `go run . fetch` in `~/dev/youtube_analytics` before running `/flywheel` if the numbers look off.
   *Label: `Edge: youtube-videos-json-stale`*
 - **Consulting log is local-only.** No data migrates from other tools. If the user uses a CRM, they have to update the markdown files themselves.
   *Label: `Edge: consulting-log-local-only`*
+- **Targets block missing or malformed.** Phase 1.5 expects a fenced `json` block in `~/dev/youtube_analytics/enterprise_vibe_code_growth_priorities.md` between `<!-- flywheel-targets-start -->` and `<!-- flywheel-targets-end -->` anchors. If absent or invalid JSON, the skill falls back to embedded defaults (the values that were authoritative as of 2026-05-18: P1=2-3/wk, P2=1800 in 52wk, P3=1/wk, P4=1/wk, P5 yellow/red=1/3, ROI=100/10/50, staleness=14d) and prepends a `⚠` warning to the rendered report. Fix the doc — don't paper over by editing the fallback values in this skill.
+  *Label: `Edge: targets-block-missing-or-malformed`*
