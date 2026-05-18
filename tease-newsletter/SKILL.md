@@ -27,6 +27,24 @@ Do NOT use when:
 - User wants full-article syndication on LinkedIn/Substack/Medium/HN/Reddit → use `crosspost-newsletter`
 - User wants illustrated carousels → use `carousel-newsletter`
 
+## 🟢 Happy Path (read first; everything below is edge-case detail)
+
+For a beehiiv newsletter teaser run when nothing goes wrong. ~10-15 min wall-clock. Linear steps from invocation to scheduled posts.
+
+**Phase 1 — Content + voice (1-2 min).** If URL provided, `WebFetch` the beehiiv post (title, subtitle, body, image URLs). If "latest", fetch the beehiiv RSS feed from `reference_beehiiv_feed.md` and ask the user which article. Run `_shared/voice-corpus/voice-corpus` to pull the voice corpus JSON (auto-refreshes if cache > 7 days). Hold the corpus for Phase 4.
+
+**Phase 2 — Outline angles (1-2 min).** Read the article. Identify the single punchline (withheld), 3-5 angles, the emotional/intellectual payoff (withheld), and concrete nouns/numbers/metaphors worth name-dropping. Check the Buffer queue for existing posts about this article and annotate each angle with `✅ new` or `⚠️ overlaps`. Present the outline to the user.
+
+**Phase 3 — User picks ONE angle (1 min).** Single AskUserQuestion (single-select, not multi-select): pick one angle, image distribution, and tease style (curiosity-gap / provocation / personal-story). Wait for the pick. **One angle for all channels — length-adapt only, never angle-vary.**
+
+**Phase 4 — Compose teasers (3-5 min).** Prepend the voice corpus inline in working context as the author's recent newsletters. Write the chosen angle at the longest applicable length (LinkedIn/Instagram). Derive shorter platform versions by length-trimming the same message — same hook, same setup, same withheld punchline. Per-platform budget = hard limit − CTA length − 7 margin (table in Phase 4). End every post with the exact CTA: `Comment "newsletter" to get my latest post, "<Article Title>"`. No emoji unless requested. No contiguous 7-word run from the source article. Default hero-image priority: LinkedIn (page) → LinkedIn (personal) → Instagram → Facebook → Threads. Skip Instagram if no image; skip TikTok/YouTube.
+
+**Adversarial review (REQUIRED).** Run `_shared/adversarial-review/adversarial-review` per Phase 4's spec (source article prepended with `Publication: Enterprise Vibe Code`). Must return `all_pass` before scheduling.
+
+**Phase 5 — Review (1-2 min).** Show each drafted post per channel with char count vs budget, image attachment, and CTA. Ask: "Ready to schedule these to Buffer?"
+
+**Phase 6 — Schedule to Buffer (1-2 min).** Adversarial review must have returned `all_pass`. `mcp__buffer__get_account` → org ID + timezone. `mcp__buffer__list_channels` → filter out `isDisconnected`, `isLocked`, `service: "startPage"`, channels below `min_followers_to_promote=50`. Per approved post: `mcp__buffer__create_post` with `mode: "addToQueue"`, `schedulingType: "automatic"`, `tagIds: [<format:teaser>]` (via `_shared/buffer-post-prep`), platform-specific metadata. Report per-channel success/error.
+
 ## Process
 
 ### Phase 1 — Fetch Newsletter Content + Voice Corpus

@@ -23,6 +23,35 @@ Aggregate signal from YouTube, beehiiv, LinkedIn, and the consulting log into on
 - **Sunday weekly review:** `/flywheel --refresh` (canonical — everything fresh, replaces running each sub-skill manually)
 - **Catch-up after a few days:** `/flywheel --refresh-stale` (only refreshes what's actually stale)
 
+## 🟢 Happy Path (read first; everything below is edge-case detail)
+
+The Sunday weekly review flow when every source is healthy. ~10-15 min wall-clock with `--refresh`, ~30 sec cached.
+
+**Phase 0 — Refresh upstream snapshots (skip on plain `/flywheel`).** On `--refresh`, run all three sub-skills in sequence; on `--refresh-stale`, run only those whose cache is older than `stale_snapshot_days` (default 14d):
+- YouTube: `cd ~/dev/youtube_analytics && go run . fetch && go run . fetch-analytics --all && go run . cohort auto` (~3-5 min, no browser).
+- Buffer: invoke `/buffer-stats` (~3-5 min, gstack browser; cookies carry from buffer.com — see `Edge: buffer-snapshot-stale`).
+- LinkedIn: invoke `/linkedin-stats` (~2-3 min, gstack browser — see `Edge: linkedin-snapshot-stale`).
+
+**Phase 1 — Resolve window.** Default `DAYS=7`; compute `SINCE` / `UNTIL` and `REPORT=$SNAP_DIR/$(date -u +%Y-%m-%d).md`.
+
+**Phase 2 — YouTube.** `go run . analyze --since $SINCE` in `~/dev/youtube_analytics` (reads `data/videos.json` — see `Edge: youtube-videos-json-stale`). Grep the formatted output for streams/long-form/shorts/views/revenue/subs-gained. Compute Priority 1 (streams 3-4×/wk) + Priority 4 (long-form ≥2/wk).
+
+**Phase 3 — beehiiv.** Two MCP calls: `beehiiv_stats` (current subs + delta) and `beehiiv_attribution` (source mix). If the tool is missing, hit `Edge: beehiiv-mcp-restart-required`. Compute Priority 2 pace toward 1,800 in 12 months and YouTube attribution %.
+
+**Phase 4 — LinkedIn.** Read the latest `~/dev/claude-social-media-skills/linkedin-stats/cache/snapshot-*.json` (cached only — don't re-scrape). Pull newsletter subs, profile followers, company followers for Priority 3.
+
+**Phase 4.5 — Buffer.** Read the latest `~/dev/claude-social-media-skills/buffer-stats/cache/snapshot-*.json`. Render the buffer-tracked subset as `BF_BUFFER_TRACKED_FOLLOWERS` — never call it the cross-channel total.
+
+**Phase 4.7 — Cross-source reconciliation.** Compose the cross-channel reach table from the authoritative source per channel (LinkedIn personal/page → linkedin-stats; IG/FB → buffer-stats; YouTube → yt-analytics; beehiiv → beehiiv-mcp; Threads → unavailable). Annotate each row with its source.
+
+**Phase 4.6 — Channel ROI.** Per Buffer-connected channel: `channel_roi_score = (avg_impressions_per_post * eng_rate * 100) / (sent_count + 1)`. Bucket into 🟢/🟡/🔴/⚪ and render the ROI table.
+
+**Phase 5 — Consulting pipeline.** `(cd ~/dev/consulting-log && ./cl json)` (local-only — see `Edge: consulting-log-local-only`). Aggregate pipeline / realized revenue / content gaps for Priority 5.
+
+**Phase 6 — Compose report.** Write the fixed-structure markdown to `$REPORT` and print to stdout. Also write the parallel `$SNAP_DIR/<date>.json` for bulletproof week-over-week diffing.
+
+**Phase 7 — Week-over-week diff.** If `$SNAP_DIR/$(date -v-7d).md` exists, diff key numbers into the "Week-over-week delta" section.
+
 ## Data sources
 
 | Source | How | What it gives |
@@ -369,7 +398,12 @@ After a few weeks of running `/flywheel` every Sunday, the snapshots directory b
 ## Known issues
 
 - **beehiiv MCP requires Claude Code restart** after `make install`ing the server. If the attribution tool is missing, remind the user.
+  *Label: `Edge: beehiiv-mcp-restart-required`*
 - **LinkedIn snapshots must be current.** If `/linkedin-stats` hasn't been run recently, Priority 3 will show stale numbers. The report should flag any snapshot older than 14 days as unreliable.
+  *Label: `Edge: linkedin-snapshot-stale`*
 - **Buffer snapshots must be current.** Same 14-day staleness threshold. If no snapshot exists, the fan-out section shows `⚪ no recent Buffer data` and prompts the user to run `/buffer-stats`. Buffer feeds the fan-out context for Priority 2 — if missing, Priority 2's attribution analysis loses the IG/FB/Threads signal.
+  *Label: `Edge: buffer-snapshot-stale`*
 - **YouTube data.** `youtube_analytics` `analyze` reads `data/videos.json` which is only refreshed on `fetch`. If it's stale, the YouTube section will be too. Run `go run . fetch` in `~/dev/youtube_analytics` before running `/flywheel` if the numbers look off.
+  *Label: `Edge: youtube-videos-json-stale`*
 - **Consulting log is local-only.** No data migrates from other tools. If the user uses a CRM, they have to update the markdown files themselves.
+  *Label: `Edge: consulting-log-local-only`*

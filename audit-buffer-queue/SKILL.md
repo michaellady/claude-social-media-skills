@@ -21,6 +21,28 @@ Do NOT use for:
 - Per-platform follower deltas → use `/linkedin-stats`
 - Cross-platform weekly rollup → use `/flywheel`
 
+## 🟢 Happy Path (read first; everything below is edge-case detail)
+
+For a routine queue health check when nothing is on fire. ~3-5 min wall-clock. Advisory by default — surface findings, ask for batch approval before mutating.
+
+**Phase 1 — Pull the queue (30 sec).** `mcp__buffer__get_account` → org ID. `mcp__buffer__list_posts` with `status: ["scheduled", "needs_approval", "draft"]`, `first: 100`, `sort: dueAt asc`. If the response auto-saves to a file (over size limit), `jq` out just `{id, dueAt, channelId, channelService, text, tags}`.
+
+**Phase 2 — Bunching check (30 sec).** Group posts by `channelId`, sort by `dueAt`, flag consecutive pairs with gap < 3 hours.
+
+**Phase 3 — Theme over-saturation (45 sec).** Pick 4-8 word distinctive phrases from recent article titles (skip common words like "shipped", "AI", "skill"). Pipe the `list_posts` JSON through `_shared/buffer-queue-check/buffer-queue-check --keywords "<phrase1>,<phrase2>,..."`. Flag any channel with 3+ matches on the same theme within 5 days.
+
+**Phase 4 — Untagged posts + auto-backfill (1-2 min).** Find posts missing any of the 5 expected `format:<name>` tags (verbatim-quote, teaser, carousel, link-share, batch-summary). Classify each by text content (quote+CTA → verbatim-quote, GitHub URL → link-share, etc.). For SCHEDULED untagged posts: fetch full post via `mcp__buffer__get_post`, then call `editPost` GraphQL mutation with full payload (text + assets + metadata + tagIds — NOT just tagIds). For SENT untagged posts: surface as "manual backfill needed" (Buffer API blocks `editPost` on sent posts).
+
+**Phase 5 — Dead channels (20 sec).** Cross-reference `list_channels` against `list_posts(status: ["sent"], last 14d)` and `list_posts(status: ["scheduled"])`. Channels with 0 of both = dead.
+
+**Phase 6 — Below-threshold channels (20 sec).** For each channel with queued posts, `mcp__buffer__get_channel` → follower count. Flag any below `min_followers_to_promote` (default 50) with queued posts.
+
+**Phase 7 — Render report.** Markdown tables, one section per finding type: 🔴 Bunched, 🟡 Theme over-saturation, ⚪ Untagged, 🔴 Dead channels, 🔴 Below-threshold. Include channel + recommendation columns.
+
+**Phase 8 — Batch approval.** Present all recommendations and ask "apply all N? Or pick which ones?" before any `delete_post` / `update_post` calls. Default to surfacing, not acting.
+
+---
+
 ## Process
 
 ### Phase 1 — Pull the full queue

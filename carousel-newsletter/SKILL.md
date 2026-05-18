@@ -21,6 +21,32 @@ If they want a **single-image snippet**, use `promote-newsletter`. If they want 
 
 **Recommended sequencing for major article launches:** run `/crosspost-newsletter` FIRST (publishes the LinkedIn pulse article), THEN `/carousel-newsletter` so the carousel re-engages an audience that already has the long-form context. Confirmed 2026-04-27: the LinkedIn pulse accompanying post for "Tokens From Our Past" was the #1-impressions LinkedIn post within hours of publish; following it with a carousel hits a primed audience rather than a cold one. See also `feedback_full_stack_newsletter_launch.md` for the broader 4-skill pipeline.
 
+---
+
+## 🟢 Happy Path (read first; everything below is edge-case detail)
+
+For a beehiiv newsletter carousel when nothing goes wrong. ~10-15 min wall-clock (Gemini rate limits dominate). Two user gates: copy approval before illustration spend, image approval before Buffer.
+
+**Phase 1 — Fetch (1 min).** WebFetch the beehiiv RSS feed (or the URL the user provides). Extract title, subtitle, H2 headings, body paragraphs, blockquotes, stat-shaped phrases. Save to `/tmp/carousel-<slug>/source.json`. Run `_shared/voice-corpus/voice-corpus` and hold the JSON output for voice-grounding the original-copy slides.
+
+**Phase 2 — Draft 10-slide script (2-3 min). USER REVIEW GATE (COPY).** Plain-text outline only — no rendering. Fixed structure: 1 hook, 2/6/9 sections, 3/5/7 verbatim quotes (≤260 chars each), 4/8 stats, 10 fixed CTA with accent word `newsletter`. Voice-ground slides 1/2/4/6/8/9 against the corpus (quotes are verbatim — do NOT rewrite). Surface the outline and stop for user approval before spending on illustrations.
+
+**Phase 3 — Generate illustrations (3-5 min).** For each slide write a scene prompt that fills the illustration zone edge-to-edge and reinforces the slide's meaning. Aspect ratios: hook `4:3`, section/stat/CTA `9:16`, quote `16:9`. Call `python3 templates/gen_illustration.py "<scene>" /tmp/carousel-<slug>/illustrations/slide-NN.png --aspect <ratio>`. Sleep ~15s between calls for Nano Banana rate limit. ~$0.40 total.
+
+**Phase 4 — Render HTML → PNG (1 min).** For each slide, copy the template, substitute `{{ILLUS_IMG}}` and copy placeholders, then `templates/render.sh <filled.html> <output.png>`. Always produces exactly 1080×1350.
+
+**Phase 5 — Adversarial review (REQUIRED).** Run `_shared/adversarial-review/adversarial-review` over all 10 slides at once (copy + scene prompts). SOURCE_CONTENT must have `Publication: Enterprise Vibe Code` prepended above the article title so the attribution line on quote slides isn't flagged as fabrication. Must return `all_pass`. Copy fails → fix + re-render (cheap). Illustration fails → regen single image (~$0.04) + re-render.
+
+**Phase 6 — User image review gate.** Open `/tmp/carousel-<slug>/preview.html` as a 10-slide grid. Single-slide regen is cheap — encourage iteration.
+
+**Phase 7 — Host publicly (30 sec).** `mkdir -p generated/<YYYY-MM-DD>-<slug>/`, copy PNGs in, commit + push. Raw URLs: `https://raw.githubusercontent.com/<owner>/<repo>/main/generated/<YYYY-MM-DD>-<slug>/slide-NN.png`.
+
+**Phase 8 — Post to Buffer (1 min). 🔒 HARD GATE: adversarial review must be `all_pass` before this phase.** `list_channels` filtered to `isDisconnected=false AND isLocked=false`. Per-channel `mcp__buffer__create_post` with all 10 raw PNG URLs in `assets.images`, caption = `"<strongest quote>"` + `_shared/cta.sh "<Article Title>"` output (no trailing punctuation), `mode: "addToQueue"`, `schedulingType: "automatic"`, `tagIds: [<carousel Tag ID from _shared/buffer-post-prep/tag-ids.local.json>]`. Instagram metadata: `{ instagram: { type: "post", shouldShareToFeed: true } }` — Instagram auto-renders ≥2 images as a carousel. Facebook + Threads use their respective `type: "post"` metadata. LinkedIn needs no metadata.
+
+**Phase 9 — Summary.** Table: Platform | Channel | Status | Buffer queue URL. Confirm slide 10 accent word is literally `newsletter`.
+
+---
+
 ## Prerequisites
 
 **Auth (one-time):** Google Cloud Application Default Credentials.

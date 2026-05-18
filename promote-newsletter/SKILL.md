@@ -12,6 +12,31 @@ Extract the strongest snippets from a beehiiv newsletter post and schedule each 
 
 `/promote-newsletter <beehiiv-post-url>` or `/promote-newsletter latest`
 
+## 🟢 Happy Path (read first; everything below is edge-case detail)
+
+For a beehiiv newsletter promotion when nothing goes wrong. ~5-10 min wall-clock, mostly waiting on user review. Linear flow:
+
+**Phase 1 — Fetch content (~1 min).**
+- Refresh voice-corpus cache: `_shared/voice-corpus/voice-corpus --refresh`. Pull article body via `jq -r '.posts[] | select(.url | contains("<slug>")) | .body_text' _shared/voice-corpus/cache.json > /tmp/newsletter-body.txt`. (Prefer this over WebFetch — beehiiv URLs trip its copyright guardrail.)
+- WebFetch the article URL with an image-only prompt to enumerate every image URL (hero, inline, charts).
+- HEAD-check each image URL with `curl -sI ... -w "%{http_code}"`; drop any non-200 from the pool (beehiiv's CDN occasionally serves 307→403).
+
+**Phase 2 — Pick snippets + check queue (~1 min).**
+- Select 3-5 strongest snippets from the body — concrete insights, stats, or provocative claims that stand alone.
+- Call `mcp__buffer__get_account` for the org ID, then `mcp__buffer__list_posts` (`status: ["scheduled", "needs_approval", "draft"]`, `first: 100`) to fetch the upcoming queue.
+- Substring-match each snippet (distinctive 4-8 word phrase) and the article title against queued post text. Annotate each snippet `✅ new` or `⚠️ queued Nx (earliest YYYY-MM-DD)`.
+- Present the numbered snippet list + image pool to the user, hero image flagged as the default attachment.
+
+**Phase 3 — User snippet selection.** Single question: which snippets to approve (default: all `✅ new`) and which image to attach to each. Wait for input. Every approved snippet fans out to every eligible Buffer channel.
+
+**Phase 4 — Compose (snippet × channel matrix).** Build a JSON manifest with one cell per (snippet × channel) — never a bash array, since snippet bodies are multi-line. For each cell: trim the verbatim excerpt to fit the channel's char budget (use `…` for truncation, never paraphrase) and append the canonical CTA `Comment "newsletter" to get my latest post, "<Article Title>"` separated by a blank line. Distribute the image pool with priority Instagram → LinkedIn → Facebook → Threads, never reusing a URL (Buffer dedups). Skip TikTok / YouTube channels (video-only).
+
+**Phase 5 — Adversarial review.** Run `_shared/adversarial-review/adversarial-review` on the full batch with `SOURCE_LABEL: "SOURCE ARTICLE"`, the full beehiiv body, and the verbatim-excerpt + CTA rules. Must return `all_pass` before Phase 6.
+
+**Phase 6 — User review.** Render the matrix as a single table (one row per cell: snippet, channel, chars/limit, image, body preview), followed by each unique body once. Ask "Ready to schedule all N posts to Buffer?". User can approve all, edit by row #, drop a snippet, skip a channel, or cancel.
+
+**Phase 7 — Schedule.** For each approved cell, build args via `_shared/buffer-post-prep/buffer-post-prep` (attaches `format-tag = verbatim_quote`) and call `mcp__buffer__create_post`. Report per-channel success.
+
 ## Process
 
 ### Phase 1 — Fetch Newsletter Content

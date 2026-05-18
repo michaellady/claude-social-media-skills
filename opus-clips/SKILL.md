@@ -89,6 +89,46 @@ Everything downstream — processing wait, clip enumeration, AI enhance, schedul
 
 Each helper supports `--help` and `--dry-run`.
 
+## 🟢 Happy Path (read first; everything below is edge-case detail)
+
+For a 2-hour livestream → ~15-20 short clips → fan-out across 6 channels when nothing goes wrong. ~30-60 min wall-clock (most of that is Opus's clip-generation processing wait). Each step links to a labeled edge case (`Edge: <name>`) you only need to read if that step fails.
+
+**Phase 0 — Session setup (30 sec).** `mcp__claude-in-chrome__tabs_context_mcp` to confirm the MCP tab group, then `navigate → /dashboard` to confirm logged in at `clip.opus.pro` (NOT `app.opus.pro` — see `Edge: wrong-opus-domain`).
+
+**Phase 1 — Ingest (Drive-first, 2-4 min + ~5 sec user gesture).** `./upload.sh /path/to/stream.mp4` emits the runbook. Skill uploads to Drive folder `opus-clips-automation` via `drive_upload.py` (use the user's own OAuth client, not rclone's default — see `Edge: drive-quota-exceeded` and `Edge: drive-sa-storage-quota`). Skill clicks `Google Drive` on Opus dashboard. **User performs 3 clicks in the picker** (folder → file → Select) — unavoidable, the picker iframe rejects synthetic clicks (see `Edge: picker-iframe-trusted-click`). Skill sets `Clip Length` to `30s-90s` (non-negotiable, never `Auto`), clicks `Get clips in 1 click`, extracts `projectId` from redirect URL, logs to `/tmp/opus-clips-<projectId>.log`. Idempotency: if log already exists for this filename, offer resume vs fresh.
+
+**Phase 2 — Wait for clip generation (10-30 min).** `./wait_for_clips.sh <projectId>` polls `/clip/<projectId>` every 5 min (2 hr ceiling), matching `/Original clips\s*\(\s*(\d+)\s*\)/`. If the counter is stuck past 15 min, force-reload once (see `Edge: clip-count-stuck`).
+
+**Phase 3 — Clip review gate (2-3 min).** Scroll the virtualized grid's overflow container to the bottom before extraction or ranks #4 and #5 won't be in the DOM (see `Edge: virtualized-grid`). Parse `#N / score / start / end` per card. Filter by `viral_score >= config.viral_score_threshold`. Ask user to approve the filtered set.
+
+**Phase 4 — AI enhance per clip (1-2 min per clip).** `./process_clips.py --project-id <projectId>.<firstClipHash> --clip-ranks 1,3,5`. Per clip: click `Edit clip` → wait for sidebar (foreground tab if needed — see `Edge: editor-not-hydrating`) → capture initial duration → click `AI enhance` → click `Remove filler words` (silent no-op acceptable — see `Edge: filler-words-noop`) → click `Remove pauses` → wait for subpanel → click `Remove (N)` button matching `/^Remove\s*\(\d+\)$/` (the subpanel is NOT one-click — see `Edge: remove-pauses-subpanel`) → click `Save changes` → editor navigates back to `/clip/{projectId}` = success → log duration delta.
+
+**Phase 5 — Schedule (1 min per clip).** Per clip: click `Publish on Social` → modal opens with all 6 channels pre-selected + AI per-platform copy → click `Select time` → click target date in `rdp-*` calendar → click time combobox → click target slot (`09:00 AM`, `12:00 PM`, `03:00 PM`, `06:00 PM`, `09:00 PM` — Opus account TZ `America/Los_Angeles`, not browser TZ — see `Edge: scheduler-timezone`) → confirm pill label, click `Schedule`. Modal closes silently with NO toast — verification happens in Phase 6 (see `Edge: schedule-no-toast`). Slot math: 5 clips/day hard cap, rolls to next day at slot 6; `./schedule_clips.py --n-clips N --start-date YYYY-MM-DD` plans this.
+
+**Phase 6 — Verify scheduled posts (1-2 min).** `./verify_schedule.py --n-clips N --start-date YYYY-MM-DD` navigates `/auto-post/calendar`, expands each day cell, counts `Scheduled` tokens grouped by time. Expected: per-slot count == `len(config.channels)` (6); total == `n_clips * 6`. Mismatch = real failure; re-run schedule for missing clips.
+
+### Edge labels (jump to these only when you hit the matching failure signal)
+
+| Label | Symptom |
+|---|---|
+| `Edge: wrong-opus-domain` | Login or dashboard not loading; you're on `app.opus.pro` instead of `clip.opus.pro` |
+| `Edge: picker-iframe-trusted-click` | Google Drive picker doesn't respond to CDP clicks (`docs.google.com` iframe rejects synthetic events) |
+| `Edge: drive-quota-exceeded` | Drive upload 403 "Quota exceeded" using rclone's default OAuth client |
+| `Edge: drive-sa-storage-quota` | Drive upload `storageQuotaExceeded` from a service account on a personal Gmail |
+| `Edge: clip-count-stuck` | `Original clips (N)` counter hasn't budged in 15+ min |
+| `Edge: virtualized-grid` | Only ranks #1-3 visible in DOM; #4 and #5 missing from extraction |
+| `Edge: editor-not-hydrating` | Editor DOM not populated in Claude-in-Chrome tab (background tab issue) |
+| `Edge: ai-enhance-buttons-invisible` | AI enhance panel buttons not in DOM — panel not open yet |
+| `Edge: filler-words-noop` | `Remove filler words` click produces no UI confirmation and no duration change |
+| `Edge: remove-pauses-subpanel` | `Remove pauses` doesn't apply on first click — it opens a subpanel with a `Remove (N)` button |
+| `Edge: schedule-no-toast` | `Schedule` click produces no toast/confirmation — success must be verified separately |
+| `Edge: schedule-modal-close-bug` | `Close` button doesn't dismiss the schedule modal |
+| `Edge: scheduler-timezone` | Slot times off by hours — using browser TZ instead of Opus account TZ (PT) |
+
+Each label corresponds to a bullet in **Debugging** or **Gotchas** below. Search for the label text to find the full fix.
+
+---
+
 ## Workflow
 
 ### Phase 0 — Session setup
@@ -181,24 +221,39 @@ Phase D evidence (Apr 20, 3 clips): expected `{9:00 AM: 6, 12:00 PM: 6, 3:00 PM:
 
 - **Log location:** `/tmp/opus-clips-<projectId>.log`. Appended JSON per phase/step with `elapsed_sec`, `result`.
 - **Editor not hydrating in Claude-in-Chrome tab:** observed Phase A — needs foreground tab before DOM queries. Fallback: `mcp__claude-in-chrome__computer action=screenshot` to confirm visual state, then retry.
+  *Label: `Edge: editor-not-hydrating`*
 - **AI enhance panel buttons invisible:** panel must be open. Click `AI enhance` first.
+  *Label: `Edge: ai-enhance-buttons-invisible`*
 - **Remove pauses `Remove (N)` button not appearing:** means Opus detected 0 pauses above threshold. Skill treats as no-op success.
+  *Label: `Edge: remove-pauses-subpanel`*
 - **Schedule modal close bug:** if `Close` button doesn't dismiss, dispatch Escape: `document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',bubbles:true}))`.
+  *Label: `Edge: schedule-modal-close-bug`*
 - **Clip count stuck in processing:** force-reload the project page once (`location.reload()`) if count hasn't budged in 15 min.
+  *Label: `Edge: clip-count-stuck`*
 - **Drive upload 403 "Quota exceeded":** means rclone's default shared OAuth client was used. Switch to the user's own OAuth 2.0 client in `gen-lang-client-0527845499` and re-authorize.
+  *Label: `Edge: drive-quota-exceeded`*
 - **Drive upload `storageQuotaExceeded` from SA:** expected — service accounts can't own files on personal Gmail. Use user OAuth credentials, not SA.
+  *Label: `Edge: drive-sa-storage-quota`*
 
 ## Gotchas
 
 - **`clip.opus.pro`, not `app.opus.pro`.**
+  *Label: `Edge: wrong-opus-domain`*
 - **No `data-testid` anywhere** — selectors are `aria-label`, `role`, `data-state`, `textContent`, `href`. Brittle if Opus changes copy.
 - **Opus account timezone**, not browser timezone. Scheduler modal shows `America/Los_Angeles` (confirmed 2026-04-19).
+  *Label: `Edge: scheduler-timezone`*
 - **Remove pauses is NOT one-click** — it opens a subpanel. Actual apply button is `Remove (N)` inside.
+  *Label: `Edge: remove-pauses-subpanel`*
 - **Remove filler words has no UI confirmation** — may silently no-op. Skill uses duration delta + optional transcript diff to infer outcome.
+  *Label: `Edge: filler-words-noop`*
 - **Schedule button success has no toast.** Must verify via `verify_schedule.py`.
+  *Label: `Edge: schedule-no-toast`*
 - **Service accounts cannot own files on personal Gmail.** Shared Drives are a Workspace-only feature. SA → OAuth user credentials.
+  *Label: `Edge: drive-sa-storage-quota`*
 - **Google Picker iframe is docs.google.com origin.** Synthetic clicks from CDP do NOT reach it. User gesture required.
+  *Label: `Edge: picker-iframe-trusted-click`*
 - **rclone's default OAuth client hits a global ~99% upload quota.** Always bring your own OAuth 2.0 Client ID from a personal GCP project when uploading >100MB videos.
+  *Label: `Edge: drive-quota-exceeded`*
 
 ## Cost
 

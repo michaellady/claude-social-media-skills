@@ -22,6 +22,28 @@ Do NOT use for:
 - Pausing the queue → use Buffer's web UI (`isQueuePaused` toggle)
 - Cancelling posts → use `/audit-buffer-queue` Phase 8
 
+## 🟢 Happy Path (read first; everything below is edge-case detail)
+
+For a tune-posting-schedule run when nothing goes wrong. ~5-15 min wall-clock depending on channel count.
+
+**Phase 1 — Resolve channels (30 sec).** `mcp__buffer__get_account` → org ID. `mcp__buffer__list_channels` → filter `!isDisconnected && !isLocked && service != 'startPage'`. Confirm the channel list with the user before proceeding.
+
+**Phase 2 — Pull current schedules (1 min).** For each target channel: `mcp__buffer__get_channel(channelId)` → capture `postingSchedule`, `timezone`, `postingGoal`, `isQueuePaused`. All slot times are channel-local, not UTC.
+
+**Phase 3 — Find structural bunches (in-prompt).** For each day's `times`, compute consecutive gaps. Flag any gap < `min_gap_hours` (default 3h). These are bunches built into the slots — rescheduling individual posts won't fix them.
+
+**Phase 4 — (Optional) Engagement-by-hour.** If the user wants engagement-driven recommendations AND `/buffer-stats` cached data exists on disk: `mcp__buffer__list_posts(status: ["sent"], dueAt: { start: 90_days_ago }, channelIds: [...])`, convert `sentAt` → channel-local hour, bucket. If no cached engagement, skip and use gap-only.
+
+**Phase 5 — Propose new schedules (in-prompt).** Per channel, build a `postingSchedule` that: keeps all gaps ≥ `min_gap_hours`, preserves original slot count/day (unless user explicitly opted to change it), stays within `06:00–22:00` local. Annotate every change with a **why** (cite the bunch, engagement signal, or user request).
+
+**Phase 6 — Adversarial review (REQUIRED).** Apply the Adversarial Review pattern with the per-skill specifics in the section below. Must `all_pass` before showing the user.
+
+**Phase 7 — User review.** Present a per-channel diff (original times → new times, with the why). User can approve all, approve subset, tweak times, or cancel.
+
+**Phase 8 — Apply per channel, then verify.** Auth check once: `$B goto publish.buffer.com/all-channels`, run `_shared/gstack_auth.sh buffer.com` if redirected to login. Then for each approved channel: `_shared/buffer-schedule-edit/buffer-schedule-edit.sh <channelId> <schedule.json> [<goal>]` → re-fetch via `mcp__buffer__get_channel` → diff returned schedule against proposed JSON. Apply + verify each channel before moving to the next. If slot count changed, the goal MUST be updated in the same call.
+
+**Phase 9 — Report.** Render the summary table: channel | original slots/wk | new slots/wk | bunches fixed | status (`applied` / `user declined` / `failed`).
+
 ## Process
 
 ### Phase 1 — Resolve target channels

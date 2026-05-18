@@ -17,6 +17,38 @@ Why this exists: Priority 3 of the growth plan is "cross-post the newsletter to 
 `/linkedin-stats --no-cache` — skip writing the snapshot (for ad-hoc checks that shouldn't disturb trend tracking)
 `/linkedin-stats --since YYYY-MM-DD` — compute delta against a specific snapshot instead of the 7-day default
 
+## 🟢 Happy Path (read first; everything below is edge-case detail)
+
+For a full `/linkedin-stats` run when nothing goes wrong. ~60-90 sec wall-clock. Each step links to a labeled edge case (`Edge: <name>`) you only need to read if that step fails.
+
+**Phase 0 — Load config (2 sec).** Read `config.local.json` if present, else `config.json`. Pull `profile_url`, `company_url`, `newsletter_url`, `creator_analytics_url`, `post_limit`, `delta_window_days`. The newsletter URL has a random `<id>` suffix that must be in `config.local.json` — see `Edge: newsletter-url-shape`.
+
+**Phase 1 — Browser + login check (5-10 sec).** Verify `gstack browse` (`$B`) binary exists. `$B goto linkedin.com/feed/` → `$B snapshot -i`. If "Email or phone" / "Sign in" markers appear, run `$B cookie-import-browser chrome linkedin.com` and retry. If still gated, `$B handoff` for manual login. Headless 999/403 responses also route through cookie re-import — see `Edge: headless-detection`.
+
+**Phase 2 — Newsletter stats (10-15 sec).** `$B goto $NEWSLETTER_URL` → extract subscriber count via regex on `body.innerText` (`/([0-9,]+)\s+subscribers?/i`). Then `$B goto linkedin.com/dashboard/` (the new Creator analytics home; the old `/creator/dashboard/` 404s) → `sleep 4` → JS-grab the 6 metric tiles (`post_impressions`, `followers`, `profile_viewers`, `search_appearances`, `new_newsletter_subs`, `newsletter_article_views`) each with 7-day delta. Then `$B goto linkedin.com/analytics/creator/content/?timeRange=past_7_days` → `sleep 5` → JS-grab summary (impressions, members reached, social engagements, reactions, comments, reposts) + top-N posts list.
+
+**Phase 3 — Profile followers (5 sec).** `$B goto $PROFILE_URL` → JS regex on `body.innerText` for `/([0-9,]+)\s+followers?/i`.
+
+**Phase 4 — Company page followers (5 sec).** `$B goto $COMPANY_URL` → same follower regex. If the user is a page admin, deeper analytics live at `/company/<slug>/admin/analytics/visitors/`.
+
+**Phase 5 — Delta vs cached snapshot (2 sec).** Look in `cache/` for newest `snapshot-*.json` older than `delta_window_days` (default 7). Diff today's `nl_subs / profile_followers / company_followers` against it. First run has no prior snapshot → deltas render as `—` (expected — see `Edge: delta-bootstrap`).
+
+**Phase 6 — Render report.** Single markdown block: newsletter (subs + Δ + recent articles), profile (followers + Δ + top posts), company (followers + Δ + top page posts), then the Priority 3 growth-plan check (subs added this week vs target rate).
+
+**Phase 7 — Write snapshot (1 sec).** Unless `--no-cache`, write `cache/snapshot-$(date -u +%Y-%m-%d).json` with `newsletter.subscribers`, `profile.followers`, `company.followers`, `fetched_at`. Cache dir is gitignored; `/flywheel` reads the newest snapshot here.
+
+### Edge labels (jump to these only when you hit the matching failure signal)
+
+| Label | Symptom |
+|---|---|
+| `Edge: selector-breakage` | A regex/JS grab returns null because LinkedIn re-skinned the page |
+| `Edge: headless-detection` | Navigation returns 999 or 403, or a verification challenge appears |
+| `Edge: newsletter-url-shape` | Newsletter URL missing the `<id>` suffix; subscriber count fails to parse |
+| `Edge: paid-features-missing` | A field comes back blank because it requires LinkedIn Premium / Creator Pro |
+| `Edge: delta-bootstrap` | Deltas render as `—` because there's no prior snapshot to compare against |
+
+Each label corresponds to a heading in **Known issues / robustness notes** below.
+
 ## Config
 
 The skill reads config from (in priority order):
@@ -265,10 +297,15 @@ The cache directory is gitignored — snapshots stay local, private.
 ## Known issues / robustness notes
 
 - **LinkedIn re-skins their analytics pages frequently.** The DOM selectors above are best-effort. When a selector breaks, the skill should fall back to `$B screenshot` + `$B handoff` so the user can eyeball the number rather than silently returning a stale value.
+  *Label: `Edge: selector-breakage`*
 - **Headless detection.** LinkedIn sometimes shows an extra verification challenge to gstack browse. If navigation returns 999 or 403, run `$B cookie-import-browser chrome linkedin.com` and retry. If still blocked, the user may need to run the skill from Claude in Chrome instead (see `crosspost-newsletter` for the pattern).
+  *Label: `Edge: headless-detection`*
 - **Newsletter URL shape.** LinkedIn newsletters have a random `<id>` suffix in the URL — copy it from the address bar once and save to `config.local.json` so the skill doesn't have to guess.
+  *Label: `Edge: newsletter-url-shape`*
 - **Paid features.** Some analytics (e.g., detailed impression breakdowns) require LinkedIn Premium / Creator Mode Pro. The skill reports what's visible to the current login; missing data is noted as `unknown` not silently dropped.
+  *Label: `Edge: paid-features-missing`*
 - **Delta bootstrap.** The first run has no prior snapshot so deltas render as `—`. After one week of snapshots the numbers mean something.
+  *Label: `Edge: delta-bootstrap`*
 
 ## Feeds into Phase D (/flywheel)
 

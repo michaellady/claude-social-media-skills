@@ -18,6 +18,48 @@ Why this exists: Buffer is the fan-out layer for IG/LinkedIn/Facebook/Threads, b
 `/buffer-stats --compare YYYY-MM-DD` — diff against a specific historical snapshot instead of the newest
 `/buffer-stats operational` — skip the Analyze scrape; MCP-only fast path
 
+## 🟢 Happy Path (read first; everything below is edge-case detail)
+
+For a weekly Buffer stats run when nothing goes wrong. ~2-4 min wall-clock. Each step links to a labeled edge case (`Edge: <name>`) you only need to read if that step fails.
+
+**Step 1 — Load config (5 sec).** Read `config.local.json` if present, else `config.json`. Pull `organization_name`, `default_window_days` (7), `top_posts_limit` (10), `analyze_base_url`, `insights_base_url`. Set `DAYS=7`.
+
+**Step 2 — Operational data via Buffer MCP (15-30 sec).**
+- `mcp__buffer__get_account` → pick org by `config.organization_name` (or the only one). See `Edge: multi-org-selection`.
+- `mcp__buffer__list_channels` → filter out `isDisconnected: true`, apply `channels_include`/`channels_exclude`.
+- Per channel: `mcp__buffer__get_channel` for posting goal, schedule, paused flag. `mcp__buffer__list_posts` twice — `status: [scheduled]` for queue depth, `status: [sent]` with `createdAt.start` = N-days-ago for sent count and tag distribution.
+
+**Step 3 — Engagement scrape: publish.buffer.com/insights (30-60 sec).** `$B goto https://publish.buffer.com/insights`, `sleep 4`, extract Posts/Followers/Reactions/Comments summary + top-5 posts via the regex blocks in Phase 2a. Default range is "Last 7 days" — leave it alone. Cross-channel summary covers LinkedIn personal + Threads (which analyze.buffer.com doesn't).
+
+**Step 4 — Engagement scrape: analyze.buffer.com per-channel (60-90 sec).** `$B goto $ANALYZE_URL`. Cookies for `buffer.com` carry to `analyze.buffer.com` (see `Edge: subdomain-cookie-gap`). Discover channel URLs from home-page links. Open the date picker, click "Last week" — NOT "This week", which reads 0 on Mondays (see `Edge: no-last-7-days-preset`). For each channel: visit overview URL, extract `<li>` metrics by `"Label\nValue\nDelta%"` text pattern (see `Edge: analyze-hashed-classes`); visit `/posts/<channelId>`, extract per-post metrics from `li[class*=post-item]`.
+
+**Step 5 — Compose snapshot JSON (5 sec).** Build the object with `engagement_tracked_channels` (Analyze-scrapeable subset) AND `posting_channels` (full set) as separate counts — never collapse them (see `Edge: engagement-vs-posting-channel-conflation`). Channels Analyze can't scrape land in `channels_engagement_unavailable[]`.
+
+**Step 6 — Week-over-week deltas (2 sec).** Find newest snapshot in `cache/` older than `delta_window_days` (7). Compute Δfollowers / Δengagement_rate / Δqueue_depth / Δsent_count per channel. First run renders `—` (see `Edge: delta-bootstrap`).
+
+**Step 7 — Format-performance attribution (10 sec).** For each sent post in window, read its `format:<name>` tag via `mcp__buffer__get_post`. Aggregate by `(channel, format)` → avg impressions, avg engagement, eng rate. Surface a verdict per channel.
+
+**Step 8 — Skill recommendations (5 sec).** From the format-performance table, generate suggestions for promote-*, carousel-newsletter, etc. with data citations. Suggestions only — user accepts/rejects manually.
+
+**Step 9 — Render + write (5 sec).** Print the fixed-structure markdown report (Channels table → Format performance → Skill recommendations → Top posts → Flags). Write `cache/snapshot-YYYY-MM-DD.json` and `.md` unless `--no-cache`.
+
+### Edge labels (jump to these only when you hit the matching failure signal)
+
+| Label | Symptom |
+|---|---|
+| `Edge: multi-org-selection` | Account has >1 Buffer org and no `organization_name` saved |
+| `Edge: subdomain-cookie-gap` | `analyze.buffer.com` redirects to login despite `buffer.com` cookies |
+| `Edge: no-last-7-days-preset` | Buffer Analyze date picker has no "Last 7 days" option |
+| `Edge: analyze-hashed-classes` | Class selectors return nothing; text-pattern extractors needed |
+| `Edge: instagram-not-linked` | IG channel shows "Unlock Instagram Analytics" banner, no engagement data |
+| `Edge: facebook-impressions-unavailable` | Facebook Pages Impressions field missing entirely |
+| `Edge: engagement-data-lag` | New channel / freshly published post engagement reads `null` 24-48h |
+| `Edge: custom-date-range-unimplemented` | `--days` value other than 7 or ~30 |
+| `Edge: delta-bootstrap` | First run — no prior snapshot to diff against |
+| `Edge: engagement-vs-posting-channel-conflation` | total_followers reads tiny because LinkedIn-personal/Threads omitted |
+
+Each label corresponds to an entry in **Known issues / robustness notes** below.
+
 ## Config
 
 The skill reads config from (in priority order):
@@ -469,16 +511,17 @@ Text-pattern extractors (finding `<li>` by `innerText` shape) are more resilient
 
 ## Known issues / robustness notes
 
-- **Subdomain cookie gap.** ~~Cookies imported for `buffer.com` do NOT automatically authenticate `analyze.buffer.com`.~~ **Updated 2026-04-27:** cookie import for `buffer.com` DOES carry to `analyze.buffer.com` in current Buffer setup — confirmed working via `$B cookie-import-browser chrome buffer.com` then nav to `analyze.buffer.com` succeeds without redirect-to-login. Try cookie import first; only fall back to manual handoff login if the cookie path actually fails.
-- **No "Last 7 days" preset.** Buffer Analyze only offers This/Last month, This/Last week, and Custom. The skill uses **Last week** for a 7-day window (complete Monday-Sunday). "This week" is broken on Mondays (0 days of data). For arbitrary windows, the skill falls back to Custom — implementation note below.
-- **Instagram requires Facebook Business link.** If the IG channel isn't linked to a Facebook Business Page, Buffer shows an "Unlock Instagram Analytics" banner and no engagement data. The skill detects the banner and flags `engagement: { unavailable: true, reason: "ig_not_linked" }` in the JSON — doesn't fail the snapshot.
-- **Facebook Pages impressions.** Banner: "Learn why impressions are not available for Facebook Pages." For affected channels, the Impressions field is missing entirely. Parse as `null`, not `0`.
-- **Buffer Analyze DOM uses hashed class names.** Text-pattern `<li>` extractors are the primary pattern. When selectors break, see "Re-discovery" below.
-- **Multi-organization accounts.** The skill prompts on first run and saves the choice to `config.local.json`. Re-pick by editing the file.
-- **Engagement data lag.** Buffer Analyze sometimes lags 24-48h for new channels or freshly published posts. Fields render as `null` with a footnote rather than `0`.
+- **Subdomain cookie gap.** *Label: `Edge: subdomain-cookie-gap`* ~~Cookies imported for `buffer.com` do NOT automatically authenticate `analyze.buffer.com`.~~ **Updated 2026-04-27:** cookie import for `buffer.com` DOES carry to `analyze.buffer.com` in current Buffer setup — confirmed working via `$B cookie-import-browser chrome buffer.com` then nav to `analyze.buffer.com` succeeds without redirect-to-login. Try cookie import first; only fall back to manual handoff login if the cookie path actually fails.
+- **No "Last 7 days" preset.** *Label: `Edge: no-last-7-days-preset`* Buffer Analyze only offers This/Last month, This/Last week, and Custom. The skill uses **Last week** for a 7-day window (complete Monday-Sunday). "This week" is broken on Mondays (0 days of data). For arbitrary windows, the skill falls back to Custom — implementation note below.
+- **Instagram requires Facebook Business link.** *Label: `Edge: instagram-not-linked`* If the IG channel isn't linked to a Facebook Business Page, Buffer shows an "Unlock Instagram Analytics" banner and no engagement data. The skill detects the banner and flags `engagement: { unavailable: true, reason: "ig_not_linked" }` in the JSON — doesn't fail the snapshot.
+- **Facebook Pages impressions.** *Label: `Edge: facebook-impressions-unavailable`* Banner: "Learn why impressions are not available for Facebook Pages." For affected channels, the Impressions field is missing entirely. Parse as `null`, not `0`.
+- **Buffer Analyze DOM uses hashed class names.** *Label: `Edge: analyze-hashed-classes`* Text-pattern `<li>` extractors are the primary pattern. When selectors break, see "Re-discovery" below.
+- **Multi-organization accounts.** *Label: `Edge: multi-org-selection`* The skill prompts on first run and saves the choice to `config.local.json`. Re-pick by editing the file.
+- **Engagement data lag.** *Label: `Edge: engagement-data-lag`* Buffer Analyze sometimes lags 24-48h for new channels or freshly published posts. Fields render as `null` with a footnote rather than `0`.
 - **MCP permission prompts.** The Buffer MCP's read-only tools (`get_account`, `list_channels`, `list_posts`, `get_channel`, `get_post`) are used heavily. Consider adding them to `~/.claude/settings.json` allowlist if prompts get annoying. (`get_account` and `list_channels` are already globally allowed.)
-- **Custom date ranges.** For `--days` values other than 7 or ~30, the skill must open the Custom picker and select start/end dates programmatically. Not yet implemented — falls back to "Last week" with a warning. Add the custom-picker handling when needed.
-- **Delta bootstrap.** First run has no prior snapshot → deltas show `—`. After one week, numbers mean something.
+- **Custom date ranges.** *Label: `Edge: custom-date-range-unimplemented`* For `--days` values other than 7 or ~30, the skill must open the Custom picker and select start/end dates programmatically. Not yet implemented — falls back to "Last week" with a warning. Add the custom-picker handling when needed.
+- **Delta bootstrap.** *Label: `Edge: delta-bootstrap`* First run has no prior snapshot → deltas show `—`. After one week, numbers mean something.
+- **Engagement-tracked vs posting channel conflation.** *Label: `Edge: engagement-vs-posting-channel-conflation`* Buffer Analyze can only scrape engagement for FB pages, IG business, and LinkedIn pages — NOT LinkedIn personal or Threads. If the snapshot collapses both sets into one count, downstream consumers like `/flywheel` report a false total (caught 2026-05-03 when flywheel reported total_followers=26 against an actual ~2,200). The schema keeps `engagement_tracked_channels` and `posting_channels` as separate counts, and channels Analyze can't reach land in `channels_engagement_unavailable[]`.
 - **`operational` fast-path.** For mid-week queue checks without engagement scraping (much faster, no browser), use `/buffer-stats operational`.
 
 ## Feeds into /flywheel

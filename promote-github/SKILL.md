@@ -15,6 +15,24 @@ Fetch public GitHub contributions (new repos, merged PRs, commits, releases) and
 `/promote-github 2026-03-01..2026-03-30` — contributions in a date range
 `/promote-github https://github.com/user/repo/pull/123` — a specific PR, commit, or release URL
 
+## 🟢 Happy Path (read first; everything below is edge-case detail)
+
+For a GitHub promotion run when nothing goes wrong. ~10-15 min wall-clock.
+
+**Phase 1 — Fetch (30 sec).** Run `_shared/voice-corpus/voice-corpus` and hold the JSON for Phase 4. `gh api user --jq '.login'` for the username. Parse the invocation arg — URL → Specific URL Mode; otherwise → Time Range Mode. In Time Range Mode, fetch merged PRs, commits (filter `repository.owner.login == username`), releases, and new repos in parallel. Deduplicate: drop standalone commits already covered by a new-repo entry or a merged PR in the same repo. In Specific URL Mode, verify `repos/{owner}/{repo}` is public, then fetch the resource by URL pattern.
+
+**Phase 2 — Present + duplicate check (1 min).** Group contributions by type (New Repos / Merged PRs / Commits / Releases) as a numbered list. Call `mcp__buffer__get_account` for the org ID, then `mcp__buffer__list_posts` twice: queued (`scheduled/needs_approval/draft`) and recently-sent (`sent`, last 7 days). For each contribution, match against both sets on repo slug + release tag + a distinctive phrase. Annotate each line with `✅ new`, `⚠️ sent Nx`, `⚠️ queued Nx`, or `⚠️ sent + queued`.
+
+**Phase 3 — User selection (1 min).** Ask two questions: which contributions (default-recommend `✅ new` only) and post mode (Batch = one summary across all; Individual = one post per contribution). Wait for input.
+
+**Phase 4 — Compose (3-5 min).** Inline the voice-corpus posts as context. Frame every draft around value/impact, not technical jargon. Compose per-platform variants within each character budget (account for the actual GitHub URL length, ~80 chars). Generate one hero image per theme via `python3 ../carousel-newsletter/templates/gen_illustration.py` at 16:9, save to `promote-github/assets/<YYYY-MM-DD>/<theme-slug>.png`, commit + push so the raw GitHub URL is live, and attach to every channel for that theme via `assets.images`.
+
+**Adversarial review (REQUIRED).** Run `_shared/adversarial-review/adversarial-review` with SKILL_NAME `promote-github` and the per-skill RULES_LIST. Must return `all_pass` before Phase 6. Iterate fixes within the 5-round cap.
+
+**Phase 5 — User review (1 min).** Present every drafted post (channel + char count + body). Ask "Ready to publish these now?". Default mode is instant-publish (`shareNow`); user can opt into queue (`addToQueue`).
+
+**Phase 6 — Post (2-3 min).** `mcp__buffer__get_account` → `mcp__buffer__list_channels`. Filter out `isDisconnected`, `isLocked`, and `service: "startPage"`. For each approved post, route through `_shared/buffer-post-prep/buffer-post-prep` with `--format-tag link_share` (individual) or `--format-tag batch_summary` (batch) and `--mode shareNow`, then call `mcp__buffer__create_post` with the resulting args. Report success/error per channel.
+
 ## Process
 
 ### Phase 1 — Fetch GitHub Data + Voice Corpus
