@@ -1458,11 +1458,6 @@ Confirmed 2026-05-17 on Medium AND HN: calling `mcp__claude-in-chrome__javascrip
 - When setting a URL-valued input via JS (e.g., Medium canonical, Reddit submit URL field), the React-native setter pattern works fine — only the **response** is blocked. If you need to verify the set, query a derived signal (`{lenMatch: el.value.length === expected}`) rather than echoing the value.
 - For setting URL values when the form is small and visible: use coordinate-based `triple_click` + `key Delete` + `type` instead of JS — keyboard-driven flows don't trigger the response-blocking guard because no JS response carries the URL.
 
-### Medium canonical URL field needs explicit "Edit canonical link" click (LEGACY — see "Medium canonical URL UI changed" above)
-**This was true in the older Medium Advanced Settings UI** (checkbox to enable, then "Edit canonical link" button to enter edit mode). As of 2026-05-17 the UI is simpler — see the newer note. Leaving this entry for reference; if Medium reverts the UI, the older flow may resurface.
-
-The canonical URL textbox is in display mode by default after the "originally published elsewhere" checkbox is checked — it shows Medium's auto-generated URL but doesn't accept input. **Workflow:** click the "Edit canonical link" button next to the textbox first (this enters edit mode), THEN triple_click the textbox + Delete + type the beehiiv URL. The button text changes to "Save canonical link" once the value differs from the auto-generated one — click it to commit.
-
 ### Medium topic autocomplete is finicky — use Down + Return keyboard pattern
 - Tab key removes focus from the topic combobox WITHOUT committing the typed text as a chip. Don't use Tab.
 - Chained sequence "type X / Enter / type Y / Enter" can merge X and Y into one corrupted chip ("AI AgentAgentic Ai"). Wait between operations, or split into separate find+click+type cycles.
@@ -1476,48 +1471,17 @@ The canonical URL textbox is in display mode by default after the "originally pu
   Worked on all 5 topics (AI, Artificial Intelligence, AI Agent, Agentic Ai, Agents) without a single miss.
 - 4 of 5 desired topics is acceptable as fallback; the AI cluster (AI, Artificial Intelligence, AI Agent, Agentic Ai, Agents) all funnel into similar discovery feeds.
 
-### Medium naive copy-paste from beehiiv requires manual user action (LEGACY — use osascript path above instead)
-The simplest way to get a beehiiv article into Medium with images is copy-paste from a second tab. BUT **Claude in Chrome's programmatic `cmd+c`/`cmd+v` across tabs does not work**. Chrome's clipboard operations require the tab to be OS-focused, and the extension sends keyboard events to a tabId regardless of which tab the user is actually looking at. Empirical confirmation: `navigator.clipboard.write()` from a non-focused tab fails with "Document is not focused." A keyboard-level `cmd+c` on a backgrounded tab leaves the system clipboard empty (or copies whatever was in the focused tab).
-
-**What does work:** ask the user to do the copy-paste manually. Set up both tabs (beehiiv + Medium), type the Medium title, press Enter, then handoff with clear instructions ("switch to beehiiv tab, select the body, Cmd+C, switch to Medium, click into body, Cmd+V"). The user's focused-tab clipboard operation works normally and brings text + images + formatting over in one shot.
-
-**What to avoid:** do NOT waste tool calls trying programmatic approaches (ClipboardEvent dispatch with DataTransfer, `navigator.clipboard.write`, stuffing `window.__BB_HTML__` and base64-transferring it across tabs). All of these either silently fail or get blocked (Claude in Chrome blocks base64 returns over ~30KB, cross-origin fetch from medium.com to beehiiv hits CORS). Go straight to the manual handoff.
-
-### Medium blockquote gets flattened on paste
-When the beehiiv article starts with a blockquote (e.g. the opening quote + attribution pattern used in many essays), Medium's paste sanitizer often flattens it to two plain `<p>` lines — losing the blockquote's visual styling. The `<blockquote>` count in the editor will be 0 even though the source had one. **Workaround:** the user manually selects those two lines in Medium's editor and clicks the blockquote toolbar button. It's one click — don't try to re-wrap programmatically, post-paste DOM surgery on Medium blockquotes breaks the save state.
-
 ### Medium detects DOM automation and blocks saves
 Any post-paste DOM manipulation — `.remove()`, setting `textContent`, `innerHTML` assignments, etc. — can trigger Medium's "Something is wrong and we cannot save your story" error. Once this error appears, the only recovery is to discard the draft (navigate away with `window.onbeforeunload = null; location.href = ...`) and start fresh. **Workaround:** use only real mouse clicks at coordinates and keyboard input (type, Backspace, Enter) after a click. Read state via JS is safe, but don't mutate.
 
-### Medium paste leaves empty `<h3>` before each figure
-After copy-pasting from beehiiv, each figure has an empty `<h3>` sibling immediately before it, rendering as extra vertical whitespace between a section heading and its image. **Workaround:** for each figure, scroll the empty H3 into view, get its coordinates via `getBoundingClientRect()`, real-click inside it, and press Backspace. Do NOT use `.remove()` — it trips the save-error automation detection.
-
 ### Medium figcaption resists programmatic text entry
 Each `<figure>` has a `<figcaption class="imageCaption">` containing a `<span class="defaultValue">Type caption for image (optional)</span>` placeholder. Setting `figcaption.textContent = "..."` is ignored; `document.execCommand('insertText', false, ...)` after selecting the figcaption also doesn't clear the placeholder. Real mouse clicks + keyboard typing would likely work but add automation-detection risk. **Recommendation:** leave beehiiv-extracted captions as inline `<p>` elements after each image (they came through the paste that way), or have the user manually set captions via Medium's UI.
-
-### Medium converts h2 to h3 and replaces spaces with NBSPs on paste
-Medium's paste sanitizer:
-- Converts all `<h2>` headings to `<h3>`
-- Replaces some spaces inside heading text with non-breaking spaces (U+00A0, char code 160)
-
-When matching headings programmatically, query `h3` (not `h2`) and normalize whitespace before comparing:
-```javascript
-const norm = s => s.replace(/\u00a0/g, ' ').trim();
-const bb = headings.find(h => norm(h.textContent) === 'The Black Belt');
-```
-Strict `=== 'The Black Belt'` silently fails because of the NBSP.
 
 ### Medium requires Claude in Chrome
 Medium returns HTTP 403 from Cloudflare for headless Chromium browsers (gstack browse). User agent spoofing does not reliably work — may get through initially but gets blocked on subsequent page loads. **Workaround:** use Claude in Chrome extension (`mcp__claude-in-chrome__*` tools) which operates through the user's real Chrome browser and bypasses Cloudflare entirely.
 
 ### Medium blockquote line breaks
 Medium's editor does NOT support post-paste editing of blockquotes with Shift+Enter or direct DOM manipulation — both cause persistent "Something is wrong and we cannot save your story" errors that prevent saving and publishing. **Workaround:** include `<br>` tags in the initial paste HTML before the author attribution. If the initial paste doesn't preserve the line breaks, have the user manually edit quotes via handoff.
-
-### Medium image upload via JS
-Direct `fetch()` is CORS-blocked on Medium's domain. **Workaround:** use `new Image()` with `crossOrigin = 'anonymous'`, draw to canvas, then create a File blob from `canvas.toBlob()`. Set the file on the `input[type="file"][name="uploadedFile"]` element and dispatch a `change` event. Keep images under 800px width to avoid JS execution timeouts.
-
-### Medium canonical URL
-Available under Story Settings → Advanced Settings → "Customize Canonical Link" → check "This story was originally published elsewhere". Use JS `click()` on the checkbox (not `form_input`) as the UI checkbox can be finicky. After checking, the "Edit canonical link" button reveals a URL input field.
 
 ### Hacker News has no posting API
 The official HN Firebase API (`github.com/HackerNews/API`) is entirely read-only — every endpoint is GET. There is no authenticated write access. **Workaround:** browser automation via Claude in Chrome against `news.ycombinator.com/submit`. User must be logged in in their real Chrome browser.
@@ -1611,65 +1575,6 @@ Then `$B click '#post-flair-modal-apply-button'` to commit.
 After commit: title + URL persist, **body field clears** (re-fill it before clicking Post). The "Add flair and tags *" button is replaced with `[button] "Philosophy"` + `[button] "edit flair"` confirming success.
 
 **Why two paths:** the radios are interactive controls inside the modal; Lit listens for mousedown/click on them. The Add button is a `type="submit"` for the `<faceplate-form>`; the form's submit handler likely guards `event.isTrusted`. Different guard layers, different bypass.
-
-### Reddit flair modal — minimum-friction flow (confirmed 2026-04-26)
-After a real run on r/vibecoding (no flair required) and r/ClaudeAI (Philosophy flair), the friction was 80% from refs going stale during probing. Here's the minimum-friction flow:
-
-1. **Switch to Link tab first** — `$B click @e<Link-tab-ref>`. Confirm with snapshot that `[tab] "Link" [selected]`.
-2. **Snapshot once** to get all 4 critical refs in one read: Title (`@e18`), Add-flair (`@e19`), Link-URL (`@e20`), Body (`@e21`), Post (`@e36`/`@e37`). Don't snapshot again until after flair commit; refs stay stable while you're in the form.
-3. **Fill all 3 form fields BEFORE opening flair** — title via `$B click @e<title> + $B type "..."`, then URL the same way, then body. Verify via JS that body's `[contenteditable="true"]` has the right `textContent.length`.
-4. **Open flair modal** — `$B click @e<add-flair-ref>`. Snapshot fresh — flair radios get refs starting around `@e22+`.
-5. **If your target flair isn't in the first 3 visible options, click "View all flairs"** — that exposes the full list. r/ClaudeAI as of 2026: No flair / Question / Claude Code / Coding / Vibe Coding / Custom agents / Built with Claude / Praise / Meetup / Productivity / Enterprise / NOT about coding / Writing / **Philosophy** / News / Bug / Other / Comparison / Suggestion / Corporate / MCP / Humor / Feedback / Promotion. For reflective essays about AI/reskilling: **Philosophy** is the right pick.
-6. **Click your flair radio**, then **find the Add button via shadow-DOM walk + coordinate click** — `@e<Add-ref>` from the snapshot consistently gets "Selector matched multiple elements" errors because Reddit's modal Web Component has duplicate Add buttons in shadow trees. Use:
-   ```js
-   let found = null;
-   const walk = (root) => {
-     if (found || !root.querySelectorAll) return;
-     root.querySelectorAll('button').forEach(b => {
-       if (!found && b.textContent.trim() === 'Add' && b.offsetParent !== null) found = b;
-     });
-     root.querySelectorAll('*').forEach(el => { if (el.shadowRoot) walk(el.shadowRoot); });
-   };
-   walk(document);
-   const r = found?.getBoundingClientRect();
-   ({ x: Math.round(r.x + r.width/2), y: Math.round(r.y + r.height/2) })
-   ```
-   Then `$B click <x> <y>`.
-7. **After Add commits, all 3 fields persist** (contradicts older skill claim about modal-close clearing fields — that was true for an earlier Reddit UI). Verify: snapshot should show Title and Link URL with their values intact, and a "Clear Flair" button visible (deep-search via shadow walk for `Clear Flair` text). Body's `textContent` should still match its 300+ char value.
-8. **Click Post** — `$B click @e<Post-ref>`. ⚠️ **Refs renumbered after flair commit** — re-snapshot before clicking Post; the Post button's ref will have shifted (e.g. `@e36` → `@e67`).
-9. **CAPTCHA handoff** — Reddit triggers CAPTCHA on roughly half of submissions for accounts with low karma or recent posting activity. The skill cannot solve CAPTCHAs (Claude in Chrome safety rules + Reddit ToS). When CAPTCHA detected (`document.querySelector('iframe[src*="captcha"], [class*="captcha" i]')` is non-null), `$B handoff "Please solve the CAPTCHA and click Post"` and wait. ~30 sec on user end.
-
-### Reddit flair modal lives in shadow DOM and clears form state
-Reddit's flair picker is inside `<r-post-flairs-modal>` which has a shadow root. Finding the "Add" button requires a recursive shadow-DOM walk:
-```javascript
-(() => {
-  let found = null;
-  const walk = (root) => {
-    if (found) return;
-    root.querySelectorAll('*').forEach(el => {
-      if (found) return;
-      if (el.tagName === 'BUTTON' && el.textContent.trim() === 'Add') found = el;
-      if (el.shadowRoot) walk(el.shadowRoot);
-    });
-  };
-  walk(document);
-  return found;
-})();
-```
-A plain `.click()` on the found button doesn't dispatch properly through the shadow boundary. Use the full pointer+mouse event sequence (same pattern as Substack image selection):
-```javascript
-const opts = { bubbles: true, cancelable: true, composed: true, view: window,
-               clientX: r.x + r.width/2, clientY: r.y + r.height/2,
-               button: 0, buttons: 1, pointerType: 'mouse', pointerId: 1, isPrimary: true };
-found.dispatchEvent(new PointerEvent('pointerdown', opts));
-found.dispatchEvent(new MouseEvent('mousedown', opts));
-found.dispatchEvent(new PointerEvent('pointerup', opts));
-found.dispatchEvent(new MouseEvent('mouseup', opts));
-found.dispatchEvent(new MouseEvent('click', opts));
-```
-Note: `composed: true` is required so the event crosses the shadow boundary.
-
-**CRITICAL:** After closing the flair modal, Reddit clears the Title, Link URL, AND Body text from its internal validation state (even though the DOM shows them populated). You must re-type all three with real keystrokes (`$B click @ref` then `$B type "..."`) after confirming flair. Clearing via the React-native setter is NOT enough — the composer validator listens for actual keyboard events, not `dispatchEvent('input')`. Only after re-typing does the Post button enable.
 
 ### Reddit post-flair vs. persistent subreddit user flair
 Reddit has two distinct flair concepts that are easy to confuse:
