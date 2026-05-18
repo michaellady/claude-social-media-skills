@@ -31,9 +31,11 @@ For a weekly Buffer stats run when nothing goes wrong. ~2-4 min wall-clock. Each
 
 **Step 3 — Engagement scrape: publish.buffer.com/insights (30-60 sec).** `$B goto https://publish.buffer.com/insights`, `sleep 4`, extract Posts/Followers/Reactions/Comments summary + top-5 posts via the regex blocks in Phase 2a. Default range is "Last 7 days" — leave it alone. Cross-channel summary covers LinkedIn personal + Threads (which analyze.buffer.com doesn't).
 
-**Step 4 — Engagement scrape: analyze.buffer.com per-channel (60-90 sec).** `$B goto $ANALYZE_URL`. Cookies for `buffer.com` carry to `analyze.buffer.com` (see `Edge: subdomain-cookie-gap`). Discover channel URLs from home-page links. Open the date picker, click "Last week" — NOT "This week", which reads 0 on Mondays (see `Edge: no-last-7-days-preset`). For each channel: visit overview URL, extract `<li>` metrics by `"Label\nValue\nDelta%"` text pattern (see `Edge: analyze-hashed-classes`); visit `/posts/<channelId>`, extract per-post metrics from `li[class*=post-item]`.
+**Step 4 — Engagement scrape: analyze.buffer.com per-channel (60-90 sec).** `$B goto $ANALYZE_URL` (analyze home page lists channels via `a[href*=/overview/]` links — extract channelId from each). Cookies for `buffer.com` carry to `analyze.buffer.com` (see `Edge: subdomain-cookie-gap`). For each channel: `$B goto /<service>/overview/<channelId>` → click the "Last week" preset button directly (the picker is already expanded inline — NO popover; see `Edge: analyze-picker-already-inline`) → `sleep 4` → extract `<li>` metrics where each `<li>` has text shape `"Label\nValue\nDelta%"` (see `Edge: analyze-hashed-classes`).
 
-**Step 5 — Compose snapshot JSON (5 sec).** Build the object with `engagement_tracked_channels` (Analyze-scrapeable subset) AND `posting_channels` (full set) as separate counts — never collapse them (see `Edge: engagement-vs-posting-channel-conflation`). Channels Analyze can't scrape land in `channels_engagement_unavailable[]`.
+**Step 4b — Per-channel Channel ROI (5 sec).** For each channel where Buffer reports both `avg_imps_per_post` AND `eng_rate` (LinkedIn pages always have these; IG needs the fallback below; Facebook lacks impressions — see `Edge: facebook-impressions-unavailable`), compute `channel_roi_score = (avg_imps_per_post * eng_rate_decimal * 100) / (sent_count + 1)` and bucket into 🟢 ≥100 / 🟡 10-100 / 🔴 <10 & followers<50 / ⚪ <10 & followers≥50. **For Instagram**, Buffer doesn't expose a single "Engagement Rate" field — compute it as `(likes + comments) / impressions × 100` from the available metrics. See **Phase 4.6** below for the full rubric + worked examples.
+
+**Step 5 — Compose snapshot JSON (5 sec).** Build the object with `engagement_tracked_channels` (Analyze-scrapeable subset) AND `posting_channels` (full set) as separate counts — never collapse them (see `Edge: engagement-vs-posting-channel-conflation`). Channels Analyze can't scrape land in `channels_engagement_unavailable[]`. Include a `channel_roi[]` array with `{channel, sent, avg_imps_per_post, eng_rate_pct, channel_roi_score, bucket, verdict}` per channel — `null` for channels with missing inputs.
 
 **Step 6 — Week-over-week deltas (2 sec).** Find newest snapshot in `cache/` older than `delta_window_days` (7). Compute Δfollowers / Δengagement_rate / Δqueue_depth / Δsent_count per channel. First run renders `—` (see `Edge: delta-bootstrap`).
 
@@ -50,8 +52,10 @@ For a weekly Buffer stats run when nothing goes wrong. ~2-4 min wall-clock. Each
 | `Edge: multi-org-selection` | Account has >1 Buffer org and no `organization_name` saved |
 | `Edge: subdomain-cookie-gap` | `analyze.buffer.com` redirects to login despite `buffer.com` cookies |
 | `Edge: no-last-7-days-preset` | Buffer Analyze date picker has no "Last 7 days" option |
+| `Edge: analyze-picker-already-inline` | Date picker shows This/Last month + This/Last week buttons inline — no popover; click target directly |
 | `Edge: analyze-hashed-classes` | Class selectors return nothing; text-pattern extractors needed |
 | `Edge: instagram-not-linked` | IG channel shows "Unlock Instagram Analytics" banner, no engagement data |
+| `Edge: instagram-no-eng-rate-field` | IG doesn't report "Engagement Rate" — compute from `(likes + comments) / impressions × 100` |
 | `Edge: facebook-impressions-unavailable` | Facebook Pages Impressions field missing entirely |
 | `Edge: engagement-data-lag` | New channel / freshly published post engagement reads `null` 24-48h |
 | `Edge: custom-date-range-unimplemented` | `--days` value other than 7 or ~30 |
@@ -316,6 +320,73 @@ Combine Step 2d (per-channel overview) + Step 2e (per-channel posts). Compute:
 
 Normalize metric names across services (e.g. LinkedIn's "Eng. Rate" and Facebook's potentially different label — keep originals in raw JSON but expose a unified `engagement_rate` field).
 
+#### Phase 2c — Channel ROI score (run after Phase 2b for every channel with engagement data)
+
+For each Buffer-connected channel where Phase 2b produced both `avg_imps_per_post` AND `engagement_rate`, compute the ROI score and bucket it. This surfaces deprioritization candidates so the user can stop fanning out content to channels that don't earn back the queue cost.
+
+**Formula:**
+
+```
+channel_roi_score = (avg_imps_per_post * eng_rate_decimal * 100) / (sent_count_in_window + 1)
+```
+
+Where `eng_rate_decimal` is the engagement rate expressed as a decimal (e.g. 12.42% → `0.1242`). The `* 100` keeps the score in a readable 0-1000 range; the `+ 1` in the denominator is a smoothing term so a channel with `sent=0` doesn't divide-by-zero.
+
+**Bucketing rubric:**
+
+| Score | Followers | Bucket | Action |
+|---|---|---|---|
+| ≥ 100 | any | 🟢 **High ROI** | Keep current cadence, consider increasing |
+| 10 - 100 | any | 🟡 **Mid ROI** | Current cadence is fine |
+| < 10 | < 50 | 🔴 **Below threshold** | Drop from fan-out (recommend `min_followers_to_promote = 100`) |
+| < 10 | ≥ 50 | ⚪ **Diminishing returns** | Reduce fan-out volume; consider `tease-newsletter` over `promote-newsletter` |
+
+**Worked examples** (confirmed 2026-05-18 against real data):
+
+| Channel | Sent | Avg imps/post | Eng rate | Score | Bucket |
+|---|---:|---:|---:|---:|:---|
+| LinkedIn page (EVC) | 5 | 13 | 12.42% | `(13 * 0.1242 * 100) / 6 = 26.9` | 🟡 Mid (saved from 🔴 by strong eng rate on tiny audience) |
+| Instagram (EVC) | 6 | 157.2 | 1.06%* | `(157.2 * 0.0106 * 100) / 7 = 23.8` | 🟡 Mid |
+| Facebook (EVC) | 1 | n/a | n/a | n/a | ⚪ Data unavailable (see `Edge: facebook-impressions-unavailable`) |
+
+\* IG eng rate computed via the fallback below (Buffer doesn't expose a single "Engagement Rate" field for IG).
+
+**Instagram engagement-rate fallback** (`Edge: instagram-no-eng-rate-field`):
+
+Buffer Analyze's IG overview returns `Posts / Impressions / Reach / Likes / Comments / Daily average impressions / Average likes per post / Average comments per post` — no aggregated "Engagement Rate" line. Compute it:
+
+```
+eng_rate_pct = ((likes + comments) / impressions) * 100
+```
+
+Use impressions (not reach) as the denominator — keeps the rate comparable to LinkedIn's `engagement_rate` field which is `(reactions + comments + reposts) / impressions`.
+
+**Facebook impressions gap** (`Edge: facebook-impressions-unavailable`): Buffer shows reactions and new fans but the Impressions field is missing entirely. Without impressions you cannot compute either `avg_imps_per_post` or `eng_rate`. Set `channel_roi_score: null`, `bucket: "data_unavailable"`, and note in the verdict.
+
+**Output shape** to include in the snapshot under `channel_roi[]`:
+
+```json
+"channel_roi": [
+  {
+    "channel": "linkedin/page (EVC)",
+    "followers": 28,
+    "sent": 5,
+    "avg_imps_per_post": 13,
+    "eng_rate_pct": 12.42,
+    "channel_roi_score": 26.9,
+    "bucket": "yellow_mid",
+    "verdict": "Mid ROI — current cadence fine, but absolute reach is tiny (13 imps/post)"
+  },
+  {
+    "channel": "facebook/page (EVC)",
+    "sent": 1,
+    "channel_roi_score": null,
+    "bucket": "data_unavailable",
+    "verdict": "FB Impressions field unavailable; manual eyeball only"
+  }
+]
+```
+
 ### Phase 3 — Compose snapshot
 
 Combine operational + engagement data into a single JSON object. **CRITICAL schema rule (added 2026-05-03 after the flywheel reported total_followers=26 when the actual was ~2,200):** distinguish "channels Buffer Analyze can scrape engagement for" (the engagement-tracked subset) from "channels we post to" (the full posting set). Conflating the two gives downstream consumers like `/flywheel` a false total.
@@ -513,6 +584,8 @@ Text-pattern extractors (finding `<li>` by `innerText` shape) are more resilient
 
 - **Subdomain cookie gap.** *Label: `Edge: subdomain-cookie-gap`* ~~Cookies imported for `buffer.com` do NOT automatically authenticate `analyze.buffer.com`.~~ **Updated 2026-04-27:** cookie import for `buffer.com` DOES carry to `analyze.buffer.com` in current Buffer setup — confirmed working via `$B cookie-import-browser chrome buffer.com` then nav to `analyze.buffer.com` succeeds without redirect-to-login. Try cookie import first; only fall back to manual handoff login if the cookie path actually fails.
 - **No "Last 7 days" preset.** *Label: `Edge: no-last-7-days-preset`* Buffer Analyze only offers This/Last month, This/Last week, and Custom. The skill uses **Last week** for a 7-day window (complete Monday-Sunday). "This week" is broken on Mondays (0 days of data). For arbitrary windows, the skill falls back to Custom — implementation note below.
+- **Date picker is inline, not a popover.** *Label: `Edge: analyze-picker-already-inline`* Confirmed 2026-05-18: on per-channel overview pages, all four preset buttons ("This month", "Last month", "This week", "Last week") are rendered inline in the page header — there's no "open the picker" click first. Just `$B click` the target preset directly. Earlier skill text suggested expanding a popover; that's a stale assumption.
+- **Instagram has no Engagement Rate field.** *Label: `Edge: instagram-no-eng-rate-field`* Confirmed 2026-05-18: Buffer Analyze IG overview returns Posts/Impressions/Reach/Likes/Comments/Daily-avg-impressions/Avg-likes-per-post/Avg-comments-per-post — no aggregated `Engagement Rate` line. **Fallback:** compute it as `((likes + comments) / impressions) * 100`. Use impressions (not reach) as the denominator so the result is comparable to LinkedIn's engagement_rate field which is `(reactions + comments + reposts) / impressions`. Worked example: IG 943 imps, 10 likes, 0 comments → 1.06% eng rate.
 - **Instagram requires Facebook Business link.** *Label: `Edge: instagram-not-linked`* If the IG channel isn't linked to a Facebook Business Page, Buffer shows an "Unlock Instagram Analytics" banner and no engagement data. The skill detects the banner and flags `engagement: { unavailable: true, reason: "ig_not_linked" }` in the JSON — doesn't fail the snapshot.
 - **Facebook Pages impressions.** *Label: `Edge: facebook-impressions-unavailable`* Banner: "Learn why impressions are not available for Facebook Pages." For affected channels, the Impressions field is missing entirely. Parse as `null`, not `0`.
 - **Buffer Analyze DOM uses hashed class names.** *Label: `Edge: analyze-hashed-classes`* Text-pattern `<li>` extractors are the primary pattern. When selectors break, see "Re-discovery" below.
