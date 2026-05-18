@@ -34,7 +34,7 @@ The Sunday weekly review flow when every source is healthy. ~10-15 min wall-cloc
 
 **Phase 1 — Resolve window.** Default `DAYS=7`; compute `SINCE` / `UNTIL` and `REPORT=$SNAP_DIR/$(date -u +%Y-%m-%d).md`.
 
-**Phase 2 — YouTube.** `go run . analyze --since $SINCE` in `~/dev/youtube_analytics` (reads `data/videos.json` — see `Edge: youtube-videos-json-stale`). Grep the formatted output for streams/long-form/shorts/views/revenue/subs-gained. Compute Priority 1 (streams 3-4×/wk) + Priority 4 (long-form ≥2/wk).
+**Phase 2 — YouTube.** `go run . analyze --since $SINCE` in `~/dev/youtube_analytics` (reads `data/videos.json` — see `Edge: youtube-videos-json-stale`). Grep the formatted output for streams/long-form/shorts/views/revenue/subs-gained. Compute Priority 1 (long-form 2-3/wk — counts essays + newsletters) + Priority 4 (1 livestream/wk as supplement, not primary). **Strategy pivoted 2026-05-18** — see `project_content_strategy_pivot_2026_05_18.md` memory.
 
 **Phase 3 — beehiiv.** Two MCP calls: `beehiiv_stats` (current subs + delta) and `beehiiv_attribution` (source mix). If the tool is missing, hit `Edge: beehiiv-mcp-restart-required`. Compute Priority 2 pace toward 1,800 in 12 months and YouTube attribution %.
 
@@ -133,15 +133,17 @@ Extract key numbers from the output:
 
 The `analyze` output is human-formatted — use simple grep/awk to pluck numbers. If the format changes, fall back to counting video entries in `data/videos.json` directly with jq.
 
-**Priority 1 check** (streams 3-4×/week):
-- actual_lives / DAYS * 7 = streams_per_week
-- target: 3-4
-- status: on_track if ≥3, behind otherwise
+**Priority 1 check** (long-form 2-3/week — pivoted 2026-05-18 from "streams 3-4×/week"):
+- `long_form_per_week = (actual_long_form_videos + actual_newsletters) / DAYS * 7`
+- Newsletters count toward this — long-form essays and newsletters are the same priority. Pull newsletter count from beehiiv stats (Phase 3): `new_subs_in_window > 0 OR recent_posts contains item in window`.
+- target: 2-3/week combined long-form output (essays + newsletters)
+- status: on_track if ≥2, behind otherwise
 
-**Priority 4 check** (long-form volume):
-- target: 2-3 long-form videos per week
-- actual_long_form / DAYS * 7 = long_form_per_week
-- status: on_track if ≥2
+**Priority 4 check** (1 livestream/week as community surface — pivoted 2026-05-18 from "long-form 2-3/week"):
+- `streams_per_week = actual_lives / DAYS * 7`
+- target: 1/week (was 3-4/week pre-2026-05-18)
+- status: on_track if ≥1, OR if `long_form_per_week ≥ 3` (the priority is "keep the surface alive"; if long-form output is strong, skipping the stream is fine)
+- Skipping streams entirely for >2 consecutive weeks should flag as 🟡 (not 🔴 — Priority 1 is the primary now)
 
 ### Phase 3 — beehiiv
 
@@ -329,10 +331,12 @@ Build the markdown with a fixed structure so snapshots are diffable week-over-we
 **Window:** YYYY-MM-DD → YYYY-MM-DD (N days)
 **Generated:** YYYY-MM-DDTHH:MM:SSZ
 
-## Priority 1 — Stream 3-4×/week
-- Streams this window: N (target: 3-4/week)
+## Priority 1 — Ship 2-3 long-form pieces/week
+- Long-form videos this window: N
+- Newsletters this window: N
+- Combined long-form output: N (target: 2-3/week)
 - Pace: X/week
-- Status: [🟢 on track | 🟡 under | 🔴 off]
+- Status: [🟢 on track ≥2 | 🟡 under | 🔴 off]
 
 ## Priority 2 — Push viewers to Beehiiv
 - Current subs: N (target: 1,800 in 12mo)
@@ -354,11 +358,11 @@ Build the markdown with a fixed structure so snapshots are diffable week-over-we
 - Top cross-channel post: <service>: <snippet> (<N> engagement)
 - Status: [🟢 fresh | ⚪ no recent Buffer data | 🟡 stale (>14d)]
 
-## Priority 4 — Long-form ≥ shorts volume
-- Long-form this window: N (target: 2-3/week)
-- Shorts this window: N
-- Ratio: long-form / shorts
-- Status: [🟢 | 🟡 | 🔴]
+## Priority 4 — 1 livestream/week as community + breakout surface
+- Streams this window: N (target: 1/week)
+- Pace: X/week
+- Status: [🟢 ≥1/wk OR Priority 1 ≥3 this week | 🟡 0 this week, ≤2 consecutive weeks | 🔴 0 for 3+ consecutive weeks]
+- Skipping streams when long-form output is strong is acceptable — this priority is "keep the surface alive," not "force a cadence at the cost of long-form."
 
 ## Priority 5 — Every engagement → content
 - Active pipeline: $X (N deals)
