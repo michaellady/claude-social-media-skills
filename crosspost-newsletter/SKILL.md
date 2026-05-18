@@ -804,30 +804,72 @@ If not logged in, the user must log in manually in Chrome — Medium sessions ar
 
 If the title field is left empty when Publish is clicked, Medium will auto-pull the body's first paragraph as both the story title AND the URL slug — usually wrong (e.g. "Two weeks ago I started talking about…" instead of the actual article title). The publish-confirmation page shows the title field char count near the preview — verify there too before clicking Publish.
 
-**Step 4 — Insert the article body via naive copy-paste from beehiiv (REQUIRES MANUAL USER ACTION):**
+**Step 4 — Insert the article body via osascript NSPasteboard + Claude in Chrome cmd+v (DEFAULT, no user action):**
 
-The cleanest approach is to copy the rendered article from the beehiiv page and paste into Medium — this brings over body text, formatting, AND images in a single operation. **BUT: programmatic `cmd+c`/`cmd+v` through Claude in Chrome does NOT work reliably across tabs.** Chrome's clipboard operations require the tab to be OS-focused; the extension can send keyboard events to a specific tabId, but the copy only lands on the system clipboard when that tab is the user-focused tab. We confirmed this empirically — `navigator.clipboard.write()` fails with "Document is not focused" when called on a backgrounded tab.
+Build clean HTML with inline beehiiv CDN `<img>` tags, push it onto the macOS pasteboard via osascript `«data HTML${HEX}»`, click into the Medium body, then dispatch a real cmd+v via Claude in Chrome. Medium fetches the images server-side from the CDN URLs in the paste, so no upload dance is needed. Confirmed working on the 2026-05-17 Fix-Forward run: single paste produced 92 paragraphs / 11 figures / 11 imgs / 0 empty-H3-before-figure artifacts / "Saved" within 1 second.
 
-**Working approach: user performs the copy-paste manually.**
+1. **Build the Medium-targeted HTML** from the article-extract JSON. Walk extracted parts in document order; emit `<p>`/`<h2>` verbatim; for image parts, emit an inline `<img src="<beehiiv-cdn-url>" alt="...">` tag (do NOT use the empty-`<p>` placeholder pattern from LinkedIn — Medium fetches the images directly from the CDN URLs in the paste).
 
-1. Open the beehiiv article in a second tab:
+   ```python
+   # See /tmp/build-medium-html.py from the 2026-05-17 run for a working example
+   for part in extracted_parts:
+     if part["type"] == "p":      out.append(f"<p>{part['html']}</p>")
+     elif part["type"] == "h2":   out.append(f"<h2>{part['text']}</h2>")
+     elif part["type"] == "img":  out.append(f'<img src="{part["src"]}" alt="...">')
+   ```
+
+2. **Open the Medium editor tab in Claude in Chrome.** No second tab is needed — the HTML never crosses tabs; it goes through the OS pasteboard.
+
    ```
    mcp__claude-in-chrome__tabs_create_mcp
-   mcp__claude-in-chrome__navigate (tabId: <beehiivTab>, url: "<beehiiv-post-url>")
+   mcp__claude-in-chrome__navigate (tabId: <mediumTab>, url: "https://medium.com/new-story")
    ```
 
-2. Type the Medium title, press Enter to move cursor into the body, then **hand off to the user**:
-   > "Please switch to the beehiiv tab, select the article body (triple-click + shift-click to extend, or Cmd+A inside `.dream-post-content-doc`), Cmd+C, switch back to the Medium tab, click into the body, Cmd+V. The first click into the Medium body can be tricky — aim for the empty line right under the title. Reply `done` when pasted."
+3. **Push the HTML onto macOS NSPasteboard via osascript** with the `«data HTML${HEX}»` literal. AppleScript can't coerce a string to `«class HTML»` — only the hex-encoded `«data HTML...»` form works:
 
-3. After the user replies, verify:
+   ```bash
+   HEX=$(cat /tmp/article-body-medium.html | xxd -p | tr -d '\n')
+   osascript -e "set the clipboard to «data HTML${HEX}»"
+   ```
+
+4. **Focus the Medium body editor and dispatch cmd+v.** The body editor is the contenteditable with `data-default-value` containing "story" or "body" (or the last contenteditable if no match — Medium fluctuates):
+
+   ```python
+   # In javascript_tool against the Medium tab:
+   const eds = [...document.querySelectorAll('[contenteditable="true"]')];
+   const body = eds.find(e => (e.getAttribute('data-default-value') || '').toLowerCase().includes('story') ||
+                                (e.getAttribute('data-default-value') || '').toLowerCase().includes('body')) || eds[eds.length - 1];
+   body.focus();
+   ```
+
+   Then dispatch real cmd+v through Claude in Chrome (NOT a synthetic ClipboardEvent — Medium's automation-detection sentinel blocks synthetic paste):
+
+   ```
+   mcp__claude-in-chrome__computer (action: "key", text: "cmd+v", tabId: <mediumTab>)
+   ```
+
+5. **Verify the paste landed.** Count paragraphs, h3s (Medium downgrades h2→h3), figures, imgs. Save indicator should read "Saved" within 1-2 seconds.
+
    ```javascript
    const editor = [...document.querySelectorAll('[contenteditable="true"]')].find(el => el.querySelectorAll('p').length > 0);
-   ({ paras: editor?.querySelectorAll('p').length, imgs: editor?.querySelectorAll('img').length, figs: editor?.querySelectorAll('figure').length, h3s: editor?.querySelectorAll('h3').length, bqs: editor?.querySelectorAll('blockquote').length });
+   const saveIndicator = [...document.querySelectorAll('*')].find(e => ['Saved', 'Saving...', 'Draft', 'Saved just now'].includes(e.textContent))?.textContent;
+   ({paragraphs: editor?.querySelectorAll('p').length, h3s: editor?.querySelectorAll('h3').length, figures: editor?.querySelectorAll('figure').length, imgs: editor?.querySelectorAll('img').length, save: saveIndicator})
    ```
 
-Expect: ~45+ paragraphs, 4-5 images (Medium auto-promotes the first body image to a hero slot — this is fine), 5 h3s for section headings (Medium downgrades h2 → h3), **0 blockquotes** (Medium's paste sanitizer often flattens opening blockquotes to plain `<p>` lines — see "Blockquote gets flattened on paste" below).
+   Expect: paragraph/heading/image counts match source within ±1-2, `save: "Saved"`. If `save` stays `"Saving..."` or shows "Something is wrong and we cannot save your story", the paste tripped Medium's automation sentinel — discard the draft and retry on a fresh `/new-story` (do NOT try to recover an automation-locked draft).
 
-**Do NOT attempt the programmatic cmd+c/cmd+v sequence** — it silently fails (the Medium body ends up empty or with garbage like "22)"), and each failed attempt wastes a dozen tool calls. Go straight to the manual handoff.
+**Why this is the default (vs the older manual cmd+c-from-beehiiv handoff):**
+- No user action required. The user only needs to be logged into Medium in their real Chrome.
+- Bypasses both blockers of the synthetic-clipboard path: cross-tab clipboard never happens (HTML goes through OS pasteboard before the cmd+v), and the cmd+v dispatch is a real keystroke through Claude in Chrome's CDP, which doesn't trip Medium's "Something is wrong" sentinel (only synthetic ClipboardEvent dispatch does).
+- Cleaner output than the manual paste. The 2026-05-17 run got 92 paragraphs + 11 figures + 0 empty-H3-before-figure artifacts on first try; the manual paste path historically left an empty `<h3>` before each figure that required per-figure cleanup.
+
+**Fallback to manual user paste** only if the osascript path fails (e.g., a Medium UI revision that strips inline `<img>` tags from pasted HTML, breaking the image-fetch behavior). The manual handoff steps:
+
+> "Please switch to the beehiiv tab, select the article body (Cmd+A inside `.dream-post-content-doc`), Cmd+C, switch to Medium, click into the body, Cmd+V. Reply `done` when pasted."
+
+After the manual paste, the same verify step applies. Manual paste typically leaves empty `<h3>` siblings before each figure — see Step 5 conditional cleanup.
+
+**Do NOT attempt synthetic ClipboardEvent dispatch with DataTransfer** as the primary path. Medium's automation-detection sentinel detects the event provenance and locks the draft into the "Something is wrong" state — recoverable only by discarding and starting fresh on `/new-story`. The osascript-NSPasteboard + real-cmd+v path bypasses this because the JS doesn't dispatch the paste event; the browser's native paste handler does, reading from NSPasteboard.
 
 **Step 5 — Conditionally clean up empty H3s that appear before each image (skip if none):**
 
@@ -1399,31 +1441,15 @@ ProseMirror clipboard paste preserves text formatting but strips `<img>` tags. *
 ### Substack duplicate title fields
 The editor has both sidebar metadata fields and visible textarea fields. `$B fill` may target the wrong one. **Workaround:** use JS to find textareas by placeholder text and set `.value` directly.
 
-### Medium paste — the working programmatic path is osascript-to-NSPasteboard + Claude in Chrome cmd+v
-Confirmed 2026-04-26 after testing every other approach. **The reliable Medium paste flow:**
+### Medium paste — paths that do NOT work (and why)
+The working default path (osascript NSPasteboard + Claude in Chrome cmd+v) is documented in Phase 4 Step 4. This entry captures the dead-end paths so they don't get attempted again — each one wastes 5-20 tool calls before failing in a way that's hard to diagnose:
 
-1. Build clean HTML locally with inline `<img src="https://media.beehiiv.com/...">` tags pointing to the beehiiv CDN URLs (the CDN is publicly accessible — no auth needed). For positions where you want images to land, embed the actual `<img>` tags (not empty placeholders — Medium won't substitute them like LinkedIn does).
-2. Put the HTML on the macOS pasteboard via osascript with the `«data HTML${HEX}»` literal:
-   ```bash
-   HEX=$(cat /tmp/article-body-with-imgs.html | xxd -p | tr -d '\n')
-   osascript -e "set the clipboard to «data HTML${HEX}»"
-   ```
-3. Click into the Medium body and dispatch real `cmd+v` via Claude in Chrome's `computer` action (key="cmd+v"). The keystroke triggers the browser's native paste handler which reads from NSPasteboard.
-4. Verify the paste landed: count paragraphs, h3s (Medium downgrades h2→h3), blockquotes, links, imgs, figures. Save indicator should read "Saved" within 1-2 seconds. If save indicator stays "Saving..." or shows "Something is wrong and we cannot save your story," discard and retry.
+- `navigator.clipboard.write()` from a backgrounded tab → fails with "Document is not focused"
+- Programmatic `cmd+c` on the beehiiv tab + `cmd+v` on the Medium tab → Claude in Chrome's keyboard events route via CDP, not via OS focus, so the OS clipboard never gets the beehiiv content
+- Dispatching a synthetic `ClipboardEvent('paste', ...)` with DataTransfer on the Medium editor → the paste APPEARS to work (content inserts cleanly) but Medium's save sentinel detects the automation pattern and locks the draft permanently
+- `osascript -e 'set the clipboard to "..." as «class HTML»'` → AppleScript can't coerce a string to `«class HTML»`; you need the `«data HTML${HEX}»` literal with hex-encoded bytes
 
-**This path bypasses both blockers** the older skill warned about:
-- Cross-tab clipboard requires the OS-focused tab — but here the HTML never crosses tabs; it's already on the OS pasteboard via osascript before the cmd+v.
-- Programmatic ClipboardEvent dispatch into a contenteditable triggers Medium's automation-detection sentinel (the "Something is wrong" lock). Real cmd+v through the browser's native paste handler does NOT trigger it.
-
-**What does NOT work and wastes time:**
-- `navigator.clipboard.write()` from a backgrounded tab — fails with "Document is not focused"
-- Programmatic `cmd+c` on the beehiiv tab + `cmd+v` on Medium tab — Claude in Chrome's keyboard events route to the targeted tabId via CDP, not via OS focus, so the OS clipboard never gets the beehiiv content
-- Dispatching a synthetic `ClipboardEvent('paste', ...)` with DataTransfer on the Medium editor — the paste APPEARS to work (content inserts cleanly) but Medium's save sentinel detects the automation pattern and locks the draft permanently
-- `osascript -e 'set the clipboard to "..." as «class HTML»'` — AppleScript can't coerce a string to «class HTML»; you need the `«data HTML${HEX}»` literal with hex-encoded bytes
-
-**Two manual user actions to budget for, even with this working path:**
-1. The "Something is wrong" lock CAN still trip if the JS-based paste was attempted earlier in the same draft. If you've already tried any other paste method, discard the draft and start fresh on `/new-story` before trying the osascript+cmd+v approach.
-2. Topic autocomplete dropdown items don't always commit on programmatic click. Type the topic, wait for the dropdown, then either click on it (with real coordinates aimed at the middle of the option text) or have the user click. Tab key removes focus without committing; chained Enter+type can merge consecutive tags into one corrupted chip.
+**Recovery if you've already tripped Medium's "Something is wrong" sentinel:** discard the draft (`window.onbeforeunload = null; location.href = '/new-story'`) and start fresh on `/new-story` before trying the osascript+cmd+v approach. The lock persists across reloads of the same draft URL.
 
 ### Medium beehiiv image fetch works via paste (no CORS issue)
 When `<img src="https://media.beehiiv.com/...">` tags are part of the pasted HTML, Medium fetches them server-side and inserts proper `<figure>` elements in the editor body. There's no CORS issue with this path — the older skill section on "Medium image upload via JS" (using `new Image()` + canvas + File blob) is only needed if you're trying to upload images that aren't already at a CDN-accessible URL. For beehiiv-sourced articles, just include the CDN URLs in the paste HTML and skip the JS upload dance entirely.
