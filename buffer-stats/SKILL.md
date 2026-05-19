@@ -37,6 +37,8 @@ For a weekly Buffer stats run when nothing goes wrong. ~2-4 min wall-clock. Each
 
 **Step 5 — Compose snapshot JSON (5 sec).** Build the object with `engagement_tracked_channels` (Analyze-scrapeable subset) AND `posting_channels` (full set) as separate counts — never collapse them (see `Edge: engagement-vs-posting-channel-conflation`). Channels Analyze can't scrape land in `channels_engagement_unavailable[]`. Include a `channel_roi[]` array with `{channel, sent, avg_imps_per_post, eng_rate_pct, channel_roi_score, bucket, verdict}` per channel — `null` for channels with missing inputs.
 
+**Step 5.5 — JOIN tagIds → format_tag, emit `format_engagement` (5 sec).** For every post in `top_posts[]` and every sent post enumerated in Step 2, read `tags { id name }` from the MCP payload and resolve against `_shared/buffer-post-prep/tag-ids.local.json` (inverted: tagId → `format:<name>`). Write `top_posts[].format_tag` (the **real** tag) alongside the existing `format_tag_guess` (kept as fallback). Roll up into a top-level `format_engagement` object keyed by `format:<name>` with `{posts, reactions, impressions, eng_rate_pct, channels{}}`. See **Phase 3.5** below. Edge cases: `Edge: tag-ids-missing` (no lookup file, every post resolves to `null`), `Edge: post-has-no-format-tag` (older or manual posts — fall back to `format_tag_guess` for display, exclude from aggregate).
+
 **Step 6 — Week-over-week deltas (2 sec).** Find newest snapshot in `cache/` older than `delta_window_days` (7). Compute Δfollowers / Δengagement_rate / Δqueue_depth / Δsent_count per channel. First run renders `—` (see `Edge: delta-bootstrap`).
 
 **Step 7 — Format-performance attribution (10 sec).** For each sent post in window, read its `format:<name>` tag via `mcp__buffer__get_post`. Aggregate by `(channel, format)` → avg impressions, avg engagement, eng rate. Surface a verdict per channel.
@@ -61,6 +63,8 @@ For a weekly Buffer stats run when nothing goes wrong. ~2-4 min wall-clock. Each
 | `Edge: custom-date-range-unimplemented` | `--days` value other than 7 or ~30 |
 | `Edge: delta-bootstrap` | First run — no prior snapshot to diff against |
 | `Edge: engagement-vs-posting-channel-conflation` | total_followers reads tiny because LinkedIn-personal/Threads omitted |
+| `Edge: tag-ids-missing` | `_shared/buffer-post-prep/tag-ids.local.json` not present — `format_tag` resolves to `null` for every post |
+| `Edge: post-has-no-format-tag` | Pre-convention or manual post — no `format:*` tag, falls back to `format_tag_guess` for display only |
 
 Each label corresponds to an entry in **Known issues / robustness notes** below.
 
@@ -451,6 +455,94 @@ Write both outputs:
 - `cache/snapshot-YYYY-MM-DD.json` — flywheel-ingest shape (stable fields for diffability)
 - `cache/snapshot-YYYY-MM-DD.md` — human-readable report (regenerated from the JSON)
 
+### Phase 3.5 — Resolve real `format_tag` from Buffer tagIds (JOIN)
+
+This is the **real** closed-loop key. Phase 2's engagement scrape produces `top_posts[]` with text snippets but no tag attribution; Phase 1's MCP calls return each post's `tagIds` array but no impressions/reactions. This phase JOINs the two so downstream consumers can answer "which formats actually work" instead of guessing from snippet text.
+
+**Why this exists:** snapshots prior to 2026-05-19 carry a `format_tag_guess` field that was inferred by eyeballing each post's snippet (`"this looks like a verbatim_quote because…"`). That guess is unreliable and not machine-comparable across weeks. The promote-* and carousel-newsletter skills already set `tagIds` at compose time via `_shared/buffer-post-prep` — this phase reads them back.
+
+**GraphQL field shape** (confirmed against `_shared/buffer-post-prep/README.md` setup query): each `Post` node exposes `tags { id name }` where `id` is the 24-char hex Tag ID and `name` is the human label (e.g. `"format:verbatim-quote"`). The MCP's `mcp__buffer__get_post(id)` returns the same `tags` field; `list_posts` also includes it on each edge.
+
+**Lookup file:** `_shared/buffer-post-prep/tag-ids.local.json` (gitignored, per-organization). Shape is `{ "<format_key>": "<24-hex-tagId>" }` — keys match `_shared/format_tags.json` keys (e.g. `verbatim_quote`, `teaser`, `carousel`, `link_share`, `batch_summary`). Invert it on load to get `tagId → format_key`.
+
+#### Step 3.5a — Load the tagId → format_key lookup
+
+```bash
+REPO_ROOT=$(git -C ~/dev/claude-social-media-skills rev-parse --show-toplevel)
+TAG_IDS_FILE="$REPO_ROOT/_shared/buffer-post-prep/tag-ids.local.json"
+if [ ! -f "$TAG_IDS_FILE" ]; then
+  echo "buffer-stats: WARN $TAG_IDS_FILE missing — falling back to format_tag_guess for all posts (see Edge: tag-ids-missing)"
+  TAG_LOOKUP="{}"
+else
+  TAG_LOOKUP=$(jq 'with_entries(.value as $id | .value = .key | .key = $id) | with_entries(.value = "format:" + (.value | gsub("_"; "-")))' "$TAG_IDS_FILE")
+fi
+```
+
+The `jq` invert flips `{ "verbatim_quote": "69ef..." }` into `{ "69ef...": "format:verbatim-quote" }` so per-post resolution is an O(1) hash lookup.
+
+#### Step 3.5b — Resolve `format_tag` for every post in `top_posts[]` and for every sent post in the window
+
+For each post discovered in Phase 2 (`top_posts[]`) AND every sent post enumerated in Phase 1 step 3 (the `list_posts` calls with `status: [sent]`):
+
+1. Pull `tagIds` from the MCP payload — `list_posts` already returns `tags { id name }` on each edge, so usually no extra round-trip is needed. If the engagement scrape produced a post that wasn't in the MCP set (rare — only happens when the post is outside the MCP `createdAt` window), call `mcp__buffer__get_post(id)` for that single post.
+2. For each tagId on the post, look it up in `TAG_LOOKUP`. Stop at the first match (a post should only have one `format:*` tag, but other tags like `via:network` may coexist — ignore those).
+3. Write the resolved name to `format_tag`. If no `format:*` tag is present on the post, fall back to `format_tag_guess` (existing snippet-based inference). Always emit both fields when both are available; downstream consumers prefer `format_tag` over `format_tag_guess`.
+
+Example resolution:
+
+```js
+const formatTag = (post.tags || [])
+  .map(t => TAG_LOOKUP[t.id])
+  .find(name => name && name.startsWith("format:"));
+post.format_tag = formatTag || null;
+// keep post.format_tag_guess for fallback display only
+```
+
+#### Step 3.5c — Emit `format_engagement` aggregate
+
+Roll the per-post `format_tag` up into a top-level `format_engagement` object in the snapshot. Posts whose `format_tag` is `null` (no real tag, only a guess) are **excluded** from this aggregate — the goal is high-confidence attribution, and `format_tag_guess` belongs in a separate exploratory table if anywhere.
+
+Schema:
+
+```json
+"format_engagement": {
+  "format:verbatim-quote": {
+    "posts": 7,
+    "reactions": 14,
+    "impressions": 312,
+    "eng_rate_pct": 4.49,
+    "channels": {
+      "linkedin/page": { "posts": 3, "reactions": 6, "impressions": 39 },
+      "linkedin/profile": { "posts": 4, "reactions": 8, "impressions": 273 }
+    }
+  },
+  "format:teaser": { "posts": 2, "reactions": 1, "impressions": 188, "eng_rate_pct": 0.53, "channels": { "...": { "..." : 0 } } },
+  "format:carousel": { "posts": 1, "reactions": 39, "impressions": 4293, "eng_rate_pct": 0.91, "channels": { "instagram/business": { "posts": 1, "reactions": 39, "impressions": 4293 } } }
+}
+```
+
+Per-format `eng_rate_pct` = `(reactions / impressions) * 100`, rounded to two decimals. When `impressions` is `null` for any contributing post (e.g. Facebook — see `Edge: facebook-impressions-unavailable`), drop that post from the impressions/eng_rate roll-up but keep it in `posts` and `reactions` so the count still reflects reality; note the partial coverage in the snapshot's `flags.format_engagement_partial[]` array.
+
+Channel keys use the same `service/type` shape as `channels[].service` + `channels[].type` (e.g. `linkedin/page`, `instagram/business`) for cross-referencing. Do **not** collapse across channels — Phase 5's recommendation engine needs the per-`(format, channel)` cell because a format that works on LinkedIn personal may flop on a LinkedIn page.
+
+#### Edge: tag-ids-missing
+
+If `_shared/buffer-post-prep/tag-ids.local.json` doesn't exist, every post's `format_tag` resolves to `null` and `format_engagement` is `{}`. The skill must still produce a valid snapshot — the engagement scrape and operational data are independent of this JOIN. Surface as `flags.tag_ids_missing: true` and print a one-line notice in the markdown report: "Closed-loop attribution disabled — no `_shared/buffer-post-prep/tag-ids.local.json`. Run setup per `_shared/buffer-post-prep/README.md` to enable per-format engagement attribution."
+
+#### Edge: post-has-no-format-tag
+
+Posts created before the format-tagging convention shipped (anything before 2026-04-27 for most channels) and posts created outside the promote-*/carousel-newsletter skills (e.g. manual Buffer web-UI posts, `via:network` auto-cross-posts) carry no `format:*` tag. `format_tag` stays `null`; `format_tag_guess` may still be populated by the snippet-inference path for display purposes only. The `format_engagement` aggregate excludes these posts — counting them as "untagged" rather than guessing inflates whichever format the inference happens to lean toward.
+
+Track untagged volume in `flags.untagged_posts`:
+
+```json
+"flags": {
+  "untagged_posts": { "count": 4, "channels": ["linkedin/profile", "threads/profile"] }
+}
+```
+
+This is the same signal `audit-buffer-queue` surfaces but computed from sent-post data here.
+
 ### Phase 4 — Week-over-week deltas
 
 ```bash
@@ -475,7 +567,9 @@ Bootstrap case: first run has no prior snapshot → deltas render as `—`.
 
 This is the **measurement** half of the closed loop. The promote-* skills tag every post they create with a `format:<name>` tag (`format:verbatim-quote`, `format:teaser`, `format:carousel`, `format:link-share`, `format:long-form-pulse`, `format:batch-summary`). Group sent posts by tag, compute per-format engagement, and surface which formats are working on which channels.
 
-For each sent post in the window, fetch its tags via `mcp__buffer__get_post`. For each `format:<name>` tag, aggregate:
+**Phase 3.5 already did the heavy lifting** — it resolved every post's `format_tag` from its `tagIds` and produced the top-level `format_engagement` aggregate. Phase 5 consumes that aggregate to produce the rendered table and the verdicts; it should **not** re-walk the post list or re-call `get_post`. If `format_engagement` is `{}` (the lookup file was missing), Phase 5 renders "Closed-loop attribution disabled — see `flags.tag_ids_missing`" and skips the table.
+
+For each sent post in the window, the per-post `format_tag` set in Phase 3.5 already feeds the aggregate. For each `format:<name>` key in `format_engagement`, surface:
 - count of posts
 - sum of impressions
 - sum of engagements (reactions + comments + reposts)

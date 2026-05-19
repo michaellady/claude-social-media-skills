@@ -46,6 +46,9 @@ For a full `/linkedin-stats` run when nothing goes wrong. ~60-90 sec wall-clock.
 | `Edge: newsletter-url-shape` | Newsletter URL missing the `<id>` suffix; subscriber count fails to parse |
 | `Edge: paid-features-missing` | A field comes back blank because it requires LinkedIn Premium / Creator Pro |
 | `Edge: delta-bootstrap` | Deltas render as `—` because there's no prior snapshot to compare against |
+| `Edge: activity-feed-selector-drift` | Phase 3b returns 0 cards from the activity feed |
+| `Edge: abbreviated-counts` | Phase 3b reactions/comments come back as `1.2K` instead of an int |
+| `Edge: lazy-load-stalled` | Phase 3b scroll-loop captures fewer cards than `max_posts_per_scrape` |
 
 Each label corresponds to a heading in **Known issues / robustness notes** below.
 
@@ -211,7 +214,139 @@ $B js "
 PROFILE_FOLLOWERS=$(cat /tmp/ln-profile-followers.txt | tr -d '"')
 ```
 
-Top posts: from Creator analytics posts view (already loaded in Phase 2 if we're doing the full report) — or navigate to `https://www.linkedin.com/in/<handle>/recent-activity/all/` and pull the first N entries with engagement counts.
+Top posts: from Creator analytics posts view (already loaded in Phase 2 if we're doing the full report) — or navigate to `https://www.linkedin.com/in/<handle>/recent-activity/all/` and pull the first N entries with engagement counts. The full per-post scrape lives in Phase 3b below.
+
+### Phase 3b — Per-post engagement scrape (added 2026-05-19)
+
+Closes the #1 closed-loop measurement gap: scrape `linkedin.com/in/<handle>/recent-activity/all/` for the last N posts and emit structured per-post engagement under `profile.recent_posts[]` in the snapshot. See `SPEC-per-post-scrape.md` for the design rationale.
+
+Triggered as part of the default `/linkedin-stats` run (additive — Phase 3 still emits the aggregate follower count). Skipped when only `newsletter` is requested.
+
+```bash
+PROFILE_HANDLE=$(jq -r .profile_handle "$CONFIG_FILE")
+MAX_POSTS=$(jq -r '.profile.max_posts_per_scrape // 20' "$CONFIG_FILE")
+SKIP_REPOSTS=$(jq -r '.profile.skip_reposts // false' "$CONFIG_FILE")
+RECENT_OUT=/tmp/ln-recent-posts.json
+
+$B goto "https://www.linkedin.com/in/${PROFILE_HANDLE}/recent-activity/all/"
+sleep 3
+
+$B js "
+  const MAX = ${MAX_POSTS};
+  const container = document.querySelector('main') || document.scrollingElement;
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  for (let i = 0; i < 6; i++) {
+    container.scrollTop = container.scrollHeight;
+    await sleep(1500);
+    if (document.querySelectorAll('[data-id^=\"urn:li:activity:\"]').length >= MAX) break;
+  }
+  const seeMores = document.querySelectorAll('.feed-shared-inline-show-more-text button, button.see-more');
+  for (const b of seeMores) { try { b.click(); } catch (_) {} }
+  await sleep(400);
+
+  const parseCount = (s) => {
+    if (!s) return 0;
+    const m = String(s).replace(/,/g, '').match(/([\\d.]+)\\s*([KMkm]?)/);
+    if (!m) return 0;
+    const n = parseFloat(m[1]);
+    const suf = m[2].toUpperCase();
+    return Math.round(suf === 'K' ? n * 1e3 : suf === 'M' ? n * 1e6 : n);
+  };
+
+  const cards = Array.from(document.querySelectorAll('[data-id^=\"urn:li:activity:\"]')).slice(0, MAX);
+  const out = cards.map(card => {
+    const urn = card.getAttribute('data-id');
+    const timeEl = card.querySelector('.update-components-actor__sub-description time, time[datetime]');
+    const posted_at = timeEl?.getAttribute('datetime') || null;
+    const posted_at_relative = (card.querySelector('.update-components-actor__sub-description')?.innerText || '').trim().split('\\n')[0] || null;
+    const textEl = card.querySelector('.feed-shared-inline-show-more-text, .update-components-text');
+    let text = (textEl?.innerText || '').trim();
+    const text_truncated_chars = text.length;
+    text = text.replace(/…\\s*see more$/i, '').trim();
+
+    const reactionsEl = card.querySelector('.social-details-social-counts__reactions-count, .social-details-social-counts__reactions span[aria-hidden=\"true\"]');
+    const commentsEl = Array.from(card.querySelectorAll('.social-details-social-counts__comments, .social-details-social-counts__item')).find(e => /comment/i.test(e.innerText || ''));
+    const repostsEl = Array.from(card.querySelectorAll('.social-details-social-counts__item')).find(e => /repost|share/i.test(e.innerText || ''));
+    const reactions = parseCount(reactionsEl?.innerText);
+    const comments = parseCount(commentsEl?.innerText);
+    const reposts = parseCount(repostsEl?.innerText);
+
+    let media_type = 'text';
+    if (card.querySelector('.update-components-linkedin-video, video')) media_type = 'video';
+    else if (card.querySelector('.update-components-image, img.update-components-image__image')) media_type = 'image';
+    else if (card.querySelector('.update-components-article')) media_type = 'article';
+
+    const is_repost = !!card.querySelector('.update-components-mini-update-v2, .update-components-header__text-view');
+
+    let source_tag = null;
+    const m = text.match(/\\[(opus|lp|gh|bh):([A-Za-z0-9_-]+)\\]/);
+    if (m) source_tag = { scheme: m[1], id: m[2] };
+
+    return {
+      post_urn: urn,
+      posted_at,
+      posted_at_relative,
+      text,
+      text_truncated_chars,
+      reactions,
+      comments,
+      reposts,
+      engagement_total: reactions + comments + reposts,
+      impressions: null,
+      media_type,
+      is_repost,
+      source_tag
+    };
+  });
+  JSON.stringify(out);
+" > "$RECENT_OUT.raw"
+
+jq -r 'fromjson? // .' "$RECENT_OUT.raw" > "$RECENT_OUT"
+
+if [ "$SKIP_REPOSTS" = "true" ]; then
+  jq '[.[] | select(.is_repost == false)]' "$RECENT_OUT" > "$RECENT_OUT.filtered" && mv "$RECENT_OUT.filtered" "$RECENT_OUT"
+fi
+```
+
+The output JSON file `$RECENT_OUT` is then merged into the Phase 7 snapshot — see the updated Phase 7 snippet below.
+
+#### Phase 3c — Per-post impressions (opt-in, `--with-impressions`)
+
+Off by default (slow: one navigation per post, ~30-60 sec for 20 posts, and rate-limit-risky). Enable via the CLI flag `--with-impressions` OR by setting `profile.include_impressions: true` in config.
+
+For each `post_urn` in `$RECENT_OUT`, navigate to `https://www.linkedin.com/analytics/post/<urn>/` and grab the impressions tile, then merge back into the same JSON:
+
+```bash
+INCLUDE_IMPRESSIONS=$(jq -r '.profile.include_impressions // false' "$CONFIG_FILE")
+if [ "$WITH_IMPRESSIONS_FLAG" = "1" ] || [ "$INCLUDE_IMPRESSIONS" = "true" ]; then
+  TMP_IMPR=/tmp/ln-impressions.json
+  echo '{}' > "$TMP_IMPR"
+  for URN in $(jq -r '.[].post_urn' "$RECENT_OUT"); do
+    $B goto "https://www.linkedin.com/analytics/post/${URN}/"
+    sleep 3
+    IMPR=$($B js "
+      const t = (document.querySelector('main') || document.body).innerText;
+      const m = t.match(/([0-9,]+)\\s+Impressions/i);
+      m ? parseInt(m[1].replace(/,/g, '')) : null;
+    " | tr -d '"')
+    jq --arg urn "$URN" --argjson v "${IMPR:-null}" '. + {($urn): $v}' "$TMP_IMPR" > "$TMP_IMPR.next" && mv "$TMP_IMPR.next" "$TMP_IMPR"
+  done
+  jq --slurpfile impr <(jq -s . "$TMP_IMPR") \
+    '[.[] | . + {impressions: ($impr[0][0][.post_urn] // null)}]' "$RECENT_OUT" > "$RECENT_OUT.merged" && mv "$RECENT_OUT.merged" "$RECENT_OUT"
+fi
+```
+
+#### Edge labels for Phase 3b/3c
+
+| Label | Symptom |
+|---|---|
+| `Edge: activity-feed-selector-drift` | `[data-id^="urn:li:activity:"]` returns 0 cards (LinkedIn re-skinned the activity DOM) |
+| `Edge: abbreviated-counts` | Reaction/comment counts come back as `1.2K` or `All` instead of an integer |
+| `Edge: lazy-load-stalled` | Scroll-loop captures fewer cards than `max_posts_per_scrape` (Intersection Observer didn't fire) |
+| `Edge: source-tag-missing` | Post is from OpusClip but `[opus:<id>]` not found in body (LinkedIn truncated the footer text) |
+| `Edge: analytics-post-not-yours` | `/analytics/post/<urn>/` returns "not your post" — login session belongs to the wrong account |
+
+See **Known issues / robustness notes** below for fixes.
 
 ### Phase 4 — Company page follower count + top posts
 
@@ -280,14 +415,16 @@ Growth plan Priority 3 check:
 
 ```bash
 SNAP_PATH="$CACHE_DIR/snapshot-$(date -u +%Y-%m-%d).json"
+RECENT_JSON=$([ -s /tmp/ln-recent-posts.json ] && cat /tmp/ln-recent-posts.json || echo '[]')
 jq -n \
   --argjson nl_subs "$NL_SUBS" \
   --argjson profile_fol "$PROFILE_FOLLOWERS" \
   --argjson company_fol "$COMPANY_FOLLOWERS" \
+  --argjson recent_posts "$RECENT_JSON" \
   '{
     fetched_at: (now | todateiso8601),
     newsletter: { subscribers: $nl_subs },
-    profile: { followers: $profile_fol },
+    profile: { followers: $profile_fol, recent_posts: $recent_posts },
     company: { followers: $company_fol }
   }' > "$SNAP_PATH"
 ```
@@ -306,6 +443,12 @@ The cache directory is gitignored — snapshots stay local, private.
   *Label: `Edge: paid-features-missing`*
 - **Delta bootstrap.** The first run has no prior snapshot so deltas render as `—`. After one week of snapshots the numbers mean something.
   *Label: `Edge: delta-bootstrap`*
+- **Activity-feed selector drift (Phase 3b).** If `[data-id^="urn:li:activity:"]` returns 0 cards, fall back to `[id^="urn:li:activity:"]`, and if that also misses, hunt by `time[datetime]` ancestor — every post card has one. As a last resort, `$B screenshot` + `$B handoff` and skip `recent_posts` for the run (snapshot still writes with `recent_posts: []`).
+  *Label: `Edge: activity-feed-selector-drift`*
+- **Abbreviated counts (Phase 3b).** LinkedIn renders `1.2K` / `3.4M` once a count crosses 1000. The `parseCount` helper in Phase 3b handles this — multiplies by 1e3/1e6 based on the suffix. If a new suffix appears (`B`?), extend the regex.
+  *Label: `Edge: abbreviated-counts`*
+- **Lazy-load stalled (Phase 3b).** If the scroll loop finishes with fewer cards than `max_posts_per_scrape`, the Intersection Observer probably bound to a different scroll container. Try `document.scrollingElement` and each `[role="main"]` descendant in turn. Capturing fewer posts is not fatal — the snapshot just has a shorter list.
+  *Label: `Edge: lazy-load-stalled`*
 
 ## Feeds into Phase D (/flywheel)
 

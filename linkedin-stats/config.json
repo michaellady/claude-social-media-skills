@@ -8,5 +8,10 @@
   "newsletter_url": "https://www.linkedin.com/newsletters/enterprise-vibe-code-7405677151993126913/",
   "creator_analytics_url": "https://www.linkedin.com/creator/dashboard/",
   "post_limit": 5,
-  "delta_window_days": 7
+  "delta_window_days": 7,
+  "profile": {
+    "max_posts_per_scrape": 20,
+    "include_impressions": false,
+    "skip_reposts": false
+  }
 }
