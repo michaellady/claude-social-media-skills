@@ -174,6 +174,14 @@ Each clip re-renders in ~30-45s. Confirmed 2026-05-18: **no credit charge** for 
 
 For OpusClip clip-generation polling: **270s** is the right default. Most jobs finish in 5-15 min, so 1-3 ticks gets you there.
 
+### `Edge: linkedin-self-conflict`
+
+**Signal:** `opusclip post schedule` returns `hasConflict: true` on a LinkedIn schedule even though the user has nothing else queued at that time.
+
+**Cause (confirmed 2026-05-18):** OpusClip's `postAccountId` is shared across `LINKEDIN` page (`urn:li:organization:*`) and `LINKEDIN` personal profile (`urn:li:person:*`) — they share one connector but have different `subAccountId`s. The API's conflict detector appears keyed on `postAccountId` alone, so scheduling a LinkedIn page post + LinkedIn profile post at the same slot triggers a false-positive conflict on the second one. The schedule still goes through; `scheduleId` and `postId` are returned normally.
+
+**Fix:** ignore the flag if both schedules in the batch hit the same `postAccountId` with different `subAccountId`s. Don't waste cycles probing the API for conflict details — there's no listing endpoint exposed, and the API does not return `conflictsWith` IDs alongside the flag. User can verify visually at https://clip.opus.pro → Scheduled Posts.
+
 ### `Edge: bonus-clips`
 
 **Signal:** `opusclip list --project P --summary` returns 23 clips for a project you only submitted with 3 duration buckets (would expect ~3-15).
