@@ -12,21 +12,10 @@
     {"platform": "youtube",   "account": "Enterprise Vibe Code", "posts_per_day": 5}
   ],
   "viral_score_threshold": 70,
-  "enhancer_settings": {
-    "remove_filler_words": true,
-    "remove_silences": true,
-    "pause_duration_threshold_s": 0.5
-  },
-  "workflow_setup": {
-    "clip_length_preset": "30s-90s",
-    "clip_length_preset_note": "User requirement — only generate shorts with duration between 30s and 90s. On the /workflow page after upload, the Clip Length selector MUST be set to this range (not the default 'Auto (<90s)'). The 30-90s window covers the sweet spot for YT Shorts, Reels, and TikTok without tripping platform minimum-length enforcement."
-  },
-  "drive_upload": {
-    "folder_id": "12Hhu9UbyVV6-bf5uACL7_aJRJYuk3dC1",
-    "folder_name": "opus-clips-automation",
-    "service_account_email": "opus-clips-uploader@gen-lang-client-0527845499.iam.gserviceaccount.com",
-    "oauth_client_project": "gen-lang-client-0527845499",
-    "note": "Drive upload via drive_upload.py is the preferred ingest path — 3-click user handoff via Opus's in-page Drive picker is faster than navigating macOS file chooser. See opus-clips/drive_upload.py for usage."
-  },
-  "notes": "Times are local to `timezone`. Opus's scheduler UI expects times in the user's Opus account timezone. `viral_score_threshold` auto-selects clips ≥ this score. `pause_duration_threshold_s` controls the Remove-pauses slider (Phase C found the subpanel defaults to 0s, which over-trims; 0.5s preserves natural speech rhythm). Do NOT exceed `posts_per_day_cap` per day — user has confirmed diminishing returns above 5/day."
+  "viral_score_threshold_note": "Default filter for which clips to surface for review. `opusclip list --project P --summary` returns scores 0-100; filter at this floor before presenting to the user.",
+  "default_durations": "30,60,90",
+  "default_durations_note": "Passed to `opusclip submit --durations`. The 30-90s window covers the sweet spot for YT Shorts, Reels, and TikTok without tripping platform minimum-length enforcement. Never let OpusClip default to Auto.",
+  "default_model": "ClipBasic",
+  "default_model_note": "ClipBasic for talking-head essays (EVC's standard long-form). Override to ClipAnything + --prompt only when you want directed curation around a specific theme.",
+  "notes": "Times are local to `timezone`. OpusClip account is configured for America/Los_Angeles. Do NOT exceed `posts_per_day_cap` per day — user has confirmed diminishing returns above 5/day. Pre-2026-05-18 fields (enhancer_settings, workflow_setup, drive_upload) removed — these governed the old browser-automation flow which is replaced by the `opusclip` CLI."
 }

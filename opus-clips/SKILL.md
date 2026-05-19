@@ -1,273 +1,216 @@
 ---
 name: opus-clips
-description: Use when user wants to turn a livestream video file into short-form social clips via Opus Clip — "clip my stream", "make shorts from this stream", "run opus on this video". Uploads to Drive, hands the 3-click picker to the user, waits for AI clip generation (30-90s shorts only), applies AI enhance (Remove filler words + Remove pauses subpanel), then schedules at 5 per day (hard cap, diminishing returns above) across 6 connected channels via Opus's per-clip Publish-on-Social modal.
-
+description: Use when user wants to turn a long-form video (YouTube URL or local file) into short-form social clips via OpusClip — "clip this video", "opus clip my stream", "make shorts from this", "clip my latest YouTube longform", "clip the stream". Submits to the OpusClip API, polls until clips are ready, optionally strips the default brand overlay, and hands off to `/promote-newsletter` or `opusclip post` for scheduling.
 user_invocable: true
 ---
 
 # opus-clips
 
-End-to-end automation for Opus Clip: livestream → 30-90s shorts → scheduled posts. Everything except three picker clicks at ingest is automated; the rest of the flow (clip generation wait, AI enhance per clip, schedule fan-out to 6 channels, schedule verification) runs unattended.
+End-to-end OpusClip wrapper over the **official `opusclip` CLI** (installed via the `opusclip` plugin at `~/.claude/plugins/cache/opus-skills/opusclip/<version>/scripts/opusclip`). This skill layers user-specific defaults + workflow on top of that CLI — it doesn't reimplement the API surface.
 
-## Why this skill
+## What this skill owns vs the plugin
 
-Manual Opus Clip workflow for a 2-hour livestream: upload → wait 10-30 min → open each clip → AI enhance → Save → Publish on Social → pick platforms × date × time → repeat. For 20 clips across 6 channels, that's 80-120 clicks. This skill automates every click except **one human gesture at ingest** (Google Picker iframe requires a real HID click — see "Ingest limitation" below).
+| Concern | Where it lives |
+|---|---|
+| Auth (`OPUSCLIP_API_KEY`), CLI commands, API endpoints, EditingScript schema | **`opusclip:opusclip` plugin skill** — call it / read its docs for CLI specifics |
+| 30-90s shorts only, 5/day/channel cap, 6 connected accounts, slot times, viral-score filter | **This skill** |
+| Brand-overlay-strip workflow (undocumented API surface), polling cadence, batch-loop rate-limiting | **This skill** (learned 2026-05-18 session) |
 
 ## Non-negotiables
 
-Two hard rules from the user:
+Two hard rules from the user — verified across multiple sessions, don't override without asking:
 
-1. **30-90s shorts only.** On Opus's `/workflow` setup page, the `Clip Length` selector MUST be set to `30s-90s` (not the default `Auto (<90s)`). Configured in `config.workflow_setup.clip_length_preset`.
-2. **5 videos/day/channel is the hard cap**, not a lower bound. Diminishing returns above this — skill must NEVER schedule a 6th post on the same calendar day. Configured in `config.posts_per_day_cap`. `schedule_clips.py` rolls over to the next day at slot 6.
-
-## How it runs
-
-Driven by **Claude-in-Chrome MCP tools** (real browser). Opus is a Next.js/Radix SPA — gstack (Playwright headless) cannot log in because auth tokens live in localStorage, not cookies. The helper scripts in this directory emit JSON runbooks that the skill executes via `mcp__claude-in-chrome__*` tools inline. No separate runner process.
-
-## Connected accounts (as of 2026-04-19)
-
-| Platform | Account | Posts/day cap |
-|---|---|---|
-| Facebook | Enterprise Vibe Code | 5 |
-| Instagram | Enterprise Vibe Code | 5 |
-| LinkedIn page | Enterprise Vibe Code | 5 |
-| LinkedIn profile | Mike Lady | 5 |
-| TikTok | mikelady | 5 |
-| YouTube | Enterprise Vibe Code | 5 |
-
-Six channels. One Opus "Schedule post" modal publishes a clip to all 6 at once.
-
-## Scheduling math
-
-- 1 approved clip = 1 Opus schedule action = 6 platform posts (fan-out happens inside the modal)
-- 5 slots per day × 1 clip per slot → 5 clips/day max (per diminishing-returns rule)
-- N approved clips → ceil(N/5) days
-- 5 slots local PT: 09:00 / 12:00 / 15:00 / 18:00 / 21:00
-
-Run `./schedule_clips.py --n-clips N --start-date YYYY-MM-DD` for the plan. Use `--pre-scheduled K` if the start-date already has K slots committed (rare; mostly for rerun recovery).
-
-## The ingest limitation (Phase C finding, 2026-04-19)
-
-Opus's upload presents three ingest options: local **Upload** button, **Google Drive** picker, link-paste (Rumble/Twitch/YouTube/Zoom). Every path requires exactly ONE real human click:
-
-| Path | Blocker |
-|---|---|
-| `Upload` → native file chooser | Chrome requires `isTrusted=true` for `<input type=file>` activation; CDP mouse + keyboard events both fail |
-| `Google Drive` → in-page picker | `docs.google.com/picker` iframe is cross-origin; Google's isTrusted guard ignores CDP clicks |
-| Link-paste (Rumble/YouTube/etc.) | Accepts specific video-platform URLs only, not Drive share URLs |
-
-**Adopted path: Drive upload + picker handoff.**
-1. Skill uploads video to Drive folder `opus-clips-automation` via `drive_upload.py` (fully automated). ~60-120s for a 300MB file.
-2. Skill opens Opus dashboard + clicks `Google Drive` button (works — Opus's own origin).
-3. **User performs 3 clicks in the picker:** `opus-clips-automation` folder → video file → `Select`. ~5 seconds.
-4. Skill sets clip length to 30s-90s and clicks `Get clips in 1 click`.
-
-Everything downstream — processing wait, clip enumeration, AI enhance, scheduler, post-schedule verification — is 100% automated.
+1. **30-90s shorts only.** `opusclip submit ... --durations "30,60,90"`. Never let OpusClip default to "Auto" which can produce >90s clips.
+2. **5 posts/day/channel hard cap, not a lower bound.** Diminishing returns above this. Never schedule a 6th slot on the same calendar day — roll over to next day. See `daily_time_slots` in `config.json`.
 
 ## Prerequisites
 
-- Opus Clip web login at `https://clip.opus.pro` in the Claude-in-Chrome browser
-- Google Chrome with Claude-in-Chrome extension installed
-- Local video file path
-- **For automated Drive upload:** one-time setup
-  - GCP project `gen-lang-client-0527845499` with Drive API enabled (confirmed, Phase C)
-  - OAuth 2.0 Desktop Client ID + Secret in that project
-  - An rclone-authorized refresh token (in-memory only per safety rules; re-auth once per session via `rclone authorize drive <client_id> <client_secret>`)
-  - Drive folder `opus-clips-automation` (ID in `config.drive_upload.folder_id`) shared with the service account or accessible to your user
+- `OPUSCLIP_API_KEY` set in shell env (stored in `~/.zshrc` as of 2026-05-18). API access requires Enterprise or Pro plan; key at https://clip.opus.pro/dashboard.
+- `opusclip` CLI on disk via the `opusclip` plugin. Verify with `~/.claude/plugins/cache/opus-skills/opusclip/*/scripts/opusclip templates`.
+- `jq`, `curl`, `ffmpeg` (last one only needed for local trim / frame extraction).
 
-## Key files
+If the key isn't set, defer to the `opusclip:opusclip` plugin skill — its setup is canonical.
 
-- `SKILL.md` — this workflow spec
-- `config.json` — channels, slots, enhancer settings, clip-length preset, posts_per_day_cap, Drive credentials
-- `selectors.json` — DOM selectors (Phase A captured, Phase C/D corrected)
-- `drive_upload.py` — resumable chunked Drive upload via our own OAuth client (avoids rclone's shared-project rate limit)
-- `upload.sh` — emits the full 8-step ingest runbook (Drive upload → picker handoff → workflow setup → processing trigger)
-- `wait_for_clips.sh` — emits polling runbook for `Original clips (N)` counter
-- `process_clips.py` — emits per-clip AI-enhance plan including the Remove-pauses subpanel subflow
-- `schedule_clips.py` — pure logic; computes (day, slot) per clip with cap enforcement
-- `verify_schedule.py` — emits a plan to navigate `/auto-post/calendar`, expand each day cell, count `Scheduled` tokens per time slot, and assert against expected
+## 🟢 Happy Path
 
-Each helper supports `--help` and `--dry-run`.
+For a long-form YouTube video → ~20 clips at 30/60/90s → review → optionally strip brand overlay → ready for fan-out. ~10-15 min wall-clock (most of it is OpusClip's processing).
 
-## 🟢 Happy Path (read first; everything below is edge-case detail)
+**Phase 1 — Find source.** YouTube URL the user provides, OR "latest long-form" via `~/dev/youtube_analytics`:
 
-For a 2-hour livestream → ~15-20 short clips → fan-out across 6 channels when nothing goes wrong. ~30-60 min wall-clock (most of that is Opus's clip-generation processing wait). Each step links to a labeled edge case (`Edge: <name>`) you only need to read if that step fails.
-
-**Phase 0 — Session setup (30 sec).** `mcp__claude-in-chrome__tabs_context_mcp` to confirm the MCP tab group, then `navigate → /dashboard` to confirm logged in at `clip.opus.pro` (NOT `app.opus.pro` — see `Edge: wrong-opus-domain`).
-
-**Phase 1 — Ingest (Drive-first, 2-4 min + ~5 sec user gesture).** `./upload.sh /path/to/stream.mp4` emits the runbook. Skill uploads to Drive folder `opus-clips-automation` via `drive_upload.py` (use the user's own OAuth client, not rclone's default — see `Edge: drive-quota-exceeded` and `Edge: drive-sa-storage-quota`). Skill clicks `Google Drive` on Opus dashboard. **User performs 3 clicks in the picker** (folder → file → Select) — unavoidable, the picker iframe rejects synthetic clicks (see `Edge: picker-iframe-trusted-click`). Skill sets `Clip Length` to `30s-90s` (non-negotiable, never `Auto`), clicks `Get clips in 1 click`, extracts `projectId` from redirect URL, logs to `/tmp/opus-clips-<projectId>.log`. Idempotency: if log already exists for this filename, offer resume vs fresh.
-
-**Phase 2 — Wait for clip generation (10-30 min).** `./wait_for_clips.sh <projectId>` polls `/clip/<projectId>` every 5 min (2 hr ceiling), matching `/Original clips\s*\(\s*(\d+)\s*\)/`. If the counter is stuck past 15 min, force-reload once (see `Edge: clip-count-stuck`).
-
-**Phase 3 — Clip review gate (2-3 min).** Scroll the virtualized grid's overflow container to the bottom before extraction or ranks #4 and #5 won't be in the DOM (see `Edge: virtualized-grid`). Parse `#N / score / start / end` per card. Filter by `viral_score >= config.viral_score_threshold`. Ask user to approve the filtered set.
-
-**Phase 4 — AI enhance per clip (1-2 min per clip).** `./process_clips.py --project-id <projectId>.<firstClipHash> --clip-ranks 1,3,5`. Per clip: click `Edit clip` → wait for sidebar (foreground tab if needed — see `Edge: editor-not-hydrating`) → capture initial duration → click `AI enhance` → click `Remove filler words` (silent no-op acceptable — see `Edge: filler-words-noop`) → click `Remove pauses` → wait for subpanel → click `Remove (N)` button matching `/^Remove\s*\(\d+\)$/` (the subpanel is NOT one-click — see `Edge: remove-pauses-subpanel`) → click `Save changes` → editor navigates back to `/clip/{projectId}` = success → log duration delta.
-
-**Phase 5 — Schedule (1 min per clip).** Per clip: click `Publish on Social` → modal opens with all 6 channels pre-selected + AI per-platform copy → click `Select time` → click target date in `rdp-*` calendar → click time combobox → click target slot (`09:00 AM`, `12:00 PM`, `03:00 PM`, `06:00 PM`, `09:00 PM` — Opus account TZ `America/Los_Angeles`, not browser TZ — see `Edge: scheduler-timezone`) → confirm pill label, click `Schedule`. Modal closes silently with NO toast — verification happens in Phase 6 (see `Edge: schedule-no-toast`). Slot math: 5 clips/day hard cap, rolls to next day at slot 6; `./schedule_clips.py --n-clips N --start-date YYYY-MM-DD` plans this.
-
-**Phase 6 — Verify scheduled posts (1-2 min).** `./verify_schedule.py --n-clips N --start-date YYYY-MM-DD` navigates `/auto-post/calendar`, expands each day cell, counts `Scheduled` tokens grouped by time. Expected: per-slot count == `len(config.channels)` (6); total == `n_clips * 6`. Mismatch = real failure; re-run schedule for missing clips.
-
-### Edge labels (jump to these only when you hit the matching failure signal)
-
-| Label | Symptom |
-|---|---|
-| `Edge: wrong-opus-domain` | Login or dashboard not loading; you're on `app.opus.pro` instead of `clip.opus.pro` |
-| `Edge: picker-iframe-trusted-click` | Google Drive picker doesn't respond to CDP clicks (`docs.google.com` iframe rejects synthetic events) |
-| `Edge: drive-quota-exceeded` | Drive upload 403 "Quota exceeded" using rclone's default OAuth client |
-| `Edge: drive-sa-storage-quota` | Drive upload `storageQuotaExceeded` from a service account on a personal Gmail |
-| `Edge: clip-count-stuck` | `Original clips (N)` counter hasn't budged in 15+ min |
-| `Edge: virtualized-grid` | Only ranks #1-3 visible in DOM; #4 and #5 missing from extraction |
-| `Edge: editor-not-hydrating` | Editor DOM not populated in Claude-in-Chrome tab (background tab issue) |
-| `Edge: ai-enhance-buttons-invisible` | AI enhance panel buttons not in DOM — panel not open yet |
-| `Edge: filler-words-noop` | `Remove filler words` click produces no UI confirmation and no duration change |
-| `Edge: remove-pauses-subpanel` | `Remove pauses` doesn't apply on first click — it opens a subpanel with a `Remove (N)` button |
-| `Edge: schedule-no-toast` | `Schedule` click produces no toast/confirmation — success must be verified separately |
-| `Edge: schedule-modal-close-bug` | `Close` button doesn't dismiss the schedule modal |
-| `Edge: scheduler-timezone` | Slot times off by hours — using browser TZ instead of Opus account TZ (PT) |
-
-Each label corresponds to a bullet in **Debugging** or **Gotchas** below. Search for the label text to find the full fix.
-
----
-
-## Workflow
-
-### Phase 0 — Session setup
-
-```
-mcp__claude-in-chrome__tabs_context_mcp               # verify MCP tab group
-mcp__claude-in-chrome__navigate → /dashboard          # confirm logged in
+```bash
+jq -r 'if type=="array" then . else (.videos // .items) end
+  | map(select(.video_type == "long-form"))
+  | sort_by(.published_at) | reverse | .[0]
+  | "https://www.youtube.com/watch?v=\(.id)  \(.title)  \(.duration_seconds)s"
+' ~/dev/youtube_analytics/data/videos.json
 ```
 
-If not logged in, ask the user to sign in manually.
+**Phase 2 — Submit.**
 
-### Phase 1 — Ingest (Drive-first)
-
-```
-./upload.sh /path/to/stream.mp4
-```
-
-The emitted plan walks the skill through: Drive upload → navigate + click Google Drive → hand off to user for 3 picker clicks → set clip length to 30s-90s on `/workflow` → click `Get clips in 1 click` → extract `projectId` from redirect URL → log to `/tmp/opus-clips-<projectId>.log`.
-
-**Idempotency:** before starting, check if `/tmp/opus-clips-<projectId>.log` exists for this video filename. If yes, offer to resume vs start fresh.
-
-### Phase 2 — Wait for clip generation
-
-```
-./wait_for_clips.sh <projectId>
+```bash
+opusclip submit \
+  --url "<YOUTUBE_URL>" \
+  --durations "30,60,90" \
+  --model ClipBasic \
+  --title "<short title>"
 ```
 
-Polls `/clip/<projectId>` every 5 min (2 hr ceiling). Matches regex `/Original clips\s*\(\s*(\d+)\s*\)/` on the page body.
+`ClipBasic` for talking-head essays (default for EVC long-form). `ClipAnything --prompt "..."` only when you want directed curation around a specific theme — see `Edge: curation-misses-theme`.
 
-### Phase 3 — Clip review gate
+Capture the returned `projectId` (e.g. `P3051823ab0w`) — every downstream call needs it.
 
-Enumerate clip cards. Phase D learned: the clip grid is virtualized; must scroll the overflow container to the bottom before extraction to get ranks #4 and #5.
+**Phase 3 — Poll until ready (~5-15 min for a 10-20 min source).** Background bash with ~270s tick (just under 5 min — stays in Claude's prompt cache window so each poll is cheap on re-entry):
 
-```js
-// Scroll the main scrollable container to the bottom
-const s = Array.from(document.querySelectorAll('*')).find(el => {
-  const cs = getComputedStyle(el);
-  return (cs.overflowY === 'auto' || cs.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 50;
-});
-for (let i = 0; i < 6; i++) { s.scrollTop = s.scrollHeight; await new Promise(r => setTimeout(r, 500)); }
+```bash
+PROJECT=<id>
+for i in $(seq 1 12); do
+  sleep 270
+  COUNT=$(opusclip list --project $PROJECT --summary | jq 'length')
+  [ "${COUNT:-0}" -gt 0 ] && { echo "READY ($COUNT clips)"; exit 0; }
+  echo "[tick $i] still processing"
+done
+exit 1
 ```
 
-Parse title, score, start/end from each `#N ... /100 ...` card. Default filter: `viral_score >= config.viral_score_threshold`. Ask user to approve the filtered set.
+Run this with `Bash run_in_background=true`. You get notified when it exits.
 
-### Phase 4 — AI enhance per clip
+**Phase 4 — Filter top clips.** Filter to `viral_score >= config.viral_score_threshold` (currently 70), then present sorted descending. Note: OpusClip generates **bonus clips** with `_bonus` suffix on the clip_id (alternate versions of the top picks) — they appear in `list` like any other clip; treat them as normal candidates.
 
-```
-./process_clips.py --project-id <projectId>.<firstClipHash> --clip-ranks 1,3,5
-```
-
-Per-clip sequence (Phase C/D verified):
-1. Click `Edit clip` on card → navigates to `/editor-ux/{projectId}.{clipHash}?clipRank={N}`
-2. Wait for `AI enhance` sidebar button → capture initial duration
-3. Click `AI enhance` → panel opens
-4. Click `Remove filler words` — **direct action**, no confirmation UI. May no-op on clips with no detected fillers (Phase C/D test clips all no-op'd). Skill logs this case but doesn't treat it as error.
-5. Click `Remove pauses` → **subpanel opens** with slider + `Remove (N)` button where N = detected pause count
-6. Click the `Remove (N)` button (regex `/^Remove\s*\(\d+\)$/`) → commits. Duration shrinks by reported seconds. Phase D evidence: 58s→52s (N=6), 24s→22s (N=2), 50s→46s (N=4).
-7. Click `Save changes` → editor navigates back to `/clip/{projectId}` = implicit success
-8. Log initial→final duration delta to `/tmp/opus-clips-<projectId>.log`
-
-### Phase 5 — Schedule
-
-Per-clip loop (Phase D flow):
-
-1. Click `Publish on Social` on clip card → schedule modal opens with all 6 channels pre-selected + AI-generated per-platform copy
-2. Click `Select time` → date+time popover appears
-3. Click the date button (text matches target day-of-month) in the `rdp-*` calendar
-4. Click the time combobox (text matches current time like `12:00 AM`) → listbox of 15-min slots opens
-5. Click the option matching target time (format: `09:00 AM`, `12:00 PM`, `03:00 PM`)
-6. Verify the pill label at the bottom shows `<DD> <Month> 2026 H:MM AM/PM GMT-07:00` then click `Schedule` → modal closes silently
-
-**For large batches (N > ~5 clips):** consider the **Bulk schedule** modal (selectors.json → `bulk_schedule_modal`) which schedules all selected clips at once. Not yet used by this skill — Phase D looped per-clip for clarity on 3 clips.
-
-**Important:** `Schedule` click produces NO toast/confirmation. Verify success via Phase 6.
-
-### Phase 6 — Verify scheduled posts
-
-```
-./verify_schedule.py --n-clips N --start-date YYYY-MM-DD
+```bash
+opusclip list --project $PROJECT --summary | jq -r '
+  map(select(.score >= 70))
+  | sort_by(-.score) | .[]
+  | "[\(.score)] \(.duration_sec)s — \(.title)  (\(.clip_id))"
+'
 ```
 
-Navigates `/auto-post/calendar`, expands each day cell (clicks `See N more`), counts `Scheduled` tokens and grouped times per day. Compares against expected:
-- Per day: expected slot-times match wall-clock
-- Per slot: count equals `len(config.channels)` (= 6)
-- Total across all days: `n_clips * 6`
+**Phase 5 — (Optional) strip brand overlay.** See `Edge: brand-overlay-baked-in` for full details — overlays are applied at render-time from account-level defaults, not from the template, so the only way to remove them from existing clips is the undocumented `renderPreferenceOverride` body field on the re-render endpoint. Confirmed working 2026-05-18, **does not consume credits**.
 
-Phase D evidence (Apr 20, 3 clips): expected `{9:00 AM: 6, 12:00 PM: 6, 3:00 PM: 6}` = 18 posts; actual matched exactly.
+**Phase 6 — Preview / hand off.**
 
-## Debugging
+```bash
+opusclip preview --project $PROJECT   # opens HTML in browser, sorted by score
+```
 
-- **Log location:** `/tmp/opus-clips-<projectId>.log`. Appended JSON per phase/step with `elapsed_sec`, `result`.
-- **Editor not hydrating in Claude-in-Chrome tab:** observed Phase A — needs foreground tab before DOM queries. Fallback: `mcp__claude-in-chrome__computer action=screenshot` to confirm visual state, then retry.
-  *Label: `Edge: editor-not-hydrating`*
-- **AI enhance panel buttons invisible:** panel must be open. Click `AI enhance` first.
-  *Label: `Edge: ai-enhance-buttons-invisible`*
-- **Remove pauses `Remove (N)` button not appearing:** means Opus detected 0 pauses above threshold. Skill treats as no-op success.
-  *Label: `Edge: remove-pauses-subpanel`*
-- **Schedule modal close bug:** if `Close` button doesn't dismiss, dispatch Escape: `document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',bubbles:true}))`.
-  *Label: `Edge: schedule-modal-close-bug`*
-- **Clip count stuck in processing:** force-reload the project page once (`location.reload()`) if count hasn't budged in 15 min.
-  *Label: `Edge: clip-count-stuck`*
-- **Drive upload 403 "Quota exceeded":** means rclone's default shared OAuth client was used. Switch to the user's own OAuth 2.0 client in `gen-lang-client-0527845499` and re-authorize.
-  *Label: `Edge: drive-quota-exceeded`*
-- **Drive upload `storageQuotaExceeded` from SA:** expected — service accounts can't own files on personal Gmail. Use user OAuth credentials, not SA.
-  *Label: `Edge: drive-sa-storage-quota`*
+For scheduling, two paths:
+- **Via OpusClip's native posting** (`opusclip post schedule`) — fan-out to OpusClip's connected accounts. Beta pricing, may diverge from web UX. Subject to OpusClip's per-day cap interpretation.
+- **Via Buffer** (this user's preferred path) — download the mp4s from each clip's `uriForExport`, schedule via `/promote-newsletter` or `/carousel-newsletter` flows. Uses the user's existing slot math (5/day across 6 channels at 09:00 / 12:00 / 15:00 / 18:00 / 21:00 PT).
 
-## Gotchas
+## Edge cases (read only when the matching signal appears)
 
-- **`clip.opus.pro`, not `app.opus.pro`.**
-  *Label: `Edge: wrong-opus-domain`*
-- **No `data-testid` anywhere** — selectors are `aria-label`, `role`, `data-state`, `textContent`, `href`. Brittle if Opus changes copy.
-- **Opus account timezone**, not browser timezone. Scheduler modal shows `America/Los_Angeles` (confirmed 2026-04-19).
-  *Label: `Edge: scheduler-timezone`*
-- **Remove pauses is NOT one-click** — it opens a subpanel. Actual apply button is `Remove (N)` inside.
-  *Label: `Edge: remove-pauses-subpanel`*
-- **Remove filler words has no UI confirmation** — may silently no-op. Skill uses duration delta + optional transcript diff to infer outcome.
-  *Label: `Edge: filler-words-noop`*
-- **Schedule button success has no toast.** Must verify via `verify_schedule.py`.
-  *Label: `Edge: schedule-no-toast`*
-- **Service accounts cannot own files on personal Gmail.** Shared Drives are a Workspace-only feature. SA → OAuth user credentials.
-  *Label: `Edge: drive-sa-storage-quota`*
-- **Google Picker iframe is docs.google.com origin.** Synthetic clicks from CDP do NOT reach it. User gesture required.
-  *Label: `Edge: picker-iframe-trusted-click`*
-- **rclone's default OAuth client hits a global ~99% upload quota.** Always bring your own OAuth 2.0 Client ID from a personal GCP project when uploading >100MB videos.
-  *Label: `Edge: drive-quota-exceeded`*
+### `Edge: brand-overlay-baked-in`
 
-## Cost
+**Signal:** clips render with the user's default brand overlay (e.g. `sandboxbjj.png`) even though `opusclip templates` shows the active template has `screenOverlays: []`.
 
-Opus Clip: 3 credits per clip generation (observed Phase D on 3-min test video). Subscription-based, no per-API charges. Runtime: ~15-30 min per stream depending on length, plus ~2-5 min of browser automation.
+**Cause:** the overlay is merged in from an account-level default at render time, not from the template. Confirmed 2026-05-18 by inspecting the submit response renderPref vs the template config.
 
-Drive upload: free within Google Drive storage quota. OAuth token refresh: free.
+**Fix:** undocumented `renderPreferenceOverride` body field on the re-render endpoint. The plugin CLI does **not** expose this — call the API directly with curl. Verified payload shape:
+
+```bash
+OVERRIDE='{
+  "screenOverlays": [],
+  "screenOverlay": null,
+  "screenOverlayFileId": null,
+  "enableScreenOverlay": false,
+  "disableScreenOverlay": true
+}'
+
+for C in $(opusclip list --project $PROJECT --summary | jq -r '.[].clip_id'); do
+  SCRIPT=$(curl -sS "https://api.opus.pro/api/exportable-clips/$PROJECT.$C?include=editingScript" \
+    -H "Authorization: Bearer $OPUSCLIP_API_KEY" | jq -c '.editingScript // empty')
+  [ -z "$SCRIPT" ] && { echo "skip $C"; continue; }
+  BODY=$(jq -nc --argjson s "$SCRIPT" --argjson r "$OVERRIDE" '{editingScript: $s, renderPreferenceOverride: $r}')
+  curl -sS -X POST "https://api.opus.pro/api/exportable-clips/$PROJECT.$C/re-render" \
+    -H "Authorization: Bearer $OPUSCLIP_API_KEY" \
+    -H "Content-Type: application/json" -d "$BODY" | jq -r '.jobId // .error'
+  sleep 3  # see Edge: rate-limit-30-per-min
+done
+```
+
+Each clip re-renders in ~30-45s. Confirmed 2026-05-18: **no credit charge** for these re-renders (dashboard balance unchanged after test of 1 clip with override). The user's dashboard view is authoritative; do NOT trust `md5` comparison of downloaded mp4s — see `Edge: cdn-serves-stale-bytes`.
+
+**Verification:** the user opens the re-rendered clip in the OpusClip dashboard or `opusclip preview --project $PROJECT` and confirms the overlay is gone. Do not assume the override worked from the API response alone (it returns `{jobId: ...}` whether the override is honored or silently ignored).
+
+**Test before batching.** When you don't know if a particular override payload works for a new field, fire on ONE clip first. Wait for `renderAsVideoFile.pending == false`. Have the user verify in the dashboard. Then loop the remaining clips. Catching a silently-ignored override on clip 1 saves 22 wasted calls.
+
+### `Edge: cdn-serves-stale-bytes`
+
+**Signal:** after a successful re-render (new `concludedAt`, new `v=` URL signature), downloading the mp4 returns byte-identical content to the previous render. `md5` hashes match.
+
+**Cause:** OpusClip's CDN keys cached content by **path** (`/media/.../c.<clipId>/VIDEO_FILE_-0-<duration>.mp4`), not by signed-URL query params. A new render at the same path may take time to propagate, OR the CDN may continue serving the old object until the cache expires.
+
+**Implication:** **do not use md5/file-bytes diff to verify a re-render took effect.** Use the dashboard, `opusclip preview`, or wait several minutes and retry the download. The API's `renderAsVideoFile.concludedAt` + a new `v=` query param is the authoritative signal that a new render happened on the server.
+
+### `Edge: rate-limit-30-per-min`
+
+**Signal:** batch loop returns 429s after ~10-15 calls.
+
+**Fix:** OpusClip is documented at 30 req/min. Each clip in a batch typically takes 2 calls (GET script + POST re-render). Pace with `sleep 3` between iterations to stay under the ceiling.
+
+### `Edge: bash-for-loop-ifs-quirk`
+
+**Signal:** batch loop only runs ONE iteration; the entire newline-separated input ends up as a single `$VAR` value. URL becomes malformed.
+
+**Cause:** `for C in $CLIPS` depends on `$IFS` doing word-splitting on newlines, but `$IFS` can be modified by prior code in the same script.
+
+**Fix:** always use `while IFS= read -r C; do ... done <<< "$CLIPS"` — robust against any `$IFS` state. Hit this 2026-05-18 on the first batch re-render attempt; the loop only ran once with all 22 clip IDs concatenated into one URL.
+
+### `Edge: curation-misses-theme`
+
+**Signal:** `ClipBasic` returns clips whose titles don't match the source video's actual narrative — the AI picked tangential moments instead of the spine.
+
+**Example 2026-05-18:** source "How to Scale Without the Slop" produced clips titled "Master AI Productivity," "AI Teammates," "Beads: JSON for Agents," "Ballmer Peak," etc. — adjacent topics, not the scaling-without-slop thesis.
+
+**Fix:** re-submit with `--model ClipAnything --prompt "find moments where the speaker explains <theme>"`. Costs another ~$N credits to re-clip but produces directed curation. Don't try to fix this via `edit-clip` operations on the existing clips — the curation already chose the wrong source moments; you'd just be re-rendering off-theme content.
+
+### `Edge: poll-cadence-cache-window`
+
+**Signal:** polling more often than necessary burns Claude's prompt-cache window on every re-entry.
+
+**Fix:** pick poll intervals deliberately. Anthropic's prompt cache TTL is 5 minutes. Polling cadence options:
+- **< 270s ticks:** cache stays warm; cheap re-entries; use when actively waiting on something that may finish quickly.
+- **300s exactly:** worst-of-both — pay the cache miss without amortizing it. **Avoid.**
+- **> 1200s ticks:** one cache miss buys a long idle stretch; use when the work takes 10+ minutes.
+
+For OpusClip clip-generation polling: **270s** is the right default. Most jobs finish in 5-15 min, so 1-3 ticks gets you there.
+
+### `Edge: bonus-clips`
+
+**Signal:** `opusclip list --project P --summary` returns 23 clips for a project you only submitted with 3 duration buckets (would expect ~3-15).
+
+**Cause:** OpusClip generates alternate versions of high-scoring clips with `_bonus` suffix on the clip_id (e.g. `La4Wghg6IX` + `La4Wghg6IX_bonus`). These are real, scored clips — not duplicates. Treat as normal candidates.
+
+## Cost (as of 2026-05-18)
+
+- **`opusclip submit` (new curation):** 1 credit per minute of source video. A 15-min long-form ≈ 15 credits.
+- **`opusclip edit-clip *` (server-side re-render):** beta pricing per call; the skill docs warn "may incur charges that don't match the web UX." Confirmed 2026-05-18: at least *some* re-renders (the brand-overlay-strip case) consume **no credits**. Other edit operations (caption-fix, censor, trim) are documented as charged but per-op cost is not published — check dashboard balance after first call to calibrate.
+- **`opusclip post publish` / `post schedule`:** beta; X (Twitter) posts cost 1 credit each, other platforms unspecified.
+
+Before kicking off a batch (>3 ops on one clip, OR >5 ops total in one session), have the user check their dashboard balance so they can audit per-op cost themselves.
+
+## Workflow integration
+
+This skill is the **ingest + clip-prep** step. Downstream consumers:
+
+- **`/promote-newsletter`** — fan-out individual clips to Buffer channels with the user's posting schedule + copy patterns.
+- **`/carousel-newsletter`** — if a clip is being repurposed as a carousel slide instead of a video post.
+- **`/flywheel`** — counts clip output toward Priority 1 (long-form throughput, since each clip is a derivative of a long-form essay) and toward fan-out reach metrics.
 
 ## Out of scope
 
-- Uploading the livestream to YouTube first
-- Captions / branding (set once in Opus Brand Templates)
-- Cross-posting to Buffer in parallel (Opus handles scheduling directly)
-- X / Twitter (not a connected account)
+- Uploading the source video to YouTube first (use the user's existing publishing flow).
+- Captions / branding configuration (set once at https://clip.opus.pro/dashboard).
+- X / Twitter cross-posting (not in the user's six standard channels).
+- Real-time stream clipping (this is post-production only).
+
+## Files in this directory
+
+- `SKILL.md` — this workflow (CLI-driven, 2026-05-18 rewrite).
+- `config.json` — channels, slot times, posts-per-day cap, viral-score threshold.
+- Legacy browser-automation helpers (`drive_upload.py`, `process_clips.py`, `schedule_clips.py`, `verify_schedule.py`, `wait_for_clips.sh`, `upload.sh`, `selectors.json`, `IMPROVEMENTS.md`) — from the pre-CLI era when this skill drove the OpusClip web UI via Claude-in-Chrome MCP. Kept for reference but not invoked by the current flow. Most logic is now in the `opusclip` CLI directly. The one helper still worth its keep is `schedule_clips.py` (pure slot-math for the 5/day/channel cap); if you're hand-rolling a Buffer schedule from clip output, it's reusable.
 
 ## Related skills
 
-- `../crosspost-newsletter/SKILL.md` — reference patterns for browser automation, cookie imports, selector-based clicking, handoff-on-failure.
+- **`opusclip:opusclip` (plugin)** — canonical CLI reference. Always defer to this for CLI command surface; it stays up to date with the plugin version on disk.
+- `/promote-newsletter`, `/carousel-newsletter` — downstream fan-out.
+- `/flywheel` — measures clip-output impact on long-form throughput priority.
