@@ -341,3 +341,26 @@ Voice doesn't vary by skill. Caching once amortizes the fetch cost across all sk
 ### Why this isn't in the adversarial reviewer (yet)
 
 Voice judgment is fuzzy ("does this sound like the author?") and hard to enforce mechanically — the reviewer would have a high false-positive rate. The composer is responsible; user review catches drift. If voice drift keeps surfacing across multiple runs, escalate to a v2 that passes the corpus to the reviewer with a "tone matches author voice" rule.
+
+## Pattern: Closed-loop post manifest (for non-Buffer scheduling)
+
+The repo's primary closed-loop mechanism is **Buffer's `format:<name>` tag system** (see ARCHITECTURE.md). That works because Buffer is the publishing layer for every Buffer-routed compose skill. When Buffer **isn't** the publisher — OpusClip's native API, LinkedIn pulse API, direct platform publishing — the `format:` tag never gets applied and `buffer-stats` has nothing to attribute against.
+
+**Fill the gap with a per-source JSON manifest** that records the schedule/post IDs returned by whatever scheduler did the publishing, plus an in-text `[scheme:id]` footer tag in every post description for grep-based recovery without the manifest.
+
+Reusable shared module at [`_shared/post-manifest/`](_shared/post-manifest/README.md) — README with full JSON shape + sourceable bash helpers (`pm_init`, `pm_ensure_clip`, `pm_append_post`, `pm_count_scheduled`, `pm_find_clip`, `pm_conflicts`, `pm_schedule_ids`, `pm_list_by_channel`).
+
+| Path | When |
+|---|---|
+| Buffer `format:<name>` tag → `buffer-stats` | Skills routing through Buffer (`promote-newsletter`, `carousel-newsletter`, `promote-github`, `tease-newsletter`) |
+| Post-manifest + `[scheme:id]` tag | Skills NOT routing through Buffer (`opus-clips` schedules to OpusClip native; future direct-publishing skills) |
+
+The two paths are **additive**, not competing. `/flywheel` is the joining point — today reads `buffer-stats` snapshots; will read post-manifests as an additional input as soon as the future native-platform fetcher exists.
+
+### Why a free-form text tag *in addition to* the manifest
+
+The manifest is machine-readable but lives on the user's disk. The in-text tag (`[opus:La4Wghg6IX]`, `[lp:slug]`, `[gh:repo/123]`, etc.) travels with the post itself — so the source-content link survives even if the manifest is lost or unavailable. Defense in depth, not redundancy.
+
+### Why this isn't a binary
+
+Same Primitive Test logic as voice-corpus: the manifest helpers are pure jq wrappers (no judgment), but the **decision of what to record + when** is a skill responsibility. Skills compose the title/description (cognition: voice grounding, channel adaptation), then call the helpers to persist the result. The helpers don't talk to schedulers — they're shape-only.

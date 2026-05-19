@@ -196,6 +196,26 @@ For OpusClip clip-generation polling: **270s** is the right default. Most jobs f
 
 Before kicking off a batch (>3 ops on one clip, OR >5 ops total in one session), have the user check their dashboard balance so they can audit per-op cost themselves.
 
+## Closed-loop attribution (per-post manifest)
+
+OpusClip's native scheduler bypasses Buffer, so the `format:<name>` tag system can't attribute these posts. Use the shared **post-manifest** primitive at [`_shared/post-manifest/`](../_shared/post-manifest/README.md) instead:
+
+```bash
+source ~/dev/claude-social-media-skills/_shared/post-manifest/post_manifest.sh
+
+MANIFEST=~/dev/youtube_analytics/data/opus_clips/$PROJECT.json
+pm_init "$MANIFEST" --project "$PROJECT" --source-video "$SOURCE_YT_ID" --source-title "$TITLE"
+pm_ensure_clip "$MANIFEST" --clip-id "$CLIP" --title "$NEW_TITLE" --description "$NEW_DESC" --score "$SCORE" --duration-sec "$DUR"
+# After each `opusclip post schedule` call:
+pm_append_post "$MANIFEST" --clip-id "$CLIP" --label "$CHANNEL_LABEL" --account-id "$AID" --sub-account-id "$SUB" --scheduled-at-utc "$AT_UTC" --api-response "$RAW_RESP_JSON"
+```
+
+Two non-negotiables when composing the description:
+1. **End with `[opus:<clip_id>]` on its own line** — grep-able across any platform's native search; survives manifest loss.
+2. **Persist the verbatim API response** in the manifest (not just the scheduleId) — preserves `hasConflict` and any future fields OpusClip adds.
+
+See [PATTERNS.md § Closed-loop post manifest](../PATTERNS.md) for the broader rationale and how this composes with the Buffer `format:` system in `/flywheel`.
+
 ## Workflow integration
 
 This skill is the **ingest + clip-prep** step. Downstream consumers:

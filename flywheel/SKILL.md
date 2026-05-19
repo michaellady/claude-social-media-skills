@@ -93,6 +93,8 @@ If a sub-skill fails (auth lapsed, cookie picker not closed, gstack process drop
 
 **Phase 4.5 — Buffer.** Read the latest `~/dev/claude-social-media-skills/buffer-stats/cache/snapshot-*.json`. Render the buffer-tracked subset as `BF_BUFFER_TRACKED_FOLLOWERS` — never call it the cross-channel total.
 
+**Phase 4.55 — Post-manifests (non-Buffer scheduling).** Walk `~/dev/youtube_analytics/data/*/`*.json files that match the post-manifest shape (see [`_shared/post-manifest/README.md`](../_shared/post-manifest/README.md)). These hold per-post schedule IDs for content NOT routed through Buffer (`opus-clips` today; future direct-publish skills). Count posts toward Priority 1 throughput; surface conflicts via `pm_conflicts`. Engagement metrics aren't in the manifest — a future per-platform fetcher will fill those in. For now the manifest gives an accurate **publication count** that complements `buffer-stats`'s engagement-side view.
+
 **Phase 4.7 — Cross-source reconciliation.** Compose the cross-channel reach table from the authoritative source per channel (LinkedIn personal/page → linkedin-stats; IG/FB → buffer-stats; YouTube → yt-analytics; beehiiv → beehiiv-mcp; Threads → unavailable). Annotate each row with its source.
 
 **Phase 4.6 — Channel ROI.** Per Buffer-connected channel: `channel_roi_score = (avg_impressions_per_post * eng_rate * 100) / (sent_count + 1)`. Bucket into 🟢/🟡/🔴/⚪ and render the ROI table.
