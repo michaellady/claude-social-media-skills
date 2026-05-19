@@ -238,7 +238,7 @@ $B js "
   for (let i = 0; i < 6; i++) {
     container.scrollTop = container.scrollHeight;
     await sleep(1500);
-    if (document.querySelectorAll('[data-id^=\"urn:li:activity:\"]').length >= MAX) break;
+    if (document.querySelectorAll('[data-urn^=\"urn:li:activity:\"]').length >= MAX) break;
   }
   const seeMores = document.querySelectorAll('.feed-shared-inline-show-more-text button, button.see-more');
   for (const b of seeMores) { try { b.click(); } catch (_) {} }
@@ -253,12 +253,23 @@ $B js "
     return Math.round(suf === 'K' ? n * 1e3 : suf === 'M' ? n * 1e6 : n);
   };
 
-  const cards = Array.from(document.querySelectorAll('[data-id^=\"urn:li:activity:\"]')).slice(0, MAX);
+  const cards = Array.from(document.querySelectorAll('[data-urn^=\"urn:li:activity:\"]')).slice(0, MAX);
   const out = cards.map(card => {
-    const urn = card.getAttribute('data-id');
+    const urn = card.getAttribute('data-urn');
+    // posted_at: LinkedIn does NOT expose absolute timestamps on activity feed cards (verified
+    // live 2026-05-19). Activity feed only carries relative time strings. Per-post analytics
+    // drilldown (Phase 3c) has the absolute timestamp; use that if include_impressions is on.
     const timeEl = card.querySelector('.update-components-actor__sub-description time, time[datetime]');
     const posted_at = timeEl?.getAttribute('datetime') || null;
-    const posted_at_relative = (card.querySelector('.update-components-actor__sub-description')?.innerText || '').trim().split('\\n')[0] || null;
+    // posted_at_relative: filter sub-description spans for time-shaped tokens (e.g. "32m •",
+    // "3h •", "1d •") instead of taking the first \\n-split line — that line is often the
+    // user's display name on profile activity feeds, not the time.
+    const subSpans = Array.from(card.querySelectorAll('.update-components-actor__sub-description span'));
+    const posted_at_relative = subSpans
+      .map(s => s.innerText.trim())
+      .filter(t => /^(now|\\d+\\s*(s|m|h|d|w|mo|yr))/i.test(t))[0]
+      || (card.querySelector('.update-components-actor__sub-description')?.innerText || '').trim().split('\\n')[0]
+      || null;
     const textEl = card.querySelector('.feed-shared-inline-show-more-text, .update-components-text');
     let text = (textEl?.innerText || '').trim();
     const text_truncated_chars = text.length;
