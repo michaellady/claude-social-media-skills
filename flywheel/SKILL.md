@@ -320,6 +320,8 @@ LN_CACHE=~/dev/claude-social-media-skills/linkedin-stats/cache
 LATEST_LN=$(ls -1 "$LN_CACHE"/snapshot-*.json 2>/dev/null | tail -1)
 if [ -n "$LATEST_LN" ]; then
   LN_NL_SUBS=$(jq -r .newsletter.subscribers "$LATEST_LN")
+  LN_NL_VIEWS_7D=$(jq -r '.newsletter.article_views_7d // "n/a"' "$LATEST_LN")
+  LN_NL_IMPS_7D=$(jq -r '.newsletter.impressions_7d // "n/a"' "$LATEST_LN")
   LN_PROFILE_FOLLOWERS=$(jq -r .profile.followers "$LATEST_LN")
   LN_COMPANY_FOLLOWERS=$(jq -r .company.followers "$LATEST_LN")
   LN_SNAP_DATE=$(basename "$LATEST_LN" .json | sed 's/snapshot-//')
@@ -330,10 +332,27 @@ fi
 
 If the latest LinkedIn snapshot is older than `$STALE_SNAPSHOT_DAYS` (from the targets block), flag it — stale LinkedIn data is less useful than no LinkedIn data.
 
+**Newsletter platform comparison (recurring metric, added 2026-05-20).** Both newsletters carry the SAME weekly content; compare them head-to-head to track which platform's audience is actually engaged. Read `linkedin-stats/cache/newsletter-platform-comparison.json` (refreshed by `/linkedin-stats` + the beehiiv MCP):
+
+```bash
+CMP=~/dev/claude-social-media-skills/linkedin-stats/cache/newsletter-platform-comparison.json
+if [ -f "$CMP" ]; then
+  BH_SUBS=$(jq -r .current.beehiiv_subs "$CMP")
+  LI_SUBS=$(jq -r .current.linkedin_newsletter_subs "$CMP")
+  # Engagement-per-subscriber proxy: beehiiv opens-on-latest vs LinkedIn 7d article views.
+  # The headline insight to surface: LinkedIn has the bigger list, beehiiv has the engaged one.
+  BH_LATEST_OPENS=$(jq -r '.per_issue[0].beehiiv_opens' "$CMP")
+  LI_VIEWS_7D=$(jq -r '.current.linkedin_7d_article_views' "$CMP")
+fi
+```
+
+The comparison is NOT 1:1 (beehiiv = email opens/clicks; LinkedIn = public reactions/comments + article views) — render both columns side by side, never sum them. **LinkedIn has NO historical sub-count timeseries** (only current); beehiiv `recipients` per issue IS its sub-growth curve. Don't fabricate a LinkedIn growth curve.
+
 **Priority 3 check** (cross-post newsletter to LinkedIn weekly):
 - requires evidence that a LinkedIn article was published in the window
 - heuristic: newsletter subscriber count increased ≥N since last snapshot → posting is active
-- if user wants per-article engagement, they run `/linkedin-stats` separately
+- **engagement-quality signal:** if `linkedin_newsletter_subs > beehiiv_subs` BUT `beehiiv_opens >> linkedin_article_views`, surface that LinkedIn is the *feeder* (vanity-larger, low read-through) and beehiiv is the *owned engaged audience*. This reinforces Priority 2's "push to beehiiv" — the LinkedIn list's value is funneling to beehiiv, not as a destination.
+- if user wants per-issue history, it's in `newsletter-platform-comparison.json` (`.per_issue[]`, all 13 editions paired by title)
 
 ### Phase 4.5 — Buffer (IG/FB/Threads fan-out)
 
@@ -635,6 +654,14 @@ Build the markdown with a fixed structure so snapshots are diffable week-over-we
 - Profile followers: N
 - Company page followers: N
 - Status: [🟢 | 🟡 | 🔴 | ⚪ no recent LN data]
+
+### Newsletter platform comparison (LinkedIn vs Beehiiv — same content)
+| Platform | Subs | Engagement signal | Read-through |
+|---|---:|---|---|
+| LinkedIn Newsletter | N | N article views / N impressions (7d) | low (public reactions/comments) |
+| Beehiiv | N | N opens / N clicks (latest issue) | high (email) |
+- Headline: LinkedIn is the bigger list but beehiiv is the engaged audience (per-subscriber engagement ~Nx higher on beehiiv). LinkedIn = feeder to beehiiv, not destination.
+- (Per-issue history: `linkedin-stats/cache/newsletter-platform-comparison.json` — all 13 editions paired. LinkedIn has no historical sub-count; beehiiv recipients/issue IS its growth curve.)
 
 ## Fan-out (Buffer) — cross-channel reach
 - Channels active: N (as of BF snapshot YYYY-MM-DD)
