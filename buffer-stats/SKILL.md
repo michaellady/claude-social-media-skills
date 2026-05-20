@@ -29,13 +29,18 @@ For a weekly Buffer stats run when nothing goes wrong. ~2-4 min wall-clock. Each
 - `mcp__buffer__list_channels` → filter out `isDisconnected: true`, apply `channels_include`/`channels_exclude`.
 - Per channel: `mcp__buffer__get_channel` for posting goal, schedule, paused flag. `mcp__buffer__list_posts` twice — `status: [scheduled]` for queue depth, `status: [sent]` with `createdAt.start` = N-days-ago for sent count and tag distribution.
 
-**Step 3 — Engagement scrape: publish.buffer.com/insights (30-60 sec).** `$B goto https://publish.buffer.com/insights`, `sleep 4`, extract Posts/Followers/Reactions/Comments summary + top-5 posts via the regex blocks in Phase 2a. Default range is "Last 7 days" — leave it alone. Cross-channel summary covers LinkedIn personal + Threads (which analyze.buffer.com doesn't).
+**Step 3 — Engagement scrape: publish.buffer.com/insights (30-60 sec).** `$B goto https://publish.buffer.com/insights`, `sleep 4`, extract Posts/Followers/Reactions/Comments summary + top-5 posts via the regex blocks in Phase 2a. Default range is "Last 7 days" — leave it alone. **Also extract the per-channel aggregate rows** (each connected channel has a Posts/Reactions/Comments row in the Insights view — all 6 channels appear, including the 3 Buffer Analyze can't reach: LinkedIn personal + both Threads accounts). See **Phase 2a-bis** below for the per-channel-row extractor; this is the source of truth for `channel_roi[]` entries that don't have impressions. See `Edge: insights-row-extraction-failed`.
 
 **Step 4 — Engagement scrape: analyze.buffer.com per-channel (60-90 sec).** `$B goto $ANALYZE_URL` (analyze home page lists channels via `a[href*=/overview/]` links — extract channelId from each). Cookies for `buffer.com` carry to `analyze.buffer.com` (see `Edge: subdomain-cookie-gap`). For each channel: `$B goto /<service>/overview/<channelId>` → click the "Last week" preset button directly (the picker is already expanded inline — NO popover; see `Edge: analyze-picker-already-inline`) → `sleep 4` → extract `<li>` metrics where each `<li>` has text shape `"Label\nValue\nDelta%"` (see `Edge: analyze-hashed-classes`).
 
-**Step 4b — Per-channel Channel ROI (5 sec).** For each channel where Buffer reports both `avg_imps_per_post` AND `eng_rate` (LinkedIn pages always have these; IG needs the fallback below; Facebook lacks impressions — see `Edge: facebook-impressions-unavailable`), compute `channel_roi_score = (avg_imps_per_post * eng_rate_decimal * 100) / (sent_count + 1)` and bucket into 🟢 ≥100 / 🟡 10-100 / 🔴 <10 & followers<50 / ⚪ <10 & followers≥50. **For Instagram**, Buffer doesn't expose a single "Engagement Rate" field — compute it as `(likes + comments) / impressions × 100` from the available metrics. See **Phase 4.6** below for the full rubric + worked examples.
+**Step 4b — Per-channel Channel ROI (5 sec).** Two paths now (added 2026-05-19, task #377):
 
-**Step 5 — Compose snapshot JSON (5 sec).** Build the object with `engagement_tracked_channels` (Analyze-scrapeable subset) AND `posting_channels` (full set) as separate counts — never collapse them (see `Edge: engagement-vs-posting-channel-conflation`). Channels Analyze can't scrape land in `channels_engagement_unavailable[]`. Include a `channel_roi[]` array with `{channel, sent, avg_imps_per_post, eng_rate_pct, channel_roi_score, bucket, verdict}` per channel — `null` for channels with missing inputs.
+- **Impressions path** (Analyze-covered: LinkedIn pages, IG business, FB pages where impressions exist). Compute `channel_roi_score = (avg_imps_per_post * eng_rate_decimal * 100) / (sent_count + 1)`, bucket 🟢 ≥100 / 🟡 10-100 / 🔴 <10 & followers<50 / ⚪ <10 & followers≥50, emit `engagement_denominator: "impressions"`. For Instagram, compute eng rate as `(likes + comments) / impressions × 100` (Buffer doesn't expose it directly).
+- **Posts-only fallback path** (Insights-covered but no impressions: LinkedIn personal, Threads × 2). Compute `channel_roi_score = (reactions + 2 * comments) / posts` from the Insights row, bucket via the posts-only rubric in Phase 2c, emit `engagement_denominator: "posts"`. Comments are weighted 2× because they're a stronger intent signal than reactions and roughly 10× rarer at our volume.
+
+See `Edge: facebook-impressions-unavailable` (no path applies — `channel_roi_score: null`, `bucket: "data_unavailable"`). See **Phase 2c** below for the full rubric, posts-only verdict variants, and worked examples.
+
+**Step 5 — Compose snapshot JSON (5 sec).** Build the object with `engagement_tracked_channels` (any channel with engagement data via Insights OR Analyze — typically all 6) AND `posting_channels` (full set) as separate counts — never collapse them (see `Edge: engagement-vs-posting-channel-conflation`). Channels with no engagement data at all (rare — usually only happens when both surfaces fail) land in `channels_engagement_unavailable[]`. Include a `channel_roi[]` array with `{channel, sent, posts, reactions, comments, avg_imps_per_post, eng_rate_pct, channel_roi_score, engagement_denominator, bucket, verdict}` per channel — `null` for channels with missing inputs. `engagement_denominator` is `"impressions"` for the Analyze path and `"posts"` for the Insights fallback path.
 
 **Step 5.5 — JOIN tagIds → format_tag, emit `format_engagement` (5 sec).** For every post in `top_posts[]` and every sent post enumerated in Step 2, read `tags { id name }` from the MCP payload and resolve against `_shared/buffer-post-prep/tag-ids.local.json` (inverted: tagId → `format:<name>`). Write `top_posts[].format_tag` (the **real** tag) alongside the existing `format_tag_guess` (kept as fallback). Roll up into a top-level `format_engagement` object keyed by `format:<name>` with `{posts, reactions, impressions, eng_rate_pct, channels{}}`. See **Phase 3.5** below. Edge cases: `Edge: tag-ids-missing` (no lookup file, every post resolves to `null`), `Edge: post-has-no-format-tag` (older or manual posts — fall back to `format_tag_guess` for display, exclude from aggregate).
 
@@ -65,6 +70,7 @@ For a weekly Buffer stats run when nothing goes wrong. ~2-4 min wall-clock. Each
 | `Edge: engagement-vs-posting-channel-conflation` | total_followers reads tiny because LinkedIn-personal/Threads omitted |
 | `Edge: tag-ids-missing` | `_shared/buffer-post-prep/tag-ids.local.json` not present — `format_tag` resolves to `null` for every post |
 | `Edge: post-has-no-format-tag` | Pre-convention or manual post — no `format:*` tag, falls back to `format_tag_guess` for display only |
+| `Edge: insights-row-extraction-failed` | Per-channel rows in `publish.buffer.com/insights` don't parse — selectors drifted, all 3 non-Analyze channels read null |
 
 Each label corresponds to an entry in **Known issues / robustness notes** below.
 
@@ -172,6 +178,38 @@ posts
 ```
 
 The Insights surface is in **Beta** (banner: "Looking for more metrics and reports? Go to Analyze"). Treat it as the primary cross-channel view but expect occasional UI changes.
+
+##### Phase 2a-bis — Per-channel aggregate rows from Insights (added 2026-05-19, task #377)
+
+`publish.buffer.com/insights` renders a per-channel breakdown below the summary tiles — **one row per connected channel, all 6 visible**, regardless of whether Buffer Analyze covers that surface. This is the only place we can read aggregate engagement for LinkedIn personal + both Threads accounts (Analyze doesn't expose them per-channel).
+
+Each row's text shape is `"<Channel display name>\n<service>\n<N> Posts\n<R> Reactions\n<C> Comments"` (no impressions field — Insights aggregates reactions/comments only, which is exactly why these channels fall back to the posts-only ROI path).
+
+```bash
+$B js "
+const main = document.querySelector('main, [role=main]') || document.body;
+const text = main.innerText;
+// Per-channel rows: name on one line, then Posts/Reactions/Comments triplets nearby.
+// Capture is greedy on the name then anchors on the integer-Posts/Reactions/Comments triple.
+const rowRegex = /([^\\n]+?)\\n(linkedin|instagram|facebook|threads|twitter)\\s*\\n(\\d+)\\s+Posts?\\s+(\\d+)\\s+Reactions?\\s+(\\d+)\\s+Comments?/gi;
+const rows = [];
+let m;
+while ((m = rowRegex.exec(text))) {
+  rows.push({
+    display_name: m[1].trim(),
+    service: m[2].toLowerCase(),
+    posts: parseInt(m[3]),
+    reactions: parseInt(m[4]),
+    comments: parseInt(m[5])
+  });
+}
+rows
+" > /tmp/bf-insights-rows.json
+```
+
+Cross-reference each row against `mcp__buffer__list_channels` output by display name to attach the `channelId` + `type` (profile vs page vs business). If the row regex returns fewer rows than `posting_channels`, that's `Edge: insights-row-extraction-failed` — re-run discovery (see "Re-discovery" section).
+
+The default range at `publish.buffer.com/insights` is "Last 7 days" but the per-channel rows respect whatever the picker is set to. For the weekly snapshot, leave it at "Last 7 days". For a 30-day reconciliation (when comparing against the user's manual eyeball of Insights), click "Last 30 days" first.
 
 #### Phase 2b — analyze.buffer.com (per-channel deep dive)
 
@@ -324,19 +362,20 @@ Combine Step 2d (per-channel overview) + Step 2e (per-channel posts). Compute:
 
 Normalize metric names across services (e.g. LinkedIn's "Eng. Rate" and Facebook's potentially different label — keep originals in raw JSON but expose a unified `engagement_rate` field).
 
-#### Phase 2c — Channel ROI score (run after Phase 2b for every channel with engagement data)
+#### Phase 2c — Channel ROI score (run after Phase 2a-bis + Phase 2b for every channel with engagement data)
 
-For each Buffer-connected channel where Phase 2b produced both `avg_imps_per_post` AND `engagement_rate`, compute the ROI score and bucket it. This surfaces deprioritization candidates so the user can stop fanning out content to channels that don't earn back the queue cost.
+For each Buffer-connected channel, compute a `channel_roi_score` and bucket it. This surfaces deprioritization candidates so the user can stop fanning out content to channels that don't earn back the queue cost. **Two paths** depending on whether impressions data exists:
 
-**Formula:**
+##### Path A: impressions available (LinkedIn pages, IG business, FB pages with impressions)
 
 ```
 channel_roi_score = (avg_imps_per_post * eng_rate_decimal * 100) / (sent_count_in_window + 1)
+engagement_denominator = "impressions"
 ```
 
 Where `eng_rate_decimal` is the engagement rate expressed as a decimal (e.g. 12.42% → `0.1242`). The `* 100` keeps the score in a readable 0-1000 range; the `+ 1` in the denominator is a smoothing term so a channel with `sent=0` doesn't divide-by-zero.
 
-**Bucketing rubric:**
+**Bucketing rubric (Path A):**
 
 | Score | Followers | Bucket | Action |
 |---|---|---|---|
@@ -345,7 +384,41 @@ Where `eng_rate_decimal` is the engagement rate expressed as a decimal (e.g. 12.
 | < 10 | < 50 | 🔴 **Below threshold** | Drop from fan-out (recommend `min_followers_to_promote = 100`) |
 | < 10 | ≥ 50 | ⚪ **Diminishing returns** | Reduce fan-out volume; consider `tease-newsletter` over `promote-newsletter` |
 
-**Worked examples** (confirmed 2026-05-18 against real data):
+##### Path B: posts-only fallback (LinkedIn personal, Threads × 2 — Insights rows from Phase 2a-bis)
+
+When Buffer doesn't surface impressions for a channel (true for LinkedIn personal and both Threads accounts on Insights), score on the reaction+comment volume per post instead. Comments weighted 2× because they're rarer and a stronger intent signal at our volume (~10× rarer than reactions on the channels we measure).
+
+```
+channel_roi_score = (reactions + 2 * comments) / posts
+engagement_denominator = "posts"
+```
+
+For `posts = 0`, emit `channel_roi_score: null` and bucket as `data_unavailable` — we have no signal at all.
+
+**Bucketing rubric (Path B):**
+
+| Score (engagement per post) | Bucket | Action |
+|---|---|---|
+| ≥ 1.0 | 🟢 **High eng/post** | Keep current cadence — every post is earning a reaction or comment |
+| 0.3 - 1.0 | 🟡 **Mid eng/post** | Current cadence fine; watch for downward drift |
+| 0.05 - 0.3 | ⚪ **Low eng/post** | Reduce fan-out frequency; consider routing through a different format |
+| 0 - 0.05 | 🔴 **Dead channel candidate** | Investigate (was the channel ever live? auth broken? algorithm shadow-band?). Pair with `audit-buffer-queue`. |
+| exactly 0 over ≥10 posts | 🔴 **Dead channel** | Pause queue; open investigation task (see #379 for the enterprisevibecode Threads case) |
+
+**Verdict variants (Path B):**
+
+| Bucket | Verdict template |
+|---|---|
+| 🟢 High eng/post | `"High engagement per post (X.X reactions+2comments/post across N posts) — keep cadence"` |
+| 🟡 Mid eng/post | `"Mid engagement per post (X.X/post) — current cadence is fine"` |
+| ⚪ Low eng/post | `"Low engagement per post (X.X/post across N posts) — consider reducing fan-out"` |
+| 🔴 Dead candidate | `"Near-dead channel: X total reactions across N posts (X.XX/post) — investigate"` |
+| 🔴 Dead channel | `"Dead channel: 0 reactions across N posts — pause and investigate (task #379-style)"` |
+| ⚪ data_unavailable | `"No posts in window — no signal to compute ROI"` |
+
+**Worked examples** (confirmed against real data — impressions path 2026-05-18, posts-only path 2026-05-19 from Apr 19-May 19 Insights view):
+
+Path A (impressions):
 
 | Channel | Sent | Avg imps/post | Eng rate | Score | Bucket |
 |---|---:|---:|---:|---:|:---|
@@ -354,6 +427,16 @@ Where `eng_rate_decimal` is the engagement rate expressed as a decimal (e.g. 12.
 | Facebook (EVC) | 1 | n/a | n/a | n/a | ⚪ Data unavailable (see `Edge: facebook-impressions-unavailable`) |
 
 \* IG eng rate computed via the fallback below (Buffer doesn't expose a single "Engagement Rate" field for IG).
+
+Path B (posts-only, from Insights 30-day window):
+
+| Channel | Posts | Reactions | Comments | Score `(R + 2C) / P` | Bucket |
+|---|---:|---:|---:|---:|:---|
+| LinkedIn personal (mikelady) | 60 | 47 | 22 | `(47 + 44) / 60 = 1.52` | 🟢 High eng/post — engagement king |
+| Threads (mikelady) | 53 | 11 | 2 | `(11 + 4) / 53 = 0.28` | ⚪ Low eng/post |
+| Threads (enterprisevibecode) | 64 | 0 | 0 | `0 / 64 = 0` | 🔴 Dead channel (task #379) |
+
+Cross-method sanity check: LinkedIn personal scoring 1.52 on Path B vs LinkedIn page scoring 26.9 on Path A is **expected** — the two scales are not comparable. Path A is `imps * eng_rate / sent` (impressions × rate); Path B is raw engagement per post. The buckets normalize that gap; the raw scores do not.
 
 **Instagram engagement-rate fallback** (`Edge: instagram-no-eng-rate-field`):
 
@@ -367,7 +450,7 @@ Use impressions (not reach) as the denominator — keeps the rate comparable to 
 
 **Facebook impressions gap** (`Edge: facebook-impressions-unavailable`): Buffer shows reactions and new fans but the Impressions field is missing entirely. Without impressions you cannot compute either `avg_imps_per_post` or `eng_rate`. Set `channel_roi_score: null`, `bucket: "data_unavailable"`, and note in the verdict.
 
-**Output shape** to include in the snapshot under `channel_roi[]`:
+**Output shape** to include in the snapshot under `channel_roi[]`. Every record carries `engagement_denominator` so downstream consumers know which formula produced the score and which scale to compare against:
 
 ```json
 "channel_roi": [
@@ -378,13 +461,48 @@ Use impressions (not reach) as the denominator — keeps the rate comparable to 
     "avg_imps_per_post": 13,
     "eng_rate_pct": 12.42,
     "channel_roi_score": 26.9,
+    "engagement_denominator": "impressions",
     "bucket": "yellow_mid",
     "verdict": "Mid ROI — current cadence fine, but absolute reach is tiny (13 imps/post)"
+  },
+  {
+    "channel": "linkedin/profile (mikelady)",
+    "posts": 60,
+    "reactions": 47,
+    "comments": 22,
+    "channel_roi_score": 1.52,
+    "engagement_denominator": "posts",
+    "engagement_source": "publish.buffer.com/insights per-channel row (30d window)",
+    "bucket": "green_high_eng_per_post",
+    "verdict": "High engagement per post (1.52 reactions+2comments/post across 60 posts) — keep cadence"
+  },
+  {
+    "channel": "threads/profile (mikelady)",
+    "posts": 53,
+    "reactions": 11,
+    "comments": 2,
+    "channel_roi_score": 0.28,
+    "engagement_denominator": "posts",
+    "engagement_source": "publish.buffer.com/insights per-channel row (30d window)",
+    "bucket": "white_low_eng_per_post",
+    "verdict": "Low engagement per post (0.28/post across 53 posts) — consider reducing fan-out"
+  },
+  {
+    "channel": "threads/profile (enterprisevibecode)",
+    "posts": 64,
+    "reactions": 0,
+    "comments": 0,
+    "channel_roi_score": 0,
+    "engagement_denominator": "posts",
+    "engagement_source": "publish.buffer.com/insights per-channel row (30d window)",
+    "bucket": "red_dead_channel",
+    "verdict": "Dead channel: 0 reactions across 64 posts — pause and investigate (task #379)"
   },
   {
     "channel": "facebook/page (EVC)",
     "sent": 1,
     "channel_roi_score": null,
+    "engagement_denominator": null,
     "bucket": "data_unavailable",
     "verdict": "FB Impressions field unavailable; manual eyeball only"
   }
@@ -393,16 +511,23 @@ Use impressions (not reach) as the denominator — keeps the rate comparable to 
 
 ### Phase 3 — Compose snapshot
 
-Combine operational + engagement data into a single JSON object. **CRITICAL schema rule (added 2026-05-03 after the flywheel reported total_followers=26 when the actual was ~2,200):** distinguish "channels Buffer Analyze can scrape engagement for" (the engagement-tracked subset) from "channels we post to" (the full posting set). Conflating the two gives downstream consumers like `/flywheel` a false total.
+Combine operational + engagement data into a single JSON object. **CRITICAL schema rule (added 2026-05-03 after the flywheel reported total_followers=26 when the actual was ~2,200):** distinguish "channels we have engagement data for" (the engagement-tracked subset — typically all 6 since Insights covers everything Analyze doesn't) from "channels we post to" (the full posting set). Conflating the two gives downstream consumers like `/flywheel` a false total.
+
+**Updated 2026-05-19 (task #377):** the `channels_engagement_unavailable[]` list is for channels with **zero** engagement coverage across BOTH Insights and Analyze. The previous framing — "Buffer does not cover Threads / LinkedIn personal" — was wrong. The correct framing is: Buffer Analyze does not cover those per-post, but Buffer Insights covers their aggregate (posts + reactions + comments per channel, 7d/30d window). Channels that only have Insights aggregate (no per-post breakdown) should still appear in `channel_roi[]` via the posts-only fallback path; they should NOT appear in `channels_engagement_unavailable[]`.
 
 ```json
 {
   "fetched_at": "2026-04-20T17:00:00Z",
   "window_days": 7,
   "organization": { "id": "...", "name": "..." },
-  "engagement_tracked_channels": 3,    // count of channels whose engagement section is populated (FB pages, IG business, LinkedIn pages)
-  "posting_channels": 6,                // count of channels we actually post to (full set, includes LinkedIn personal + Threads which Analyze doesn't scrape)
-  "channels_engagement_unavailable": ["linkedin/profile (mikelady)", "threads/profile (mikelady)", "threads/profile (enterprisevibecode)"],
+  "engagement_tracked_channels": 6,    // count of channels with engagement data via Insights aggregate OR Analyze per-post (typically all 6 after task #377)
+  "posting_channels": 6,                // count of channels we actually post to (full set)
+  "channels_engagement_unavailable": [], // only channels with NO engagement data on either surface (rare — empty in steady state)
+  "channels_impressions_unavailable": [ // channels using the posts-only ROI fallback (Insights aggregate, no impressions)
+    "linkedin/profile (mikelady) — Insights aggregate only; Analyze does not cover LinkedIn personal per-post",
+    "threads/profile (mikelady) — Insights aggregate only; Analyze does not cover Threads per-post",
+    "threads/profile (enterprisevibecode) — Insights aggregate only; Analyze does not cover Threads per-post"
+  ],
   "channels": [
     {
       "id": "...",
@@ -688,7 +813,8 @@ Text-pattern extractors (finding `<li>` by `innerText` shape) are more resilient
 - **MCP permission prompts.** The Buffer MCP's read-only tools (`get_account`, `list_channels`, `list_posts`, `get_channel`, `get_post`) are used heavily. Consider adding them to `~/.claude/settings.json` allowlist if prompts get annoying. (`get_account` and `list_channels` are already globally allowed.)
 - **Custom date ranges.** *Label: `Edge: custom-date-range-unimplemented`* For `--days` values other than 7 or ~30, the skill must open the Custom picker and select start/end dates programmatically. Not yet implemented — falls back to "Last week" with a warning. Add the custom-picker handling when needed.
 - **Delta bootstrap.** *Label: `Edge: delta-bootstrap`* First run has no prior snapshot → deltas show `—`. After one week, numbers mean something.
-- **Engagement-tracked vs posting channel conflation.** *Label: `Edge: engagement-vs-posting-channel-conflation`* Buffer Analyze can only scrape engagement for FB pages, IG business, and LinkedIn pages — NOT LinkedIn personal or Threads. If the snapshot collapses both sets into one count, downstream consumers like `/flywheel` report a false total (caught 2026-05-03 when flywheel reported total_followers=26 against an actual ~2,200). The schema keeps `engagement_tracked_channels` and `posting_channels` as separate counts, and channels Analyze can't reach land in `channels_engagement_unavailable[]`.
+- **Engagement-tracked vs posting channel conflation.** *Label: `Edge: engagement-vs-posting-channel-conflation`* Buffer Analyze can only scrape per-post engagement for FB pages, IG business, and LinkedIn pages — NOT LinkedIn personal or Threads. **However (updated 2026-05-19, task #377):** Buffer Insights covers all 6 channels in aggregate (posts + reactions + comments per channel). The skill now extracts Insights per-channel rows AND falls back to a posts-only ROI formula for channels without impressions — so `engagement_tracked_channels` is typically 6, not 3. `channels_engagement_unavailable[]` is reserved for channels with zero coverage on either surface (rare). Channels using the posts-only path are listed separately under `channels_impressions_unavailable[]`. If the snapshot collapses any of these into one count, downstream consumers like `/flywheel` report a false total (caught 2026-05-03 when flywheel reported total_followers=26 against an actual ~2,200).
+- **Insights per-channel row extraction.** *Label: `Edge: insights-row-extraction-failed`* The `publish.buffer.com/insights` per-channel rows (Phase 2a-bis) are the only source for LinkedIn personal + Threads aggregate engagement. If the row regex returns fewer rows than `posting_channels`, Buffer changed the Insights DOM. Symptoms: 3 of the 6 channels read `posts: null, reactions: null` in `channel_roi[]`; the rest (Analyze-covered) still populate normally. Fix: open Insights manually, inspect the channel-row block in DevTools, update the regex in the Phase 2a-bis `$B js` snippet to match the new shape. The summary tiles (top-of-page Posts/Followers/Reactions/Comments) and top-posts extraction live in separate selectors and are not affected by this edge.
 - **`operational` fast-path.** For mid-week queue checks without engagement scraping (much faster, no browser), use `/buffer-stats operational`.
 
 ## Feeds into /flywheel

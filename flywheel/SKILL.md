@@ -93,7 +93,9 @@ If a sub-skill fails (auth lapsed, cookie picker not closed, gstack process drop
 
 **Phase 4.5 — Buffer.** Read the latest `~/dev/claude-social-media-skills/buffer-stats/cache/snapshot-*.json`. Render the buffer-tracked subset as `BF_BUFFER_TRACKED_FOLLOWERS` — never call it the cross-channel total.
 
-**Phase 4.55 — Post-manifests (non-Buffer scheduling).** Walk `~/dev/youtube_analytics/data/*/`*.json files that match the post-manifest shape (see [`_shared/post-manifest/README.md`](../_shared/post-manifest/README.md)). These hold per-post schedule IDs for content NOT routed through Buffer (`opus-clips` today; future direct-publish skills). Count posts toward Priority 1 throughput; surface conflicts via `pm_conflicts`. Engagement metrics aren't in the manifest — a future per-platform fetcher will fill those in. For now the manifest gives an accurate **publication count** that complements `buffer-stats`'s engagement-side view.
+**Phase 4.55 — Post-manifests (non-Buffer scheduling).** Walk `~/dev/youtube_analytics/data/*/`*.json files that match the post-manifest shape (see [`_shared/post-manifest/README.md`](../_shared/post-manifest/README.md)). These hold per-post schedule IDs for content NOT routed through Buffer (`opus-clips` today; future direct-publish skills). Count posts toward Priority 1 throughput; surface conflicts via `pm_conflicts`. Engagement metrics aren't in the manifest — Phase 4.56 fills those in by JOINing against the per-platform stats snapshots. For now the manifest gives an accurate **publication count** that complements `buffer-stats`'s engagement-side view.
+
+**Phase 4.56 — Per-source-content closed-loop JOIN.** For each source-content ID discovered in Phase 4.55 (long-form YouTube IDs, newsletter slugs, GitHub PR refs), call `ca_join_engagement` from `_shared/content-attribution/` to assemble a unified record across every platform (`youtube_shorts`, `linkedin_personal`, `instagram_business`, `facebook_page`, `linkedin_page`, `tiktok_business`, etc.). Aggregate `source_engagement` + `derived_engagement` per source; compute `amplification_ratio = derived_reach / source_reach`. Render as "Per-source-content closed-loop attribution" section in the report; persist the array as `content_attribution[]` in the JSON snapshot for week-over-week diffing. **Credits derivative engagement back to Priority 1** — a long-form essay's true throughput value is source + every derivative. See `Edge: content-attribution-module-missing` and `Edge: zero-derivatives-for-source`. Depends on tasks **#381** (the `_shared/content-attribution/` module) and **#377** (buffer-stats Insights coverage of all 6 channels) landing first; until then Phase 4.56 degrades gracefully.
 
 **Phase 4.7 — Cross-source reconciliation.** Compose the cross-channel reach table from the authoritative source per channel (LinkedIn personal/page → linkedin-stats; IG/FB → buffer-stats; YouTube → yt-analytics; beehiiv → beehiiv-mcp; Threads → unavailable). Annotate each row with its source.
 
@@ -277,6 +279,7 @@ The `analyze` output is human-formatted — use simple grep/awk to pluck numbers
 - Newsletters count toward this — long-form essays and newsletters are the same priority. Pull newsletter count from beehiiv stats (Phase 3): `new_subs_in_window > 0 OR recent_posts contains item in window`.
 - target: `$P1_MIN`–`$P1_MAX`/week combined long-form output (essays + newsletters)
 - status: on_track if `≥ $P1_MIN`, behind otherwise
+- **Derivative-credited variant (preferred when Phase 4.56 ran successfully):** a long-form's value is source + every derivative. After Phase 4.56 emits `content_attribution[]`, recompute `derivative_credited_throughput = long_form_count + (sum over sources of (clamp(amplification_ratio, 0, 3) - 1))` — i.e. high-amplification long-forms count for up to 3× their base value, capped so a single viral clip can't single-handedly satisfy the target. Surface BOTH numbers in the report (raw count + derivative-credited). Verdict precedence: if raw count `≥ $P1_MIN` → 🟢 regardless. If raw count `< $P1_MIN` but derivative-credited `≥ $P1_MIN` → 🟡 "throughput soft, but derivatives compensate — keep stacking clips on existing long-forms before forcing a new one." If both `< $P1_MIN` → 🔴.
 
 **Priority 4 check** (`$P4_PER_WEEK` livestream/week as community surface — pivoted 2026-05-18 from "long-form 2-3/week"):
 - `streams_per_week = actual_lives / DAYS * 7`
@@ -362,6 +365,140 @@ fi
 **Render the buffer-tracked subset as `BF_BUFFER_TRACKED_FOLLOWERS`, NOT as a channel-wide total.** The difference matters: today (2026-05-03) `BF_BUFFER_TRACKED_FOLLOWERS=26` (FB page + IG business + LinkedIn page only) but the actual cross-channel follower count is ~2,200 (LinkedIn personal alone is 2,104). Reporting "Total followers: 26" misleads.
 
 If the latest Buffer snapshot is older than `$STALE_SNAPSHOT_DAYS` (from the targets block), flag it. Note that Buffer is the fan-out layer (Priority 2's "push viewers to Beehiiv" uses Buffer as the distribution surface for IG/FB/Threads), so its health informs Priority 2's attribution mix — if IG/Threads followers are growing but beehiiv attribution shows 0% from those surfaces, that's a link-in-bio / call-to-action problem, not a Buffer problem.
+
+### Phase 4.55 — Post-manifest publication count
+
+Walk every JSON file under `~/dev/youtube_analytics/data/*/` that matches the post-manifest shape (top-level `clips[]` or `posts[]` array with `scheduled_posts[]` entries — see [`_shared/post-manifest/README.md`](../_shared/post-manifest/README.md)). Use the `pm_*` helpers to count throughput and surface conflicts:
+
+```bash
+source ~/dev/claude-social-media-skills/_shared/post-manifest/post_manifest.sh
+
+PM_TOTAL_SCHEDULED=0
+PM_CONFLICT_COUNT=0
+PM_SOURCES=()  # array of "manifest_path::source_type::source_id" tuples for Phase 4.56
+
+shopt -s nullglob
+for MANIFEST in ~/dev/youtube_analytics/data/*/*.json; do
+  # Accept only manifests with the expected shape — skip yt-analytics videos.json etc.
+  jq -e '.clips? // .posts? // empty | type == "array"' "$MANIFEST" >/dev/null 2>&1 || continue
+
+  PM_TOTAL_SCHEDULED=$(( PM_TOTAL_SCHEDULED + $(pm_count_scheduled "$MANIFEST") ))
+  PM_CONFLICT_COUNT=$(( PM_CONFLICT_COUNT + $(pm_conflicts "$MANIFEST" | jq 'length') ))
+
+  # Pull the source-content ID for the Phase 4.56 JOIN. opus-clips manifests
+  # have `source_video.id`; future linkedin_pulses / crosspost manifests will
+  # have `source_pulse.slug` / `source_article.url` — be permissive.
+  SRC_ID=$(jq -r '.source_video.id // .source_pulse.slug // .source_article.id // empty' "$MANIFEST")
+  if [ -n "$SRC_ID" ]; then
+    # Source type inferred from parent directory (opus_clips/, linkedin_pulses/, ...)
+    SRC_TYPE=$(basename "$(dirname "$MANIFEST")")
+    PM_SOURCES+=("$MANIFEST::$SRC_TYPE::$SRC_ID")
+  fi
+done
+```
+
+`PM_TOTAL_SCHEDULED` and `PM_CONFLICT_COUNT` feed the report's appendix; `PM_SOURCES[]` is the input for Phase 4.56.
+
+### Phase 4.56 — Per-source-content closed-loop JOIN
+
+For each source-content ID discovered in Phase 4.55, call `ca_join_engagement` (from `_shared/content-attribution/`, built by task #381) to produce a unified per-source record covering every derivative across every platform. The JOIN engine is responsible for the actual `[scheme:id]` / `scheduleId` / time-window correlation logic — **flywheel does not implement it here**, it only orchestrates and aggregates.
+
+**Module dependency check (Edge: content-attribution-module-missing):**
+
+```bash
+CA_MODULE=~/dev/claude-social-media-skills/_shared/content-attribution/content_attribution.sh
+if [ ! -f "$CA_MODULE" ]; then
+  CA_AVAILABLE=0
+  CA_SKIP_REASON="_shared/content-attribution/ not on disk — task #381 not landed yet"
+else
+  source "$CA_MODULE"
+  CA_AVAILABLE=1
+fi
+```
+
+If `CA_AVAILABLE=0`, skip the entire phase, render a stub section in the report (`> ⚠ Per-source-content attribution unavailable: <reason>. Land task #381 to enable.`), and emit `content_attribution: []` in the JSON snapshot. **Do not fail the whole `/flywheel` run** — the rest of the report still has value.
+
+**JOIN execution (when module is present):**
+
+```bash
+CONTENT_ATTR_JSON='[]'  # accumulator — jq-mergeable array of per-source records
+
+if [ "$CA_AVAILABLE" = "1" ]; then
+  for entry in "${PM_SOURCES[@]}"; do
+    MANIFEST="${entry%%::*}"
+    REST="${entry#*::}"
+    SRC_TYPE="${REST%%::*}"
+    SRC_ID="${REST#*::}"
+
+    # ca_join_engagement reads:
+    #   - the post-manifest at $MANIFEST (for derivative IDs + scheduleIds)
+    #   - ~/dev/youtube_analytics/data/videos.json (for YouTube Shorts metrics)
+    #   - ~/dev/claude-social-media-skills/buffer-stats/cache/snapshot-*.json (per-post engagement)
+    #   - ~/dev/claude-social-media-skills/linkedin-stats/cache/snapshot-*.json (per-post engagement)
+    #   - any other *-stats/cache/snapshot-*.json available
+    # ...and emits a single JSON record matching the shape in CLOSED-LOOP-UNIFICATION-PLAN.md
+    # (source{}, derivatives[], source_engagement{}, derived_engagement{}, amplification_ratio).
+    REC=$(ca_join_engagement --source-type "$SRC_TYPE" --source-id "$SRC_ID" --manifest "$MANIFEST" 2>/dev/null)
+    [ -z "$REC" ] || ! printf '%s' "$REC" | jq -e . >/dev/null 2>&1 && continue
+
+    # Edge: zero-derivatives-for-source — a long-form that produced no clips at all
+    # (e.g. an essay we haven't fanned out yet). Surface but don't error — render
+    # in the report with status="no derivatives yet" so the user can see the gap.
+    DERIV_COUNT=$(printf '%s' "$REC" | jq '.derivatives | length')
+    if [ "$DERIV_COUNT" = "0" ]; then
+      REC=$(printf '%s' "$REC" | jq '. + {status: "no_derivatives_yet"}')
+    fi
+
+    CONTENT_ATTR_JSON=$(jq -n --argjson acc "$CONTENT_ATTR_JSON" --argjson rec "$REC" '$acc + [$rec]')
+  done
+fi
+```
+
+**Aggregations consumed downstream:**
+
+```bash
+# Per-source amplification top-5 (highest derived reach × ratio) — for the report
+CA_TOP_SOURCES=$(printf '%s' "$CONTENT_ATTR_JSON" | jq '[.[] | {
+  title: .source.title, id: .source.id,
+  source_reach: (.source_engagement.views // 0),
+  derived_reach: (.derived_engagement.reach // 0),
+  amplification: (.amplification_ratio // 0),
+  derivative_count: (.derivatives | length)
+}] | sort_by(-.derived_reach) | .[0:5]')
+
+# Total derivative reach across all sources — credited back to Priority 1
+CA_TOTAL_DERIVED_REACH=$(printf '%s' "$CONTENT_ATTR_JSON" | jq '[.[] | .derived_engagement.reach // 0] | add // 0')
+CA_TOTAL_DERIVED_SUBS=$(printf '%s' "$CONTENT_ATTR_JSON" | jq '[.[] | .derived_engagement.subs_gained // 0] | add // 0')
+
+# Derivative-credited Priority 1 throughput — see Priority 1 verdict logic in Phase 2
+CA_AMP_BONUS=$(printf '%s' "$CONTENT_ATTR_JSON" | jq '[.[] | (((.amplification_ratio // 1) | if . > 3 then 3 else . end) - 1)] | add // 0')
+P1_DERIVATIVE_CREDITED=$(awk -v base="$LONG_FORM_COUNT" -v bonus="$CA_AMP_BONUS" 'BEGIN{print base + bonus}')
+```
+
+**Report section to splice into Phase 6:**
+
+```markdown
+## Per-source-content closed-loop attribution
+
+_(JOIN of post-manifests + per-platform engagement snapshots via `_shared/content-attribution/`)_
+
+| Source | Derivatives | Source reach | Derived reach | Amplification |
+|---|---:|---:|---:|---:|
+| How to Scale Without the Slop (uEposKmbFvY) | 23 | 425 | 18,234 | 42.9× |
+| <next source> | … | … | … | … |
+
+**Total derivative reach this window:** N (credited to Priority 1)
+**Top amplifier:** <title> at <X>× — invest more derivatives here before composing the next source.
+**Sources with zero derivatives:** N — candidates for `/opus-clips` or `/promote-newsletter` runs.
+```
+
+When `CONTENT_ATTR_JSON == []` (module missing or no manifests found), render the stub:
+
+```markdown
+## Per-source-content closed-loop attribution
+
+> ⚠ Unavailable: <CA_SKIP_REASON>. This phase will activate once `_shared/content-attribution/` (task #381) is on disk and at least one post-manifest exists.
+```
 
 ### Phase 4.7 — Cross-source follower reconciliation
 
@@ -474,8 +611,10 @@ Build the markdown with a fixed structure so snapshots are diffable week-over-we
 - Long-form videos this window: N
 - Newsletters this window: N
 - Combined long-form output: N (target: $P1_MIN-$P1_MAX/week)
-- Pace: X/week
-- Status: [🟢 on track ≥$P1_MIN | 🟡 under | 🔴 off]
+- Pace: X/week (raw)
+- Derivative-credited throughput: X/week (raw + amplification bonus, capped per Phase 2 rules)
+- Total derivative reach this window: N (subs gained via derivatives: N)
+- Status: [🟢 raw ≥$P1_MIN | 🟡 raw under but derivative-credited ≥$P1_MIN | 🔴 both under]
 
 ## Priority 2 — Push viewers to Beehiiv
 - Current subs: N (target: $P2_TOTAL in $P2_WEEKS weeks)
@@ -508,6 +647,14 @@ Build the markdown with a fixed structure so snapshots are diffable week-over-we
 - Realized revenue this window: $Y
 - Content gaps: N deals delivered without attached content pieces
 - Status: [🟢 zero gaps | 🔴 N gaps]
+
+## Per-source-content closed-loop attribution
+_(from Phase 4.56; ⚠ stub when `_shared/content-attribution/` is missing)_
+| Source | Derivatives | Source reach | Derived reach | Amplification |
+|---|---:|---:|---:|---:|
+| <top-5 by derived reach> | … | … | … | …× |
+- Total derivative reach: N (credited to Priority 1)
+- Sources with zero derivatives this window: N
 
 ## Cross-priority notes
 _(free-form observations: spikes, correlations, concerns)_
@@ -544,9 +691,22 @@ Consider also writing a parallel `$SNAP_DIR/<date>.json` with the raw numbers to
   "beehiiv": { "total_subs": N, "new_subs_in_window": N, "attribution": { "youtube": N, "linkedin": N, "...": N } },
   "linkedin": { "newsletter_subs": N, "profile_followers": N, "company_followers": N, "snapshot_date": "..." },
   "buffer": { "channels": N, "total_followers": N, "total_followers_delta": N, "avg_engagement_rate": F, "snapshot_date": "..." },
-  "consulting": { "pipeline": F, "realized_revenue": F, "content_gaps": N }
+  "consulting": { "pipeline": F, "realized_revenue": F, "content_gaps": N },
+  "priority_1": { "raw_long_form": N, "derivative_credited_throughput": F, "derivative_amp_bonus": F, "total_derived_reach": N, "total_derived_subs_gained": N },
+  "content_attribution": [
+    {
+      "source": { "type": "long_form", "id": "uEposKmbFvY", "title": "...", "published_at": "..." },
+      "derivatives": [ /* full ca_join_engagement output per source — see CLOSED-LOOP-UNIFICATION-PLAN.md */ ],
+      "source_engagement": { "views": N, "likes": N, "comments": N, "subs_gained": N, "estimated_revenue": F },
+      "derived_engagement": { "reach": N, "reactions": N, "comments": N, "subs_gained": N, "estimated_revenue": F },
+      "amplification_ratio": F,
+      "status": "ok | no_derivatives_yet"
+    }
+  ]
 }
 ```
+
+`content_attribution[]` is written verbatim from Phase 4.56's `$CONTENT_ATTR_JSON` accumulator. Empty array (`[]`) when the `_shared/content-attribution/` module is missing or no post-manifests exist. Week-over-week diffing of this array surfaces: which sources gained new derivatives, which derivatives gained engagement, which long-forms went from "no derivatives yet" to live amplifiers.
 
 Diffing JSON is trivially reliable even if the markdown structure evolves.
 
@@ -568,3 +728,7 @@ After a few weeks of running `/flywheel` every Sunday, the snapshots directory b
   *Label: `Edge: consulting-log-local-only`*
 - **Targets block missing or malformed.** Phase 1.5 expects a fenced `json` block in `~/dev/youtube_analytics/enterprise_vibe_code_growth_priorities.md` between `<!-- flywheel-targets-start -->` and `<!-- flywheel-targets-end -->` anchors. If absent or invalid JSON, the skill falls back to embedded defaults (the values that were authoritative as of 2026-05-18: P1=2-3/wk, P2=1800 in 52wk, P3=1/wk, P4=1/wk, P5 yellow/red=1/3, ROI=100/10/50, staleness=14d) and prepends a `⚠` warning to the rendered report. Fix the doc — don't paper over by editing the fallback values in this skill.
   *Label: `Edge: targets-block-missing-or-malformed`*
+- **Content-attribution module missing.** Phase 4.56 sources `~/dev/claude-social-media-skills/_shared/content-attribution/content_attribution.sh` (task #381). If the file isn't on disk, the phase skips: `content_attribution[]` in the JSON snapshot is `[]`, the markdown section renders as a `⚠ Unavailable` stub, and Priority 1's derivative-credited throughput falls back to raw count. The rest of `/flywheel` is unaffected — don't abort the run. Companion dependency: task **#377** (buffer-stats Insights coverage of all 6 channels) needs to land for the JOIN to cover every platform uniformly; until then derivative reach undercounts the channels Insights doesn't yet reach.
+  *Label: `Edge: content-attribution-module-missing`*
+- **Zero derivatives for a source.** Phase 4.56 may encounter a long-form (or newsletter) whose post-manifest exists but has no `clips[]`/`posts[]` populated yet — i.e. the user hasn't fanned it out via `/opus-clips` or `/promote-newsletter`. This is NOT an error; the source still belongs in the report so the user sees the gap. The record is emitted with `status: "no_derivatives_yet"` and `amplification_ratio: 0`. Surface the count in the "Sources with zero derivatives" line of the attribution section as actionable: those are the next `/opus-clips` candidates.
+  *Label: `Edge: zero-derivatives-for-source`*

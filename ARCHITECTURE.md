@@ -1,25 +1,42 @@
 # Architecture
 
-The skills in this repo are designed as a **closed loop**, not as independent one-shot tools. Every post the compose skills create is tagged at compose time so the analytics skills can later attribute engagement back to the format that produced it — and use that attribution to recommend skill-config changes for the next promotion cycle.
+The skills in this repo are designed as a **closed loop**, not as independent one-shot tools. Every post the compose skills create is tagged at compose time — either with a Buffer `format:<name>` tag (Buffer-routed posts) or with an in-text `[scheme:id]` footer + JSON post-manifest (non-Buffer posts) — so the analytics skills can later attribute engagement back to the source content that produced it, and use that attribution to recommend skill-config changes for the next promotion cycle.
+
+See also: [`CLOSED-LOOP-UNIFICATION-PLAN.md`](CLOSED-LOOP-UNIFICATION-PLAN.md) (the 2026-05-19 unification plan that this document now incorporates), [`PATTERNS.md` § Closed-loop post manifest](PATTERNS.md#pattern-closed-loop-post-manifest-for-non-buffer-scheduling), and [`_shared/post-manifest/README.md`](_shared/post-manifest/README.md).
 
 ## The loop
 
+Two parallel attribution paths converge at `/flywheel`. The Buffer-routed path has been working since 2026-04-27; the non-Buffer path is being wired up as of 2026-05-18/19.
+
 ```
-Compose with format tag (promote-* skills, Phase 6)
-          ↓
-Adversarial review (fresh agent vs source + skill rules)
-          ↓
-User review + publish (Phase 5 + 6)
-          ↓
-Audit queue health (audit-buffer-queue, weekly)
-          ↓
-Measure engagement per format (buffer-stats Phase 5)
-          ↓
-Recommend skill changes (buffer-stats Phase 5b)
-          ↓
-User accepts → SKILL.md edits committed → next batch better-targeted
-          ↓
-[loop]
+                Compose (promote-*, tease-*, carousel-*, opus-clips, …)
+                                ↓
+                  Adversarial review (fresh agent)
+                                ↓
+                  User review + publish (Phase 5+6)
+                ┌───────────────┴───────────────┐
+                ↓                               ↓
+   Buffer-routed path                Non-Buffer path
+   (4 of 6 compose skills)           (opus-clips today;
+   - format:<name> Buffer tag         direct-publish future)
+                ↓                    - [scheme:id] in-text tag
+   audit-buffer-queue (weekly)       - post-manifest JSON ledger
+                ↓                               ↓
+   buffer-stats (Insights +          per-platform stats fetchers
+   Analyze + GraphQL tagIds)         (yt-analytics, linkedin-stats,
+                ↓                     tiktok-stats, threads-stats)
+   per-(channel, format) ROI                    ↓
+                └───────────────┬───────────────┘
+                                ↓
+                _shared/content-attribution/ (JOIN engine, in dev — #381)
+                                ↓
+                            /flywheel (per-source-content closed-loop report)
+                                ↓
+                Recommend skill changes (buffer-stats Phase 5b + flywheel ROI)
+                                ↓
+                User accepts → SKILL.md edits committed → next batch better
+                                ↓
+                              [loop]
 ```
 
 ## The skills, by role
@@ -40,11 +57,14 @@ Every compose-and-publish skill has these required phases:
 
 ### Measure (read side)
 
-| Skill | Surface scraped | Output |
-|---|---|---|
-| [`buffer-stats`](buffer-stats/SKILL.md) | publish.buffer.com/insights (cross-channel) + analyze.buffer.com (per-channel) | Per-(channel, format) engagement table + auto-generated skill recommendations |
-| [`linkedin-stats`](linkedin-stats/SKILL.md) | linkedin.com/dashboard/ + /analytics/creator/* | Followers + impressions + per-post engagement deltas vs cached snapshot |
-| [`flywheel`](flywheel/SKILL.md) | Aggregates buffer-stats + linkedin-stats + YouTube + beehiiv into one weekly rollup keyed to growth priorities | Weekly priorities-keyed report with channel ROI scores |
+| Skill | Surface scraped | Output | Status |
+|---|---|---|---|
+| [`buffer-stats`](buffer-stats/SKILL.md) | Buffer Insights (cross-channel, all 6 channels) + Buffer Analyze (per-post, 3 channels) + Buffer GraphQL (tagIds via MCP `list_posts`) | Per-(channel, format) engagement + channel ROI bucketing + auto skill recs | Live |
+| [`linkedin-stats`](linkedin-stats/SKILL.md) | linkedin.com/dashboard/ + /analytics/creator/* | Followers + impressions + per-post engagement deltas (Phase 3b lands per-post for LinkedIn personal) | Live |
+| [`yt-analytics`](https://github.com/oven-sh/youtube_analytics) (external Go binary at `~/dev/youtube_analytics/`) | YouTube Data API + Analytics API | Per-video metrics; reads OpusClip in-text `[opus:<clip_id>]` tag in Short descriptions | Live |
+| [`threads-stats`](threads-stats/SKILL.md) | Meta Graph API (Threads Insights) | Per-post engagement for Threads profiles | **Scaffold-only** (OAuth gated; pending #373-class task) |
+| [`tiktok-stats`](tiktok-stats/SKILL.md) | TikTok Business API | Per-post engagement for TikTok business | **Scaffold-only** (OAuth gated) |
+| [`flywheel`](flywheel/SKILL.md) | Aggregates everything above + beehiiv via `_shared/content-attribution/` JOIN engine | Weekly priorities-keyed report w/ per-source-content ROI (Phase 4.55 — in dev) | Partial — JOIN layer pending #381 |
 
 ### Hygiene + adapt (close-the-loop side)
 
@@ -67,6 +87,77 @@ These are the only valid `format:<name>` tag values as of 2026-04-27. The compos
 | `format:long-form-pulse` | (future-reserved) | Reserved for a future skill that schedules a Buffer companion post for a published LinkedIn pulse article. `crosspost-newsletter` publishes pulse articles directly to LinkedIn, NOT via Buffer; pulse-post engagement is attributed via `linkedin-stats` instead of `buffer-stats` |
 
 If you add a new compose skill, define a new format tag and update this table + `buffer-stats` Phase 5's expected tag list.
+
+## Engagement data sources
+
+The repo touches three distinct Buffer surfaces plus a growing set of platform-native APIs. They are NOT interchangeable; each covers a different slice. Conflating them was the root cause of several attribution gaps before 2026-05-18.
+
+| Source | URL / API | Granularity | Coverage | Notes |
+|---|---|---|---|---|
+| **Buffer Insights** | `publish.buffer.com/insights` | Aggregate per channel (30d window) | All 6 channels including Threads + LinkedIn personal | Only source that surfaces Threads + LinkedIn-personal engagement; no per-post |
+| **Buffer Analyze** | `analyze.buffer.com` | Per-post (impressions, reach) | IG business + FB page + LinkedIn page only | Does NOT cover Threads, LinkedIn personal, or any non-Buffer surface |
+| **Buffer GraphQL** (via MCP `list_posts`) | Buffer Public API | Per-post metadata only (text, channelId, tagIds) | All Buffer-routed posts | No engagement counts — the tagIds JOIN (#371) bridges per-post metadata to per-post engagement |
+| **Platform-native APIs / scrapes** | per-platform | Per-post engagement | YouTube (yt-analytics), LinkedIn personal (linkedin-stats), Threads (threads-stats, scaffold), TikTok (tiktok-stats, scaffold) | Required for everything Buffer Analyze can't see |
+
+A canonical snapshot shape lives at `buffer-stats/cache/snapshot-<date>.json`. Each `channels[i].engagement` block declares `available: true/false` with a `reason` — consumers must check this rather than assume coverage.
+
+## Closed-loop paths
+
+Two parallel attribution paths feed the same downstream analysis. Use whichever matches how the post got published.
+
+### Buffer-routed path (existing — working since 2026-04-27)
+
+```
+compose skill → mcp__buffer__create_post(tagIds: [<format:<name>>])
+              → Buffer publishes
+              → buffer-stats reads Insights + Analyze + GraphQL tagIds
+              → per-(channel, format) ROI
+```
+
+Used by: `promote-newsletter`, `tease-newsletter`, `carousel-newsletter`, `promote-github`.
+
+### Non-Buffer path (new since 2026-05-18)
+
+```
+compose skill → publishes via OpusClip native / LinkedIn pulse API / direct
+              → writes post-manifest JSON ledger (api response IDs)
+              → embeds [scheme:id] in-text tag in post body
+              → per-platform stats fetcher reads platform API
+              → JOIN engine (_shared/content-attribution/) correlates back to source
+```
+
+Used by: `opus-clips` (today), `crosspost-newsletter` (writes manifest; LinkedIn pulse engagement via linkedin-stats). Future direct-publishing skills follow the same pattern.
+
+The in-text tag is **defense in depth** — the manifest is machine-readable but lives on disk; the in-text tag travels with the post itself so a future fetcher can recover the source link via platform search even if the manifest is unavailable. Schemes: `opus:` (OpusClip clip), `lp:` (LinkedIn pulse), `gh:` (GitHub PR/SHA), `bh:` (beehiiv slug). See [`_shared/post-manifest/README.md`](_shared/post-manifest/README.md) for the JSON shape + sourceable bash helpers.
+
+## Per-source-content attribution (the unified analysis layer)
+
+The data-collection skills (yt-analytics, buffer-stats, linkedin-stats, tiktok-stats, threads-stats) stay platform-specific — each writes its own snapshot, none talk to each other. What unifies the loop is a separate **analysis layer** that JOINs across snapshots by the keys above.
+
+Three layers, clear contracts:
+
+1. **Data collection** (existing/planned `*-stats` skills) — platform-specific fetchers. Each writes a snapshot under a known path (`<skill>/cache/snapshot-*.json` or `~/dev/youtube_analytics/data/`). No skill reads another's cache.
+2. **JOIN engine** (`_shared/content-attribution/`, in dev — #381) — reads snapshots + post-manifests, correlates by these keys in priority order:
+   1. `[scheme:id]` in-text tag (highest signal)
+   2. Buffer `format:<name>` tag (per-format aggregation)
+   3. `scheduleId` / `postId` from post-manifest
+   4. ±2h time-window (fallback)
+   5. `?utm_content` URL param (future)
+3. **Analysis** (`/flywheel` Phase 4.55 + `/opus-clips-performance`) — consumes JOIN output, applies user priority weighting + ROI bucketing, renders the report.
+
+Net effect: a long-form essay's true ROI = source-video metrics PLUS every derivative clip's metrics across every platform. Today the OpusClip→YouTube-Short→LinkedIn-personal chain has all three snapshots but no JOIN; #380/#381 close that gap. Full design + worked example in [`CLOSED-LOOP-UNIFICATION-PLAN.md`](CLOSED-LOOP-UNIFICATION-PLAN.md).
+
+## Dead channel awareness
+
+Buffer Insights surfaces engagement per channel over a 30-day window. A channel that publishes consistently but produces zero reactions/impressions over that window is **dead** — continuing to fan out to it burns compose-skill budget for no return.
+
+Current dead channels (as of 2026-05-19, from `buffer-stats/cache/snapshot-2026-05-18.json` + Insights 30d):
+
+| Channel | Posts (30d) | Reactions (30d) | Verdict |
+|---|---|---|---|
+| Threads `enterprisevibecode` | 64 | 0 | Dead — pause fan-out; investigate algorithmic / content-fit cause |
+
+When a dead channel is identified, document the investigation at `audits/<channel>-dead-channel.md` (e.g. `audits/threads-enterprisevibecode-dead-channel.md`) — root cause, evidence, remediation options, decision. `audit-buffer-queue` flags below-threshold channels each weekly run; the audit doc is the deeper one-time investigation. `/flywheel` channel-ROI scoring (yellow_mid / red_dead buckets in `channel_roi[]`) is the surfacing mechanism.
 
 ## Defaults baked in 2026-04-27
 
