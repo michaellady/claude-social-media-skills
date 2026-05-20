@@ -30,7 +30,7 @@
 _ca_newest_snapshot() {
   local dir="$1"
   [[ -d "$dir" ]] || return 0
-  ls "$dir"/snapshot-*.json 2>/dev/null | sort | tail -1
+  find "$dir" -maxdepth 1 -name 'snapshot-*.json' 2>/dev/null | sort | tail -1
 }
 
 # Print every post-manifest file. Today this is just opus_clips/; future schedulers
@@ -40,13 +40,13 @@ _ca_newest_snapshot() {
 _ca_all_manifests() {
   local candidates=()
   if [[ -d "$CA_OPUS_MANIFESTS_DIR" ]]; then
-    while IFS= read -r f; do candidates+=("$f"); done < <(ls "$CA_OPUS_MANIFESTS_DIR"/*.json 2>/dev/null)
+    while IFS= read -r f; do candidates+=("$f"); done < <(find "$CA_OPUS_MANIFESTS_DIR" -maxdepth 1 -name '*.json' 2>/dev/null)
   fi
   # Other scheduler dirs (linkedin_pulses, etc.) — add when they exist.
   local d
   for d in "$CA_MANIFESTS_ROOT"/linkedin_pulses "$CA_MANIFESTS_ROOT"/medium_posts "$CA_MANIFESTS_ROOT"/substack_posts; do
     [[ -d "$d" ]] || continue
-    while IFS= read -r f; do candidates+=("$f"); done < <(ls "$d"/*.json 2>/dev/null)
+    while IFS= read -r f; do candidates+=("$f"); done < <(find "$d" -maxdepth 1 -name '*.json' 2>/dev/null)
   done
 
   local f

@@ -411,10 +411,11 @@ if [ ! -f "$CA_MODULE" ]; then
   CA_AVAILABLE=0
   CA_SKIP_REASON="_shared/content-attribution/ not on disk — task #381 not landed yet"
 else
-  source "$CA_MODULE"
   CA_AVAILABLE=1
 fi
 ```
+
+**CRITICAL — invoke the module via `bash -c`, never source it into the ambient shell.** `content_attribution.sh` is a bash script (`#!/bin/bash`). The Bash tool's interactive shell is zsh, and zsh's `nomatch` option makes the module's internal globs fatal + mangles sourced-function output (verified 2026-05-19 — sourcing into zsh leaked `var='...'` traces to stdout and corrupted the JSON). Always wrap calls: `bash -c 'source "$0"; ca_<fn> "$@"' "$CA_MODULE" <args>`. See `Edge: content-attribution-zsh-incompat`.
 
 If `CA_AVAILABLE=0`, skip the entire phase, render a stub section in the report (`> ⚠ Per-source-content attribution unavailable: <reason>. Land task #381 to enable.`), and emit `content_attribution: []` in the JSON snapshot. **Do not fail the whole `/flywheel` run** — the rest of the report still has value.
 
@@ -438,7 +439,9 @@ if [ "$CA_AVAILABLE" = "1" ]; then
     #   - any other *-stats/cache/snapshot-*.json available
     # ...and emits a single JSON record matching the shape in CLOSED-LOOP-UNIFICATION-PLAN.md
     # (source{}, derivatives[], source_engagement{}, derived_engagement{}, amplification_ratio).
-    REC=$(ca_join_engagement --source-type "$SRC_TYPE" --source-id "$SRC_ID" --manifest "$MANIFEST" 2>/dev/null)
+    # Invoke under bash -c (NOT sourced into zsh — see CRITICAL note above).
+    REC=$(bash -c 'source "$0"; ca_join_engagement --source-type "$1" --source-id "$2" --manifest "$3"' \
+      "$CA_MODULE" "$SRC_TYPE" "$SRC_ID" "$MANIFEST" 2>/dev/null)
     [ -z "$REC" ] || ! printf '%s' "$REC" | jq -e . >/dev/null 2>&1 && continue
 
     # Edge: zero-derivatives-for-source — a long-form that produced no clips at all
@@ -730,5 +733,7 @@ After a few weeks of running `/flywheel` every Sunday, the snapshots directory b
   *Label: `Edge: targets-block-missing-or-malformed`*
 - **Content-attribution module missing.** Phase 4.56 sources `~/dev/claude-social-media-skills/_shared/content-attribution/content_attribution.sh` (task #381). If the file isn't on disk, the phase skips: `content_attribution[]` in the JSON snapshot is `[]`, the markdown section renders as a `⚠ Unavailable` stub, and Priority 1's derivative-credited throughput falls back to raw count. The rest of `/flywheel` is unaffected — don't abort the run. Companion dependency: task **#377** (buffer-stats Insights coverage of all 6 channels) needs to land for the JOIN to cover every platform uniformly; until then derivative reach undercounts the channels Insights doesn't yet reach.
   *Label: `Edge: content-attribution-module-missing`*
+- **Content-attribution is bash-only; never source into zsh.** `_shared/content-attribution/content_attribution.sh` is a bash script. The Bash tool runs zsh, where (a) unmatched globs are fatal (`nomatch`) and (b) sourced-function output gets mangled — verified 2026-05-19: sourcing leaked `var='...'` traces into stdout and broke the JSON. Always invoke as `bash -c 'source "$0"; ca_<fn> "$@"' "$CA_MODULE" <args>`. The module itself was also hardened (globs replaced with `find`), but the `bash -c` wrapper is the load-bearing fix.
+  *Label: `Edge: content-attribution-zsh-incompat`*
 - **Zero derivatives for a source.** Phase 4.56 may encounter a long-form (or newsletter) whose post-manifest exists but has no `clips[]`/`posts[]` populated yet — i.e. the user hasn't fanned it out via `/opus-clips` or `/promote-newsletter`. This is NOT an error; the source still belongs in the report so the user sees the gap. The record is emitted with `status: "no_derivatives_yet"` and `amplification_ratio: 0`. Surface the count in the "Sources with zero derivatives" line of the attribution section as actionable: those are the next `/opus-clips` candidates.
   *Label: `Edge: zero-derivatives-for-source`*

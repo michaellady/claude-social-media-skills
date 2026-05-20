@@ -98,7 +98,16 @@ A platform record may be:
 
 ## Helper functions (sourceable bash)
 
+> **Shell compatibility — bash only.** This is a bash script (`#!/bin/bash`). Do NOT source it into zsh: zsh's `nomatch` option makes the internal globs fatal, and sourced-function output gets mangled (verified 2026-05-19 — `var='...'` traces leaked to stdout and corrupted the JSON). From a zsh context (including Claude Code's Bash tool, which runs zsh), always invoke under bash:
+> ```bash
+> bash -c 'source "$0"; ca_join_engagement "$1"' \
+>   ~/dev/claude-social-media-skills/_shared/content-attribution/content_attribution.sh \
+>   uEposKmbFvY
+> ```
+> The internal globs were also hardened (`ls *.json` → `find -name '*.json'`), but the `bash -c` wrapper is the load-bearing fix for any multi-statement helper.
+
 ```bash
+# From bash:
 source ~/dev/claude-social-media-skills/_shared/content-attribution/content_attribution.sh
 ```
 
