@@ -86,6 +86,8 @@ opusclip list --project $PROJECT --summary | jq -r '
 
 **Phase 5 — (Optional) strip brand overlay.** See `Edge: brand-overlay-baked-in` for full details — overlays are applied at render-time from account-level defaults, not from the template, so the only way to remove them from existing clips is the undocumented `renderPreferenceOverride` body field on the re-render endpoint. Confirmed working 2026-05-18, **does not consume credits**.
 
+**Phase 5.5 — Newsletter CTA (REQUIRED on every clip).** Added 2026-05-20 after the flywheel caught the conversion gap: clips were driving 1,368 derivative views with **0% converting to the newsletter** because the descriptions had no CTA — just hook + hashtags + `[opus:]` tag. Every clip description must now carry a newsletter CTA, **hybrid by platform** (see `Newsletter CTA composition` below). The CTA's UTM-tagged link is also what makes per-clip conversion measurable in `beehiiv_attribution` — without it, the closed loop can't see which clips convert.
+
 **Phase 6 — Preview / hand off.**
 
 ```bash
@@ -95,6 +97,42 @@ opusclip preview --project $PROJECT   # opens HTML in browser, sorted by score
 For scheduling, two paths:
 - **Via OpusClip's native posting** (`opusclip post schedule`) — fan-out to OpusClip's connected accounts. Beta pricing, may diverge from web UX. Subject to OpusClip's per-day cap interpretation.
 - **Via Buffer** (this user's preferred path) — download the mp4s from each clip's `uriForExport`, schedule via `/promote-newsletter` or `/carousel-newsletter` flows. Uses the user's existing slot math (5/day across 6 channels at 09:00 / 12:00 / 15:00 / 18:00 / 21:00 PT).
+
+## Newsletter CTA composition (Phase 5.5)
+
+Every clip description = `<hook>` + `<CTA>` + `<hashtags>` + `[opus:<clip_id>]`. The CTA is **hybrid by platform** — direct UTM link where links are clickable, comment-to-DM where they aren't:
+
+| Platform | Links clickable? | CTA style |
+|---|---|---|
+| YouTube, LinkedIn (personal + page), Facebook, Threads | yes | **Direct UTM link** |
+| TikTok, Instagram | no (link-in-bio only) | **Comment-to-DM** |
+
+**Direct-link CTA** (link platforms) — append after the hook:
+```
+📬 The full essay + weekly newsletter (free): https://www.enterprisevibecode.com/?utm_source=<platform>&utm_medium=clip&utm_campaign=opus_<source_video_id>&utm_content=<clip_id>
+```
+
+**Comment-to-DM CTA** (TikTok, Instagram) — append after the hook:
+```
+Comment "newsletter" for the full essay + weekly drop 📬
+```
+
+### UTM scheme (the measurement key)
+
+The direct-link CTA carries UTMs so `beehiiv_attribution` can credit signups per-clip per-platform — this is what closes the "0% from YouTube, can't tell which clip works" blind spot the 2026-05-20 flywheel surfaced:
+
+| Param | Value |
+|---|---|
+| `utm_source` | platform: `youtube` \| `linkedin` \| `facebook` \| `threads` |
+| `utm_medium` | `clip` (distinguishes from `newsletter`/`livestream` mediums) |
+| `utm_campaign` | `opus_<source_video_id>` (e.g. `opus_uEposKmbFvY`) — groups all clips from one long-form |
+| `utm_content` | `<clip_id>` — the exact clip, joinable to the post-manifest |
+
+After clips with UTM links run, `/flywheel` Phase 3 (beehiiv attribution) will show `youtube`/`linkedin` as sources under campaign `opus_<videoid>`, and per-clip conversion becomes visible. The CTA copy itself is **cognition** (voice-sensitive — keep it in this prompt, not a binary); only the UTM-link assembly is mechanical.
+
+### Why hybrid, not link-everywhere
+
+TikTok and Instagram strip/ignore links in captions (link-in-bio is the only clickable surface), so a raw URL there is dead text that also reads as spammy. Comment-to-DM is the native pattern on those surfaces and doubles as an engagement signal (comments boost reach). The tradeoff: comment-to-DM isn't UTM-measurable, so IG/TikTok conversion stays attributed only by beehiiv's coarse `organic`/`referral` buckets. Accept that — those aren't the high-converting channels anyway (the engaged audiences are YouTube→newsletter and LinkedIn personal, both link-platforms).
 
 ## Edge cases (read only when the matching signal appears)
 
