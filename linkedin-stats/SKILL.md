@@ -202,6 +202,47 @@ $B screenshot /tmp/ln-analytics.png
 $B handoff "LinkedIn dashboard DOM changed. Screenshot at /tmp/ln-analytics.png — please read the top metrics and paste here."
 ```
 
+### Phase 2.5 — Newsletter platform comparison (LinkedIn vs Beehiiv) — added 2026-05-20
+
+Both newsletters carry the SAME weekly content, so each LinkedIn edition pairs with a beehiiv post by title. This phase writes `cache/newsletter-platform-comparison.json`, which `/flywheel` Priority 3 reads as a recurring metric. Refresh it every full `/linkedin-stats` run.
+
+**Step A — LinkedIn newsletter detail + per-edition engagement.**
+
+```bash
+# Newsletter analytics page (richer than the about page): subs, 7d article views, impressions.
+$B goto "https://www.linkedin.com/analytics/newsletter/urn:li:fsd_contentSeries:<newsletter-id>/"
+sleep 4
+$B js "
+  const t = (document.querySelector('main, [role=main]') || document.body).innerText;
+  const g = re => { const m = t.match(re); return m ? +m[1].replace(/,/g,'') : null; };
+  ({ subscribers: g(/([\\d,]+)\\s+subscribers?/i),
+     article_views_7d: g(/([\\d,]+)\\s*\\n\\s*Article views/i),
+     impressions_7d: g(/([\\d,]+)\\s*\\n\\s*Impressions/i),
+     new_subs_7d: g(/([\\d,]+)\\s*\\n\\s*New Subscribers/i) })
+"
+# Per-edition list (scroll to load ALL editions — the page lazy-loads ~6 at a time,
+# loop scrollTo bottom until the 'Feed post' count stabilizes, ~13 editions total).
+$B goto "$NEWSLETTER_URL"
+$B js "/* scroll-to-stable loop, then split innerText on 'Feed post';
+        per block extract: Published-relative date, title (line after 'Published'),
+        reactions (int after 'Mike Lady\\n'), comments (int before 'comments'). */"
+```
+
+**Step B — Beehiiv full history** via the MCP (`recipients` per issue IS the sub-count at that date):
+
+```
+mcp__beehiiv__beehiiv_stats (post_limit: 20, window_days: 90)
+```
+
+**Step C — Pair by title + write the artifact.** Match each LinkedIn edition to its beehiiv post by title; write `cache/newsletter-platform-comparison.json` with: `current` (both sub counts + rates), `per_issue[]` (date, title, beehiiv_subs/opens/clicks, li_reactions/comments), `beehiiv_subs_growth_curve[]` (from recipients/issue), and `beehiiv_only_issues[]` (beehiiv posts with no LinkedIn edition).
+
+**Hard rules (don't violate):**
+- **LinkedIn has NO historical subscriber timeseries** — only the current count is retrievable. Set `linkedin_subs_growth_curve: "UNAVAILABLE"`; never fabricate one.
+- Metrics are **not 1:1**: beehiiv = email opens/clicks; LinkedIn = public reactions/comments + article views. Keep them in separate columns; never sum across platforms.
+- Beehiiv `recipients` is the authoritative per-issue date + sub-count anchor; match LinkedIn editions onto it (LinkedIn's relative "2 weeks ago" dates are fuzzy).
+
+Also fold the headline LinkedIn newsletter fields into the snapshot's `newsletter` object (subscribers, new_subs_7d, editions, article_views_7d, impressions_7d, top_job_titles, latest_edition) so Phase 4 of `/flywheel` can read them without re-scraping.
+
 ### Phase 3 — Profile follower count + top posts
 
 ```bash
