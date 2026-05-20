@@ -96,30 +96,27 @@ A platform record may be:
 
 `amplification_ratio` is `derived_engagement.reach / max(source_engagement.views, 1)`. Null when source has no view denominator.
 
-## Helper functions (sourceable bash)
+## Binary (Go)
 
-> **Shell compatibility — bash only.** This is a bash script (`#!/bin/bash`). Do NOT source it into zsh: zsh's `nomatch` option makes the internal globs fatal, and sourced-function output gets mangled (verified 2026-05-19 — `var='...'` traces leaked to stdout and corrupted the JSON). From a zsh context (including Claude Code's Bash tool, which runs zsh), always invoke under bash:
-> ```bash
-> bash -c 'source "$0"; ca_join_engagement "$1"' \
->   ~/dev/claude-social-media-skills/_shared/content-attribution/content_attribution.sh \
->   uEposKmbFvY
-> ```
-> The internal globs were also hardened (`ls *.json` → `find -name '*.json'`), but the `bash -c` wrapper is the load-bearing fix for any multi-statement helper.
+This is a **Go binary**, not a shell script — it runs identically regardless of the caller's shell. (The original bash module broke under zsh: `nomatch` made globs fatal and sourced-function output got mangled. Rewritten in Go 2026-05-19 per the prefer-Go-over-shell directive; same precedent as `_shared/voice-corpus/` and `_shared/buffer-post-prep/`.)
 
+Build:
 ```bash
-# From bash:
-source ~/dev/claude-social-media-skills/_shared/content-attribution/content_attribution.sh
+cd ~/dev/claude-social-media-skills/_shared/content-attribution && go build -o content-attribution .
 ```
 
-| Function | Purpose |
-|---|---|
-| `ca_find_source <source_id>` | Locate a source by ID across the snapshot universe; returns its metadata or empty. |
-| `ca_join_engagement <source_id>` | The JOIN. Emit a unified JSON record per the output shape above. |
-| `ca_render_report <source_id> [--format md\|json]` | Pretty-print the unified record. Default `md`. |
-| `ca_list_sources` | Enumerate all source content with at least one derivative across snapshots. Drives `/flywheel`'s loop. |
-| `ca_extract_tag <text>` | Utility: pull `[scheme:id]` from a body of text. Returns `{scheme, id}` or `null`. |
+Subcommands (all emit JSON to stdout unless noted):
 
-Thin jq wrappers. Same Primitive Test discipline as [`_shared/post-manifest/`](../post-manifest/post_manifest.sh): no judgment, just the shape contract.
+| Command | Purpose |
+|---|---|
+| `content-attribution sources` | Enumerate all source content with ≥1 derivative across manifests. Drives `/flywheel`'s loop. |
+| `content-attribution join --source-id <id> [--source-type T] [--manifest P]` | The JOIN. Emit the unified per-source record (output shape above). Positional `<id>` also accepted; `--source-type`/`--manifest` are accepted-but-ignored hints. |
+| `content-attribution report --source-id <id> [--format md\|json]` | Pretty-print the unified record. Default `md`. |
+| `content-attribution extract-tag <text...>` | Utility: pull the first `[scheme:id]` tag from text. Prints `{scheme, id}` JSON or `null`. |
+
+Pure transport. Same Primitive Test discipline as [`_shared/post-manifest/`](../post-manifest/README.md): no judgment, just the shape contract. The JUDGMENT of what to do with the numbers (priority weighting, ROI bucketing) lives in the caller skill.
+
+**Engagement shape (normalized):** every `(clip × platform)` record is `{engagement: {...} | null, ...}`. When matched, the metric fields (`views`, `reactions`, `join_method`, etc.) live INSIDE `engagement`; when pending/no-match, `engagement` is `null` with `pending_task`/`reason` siblings. Consumers always check `.engagement != null` then read `.engagement.*`. (The bash version stored matched fields inline and only wrapped pending records — this normalization fixes that inconsistency.)
 
 ## Consumers
 
