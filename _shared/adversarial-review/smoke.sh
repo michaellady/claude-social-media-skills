@@ -5,7 +5,7 @@
 #
 # Pure-logic Go tests (`go test ./...`) cover parse + merge + dedup but
 # DO NOT exercise the actual `claude.Run()` / `codex.Run()` / `agent.Run()`
-# / `gemini.Run()` CLI dispatch. This script does.
+# / `agy.Run()` CLI dispatch. This script does.
 #
 # Run before committing any change to provider code or after upgrading a
 # provider CLI. Burns a few cents of provider tokens per invocation.
@@ -33,7 +33,7 @@ if [[ ! -x "$bin" ]]; then
 fi
 
 # All registered reviewers per main.go. Keep in sync if more are added.
-all_reviewers=(claude codex agent gemini)
+all_reviewers=(claude codex agent agy)
 
 # If args given, smoke just those. Otherwise smoke each individually + N-way.
 if [[ $# -gt 0 ]]; then

@@ -165,7 +165,7 @@ Skip Instagram if no image is available for it. Skip TikTok / YouTube channels (
 Apply the **[Adversarial Review pattern](../PATTERNS.md#pattern-adversarial-review)** with these per-skill specifics:
 
 - **SOURCE_LABEL:** "SOURCE ARTICLE"
-- **SOURCE_CONTENT:** the full beehiiv article body, verbatim. **Prepend a `Publication: Enterprise Vibe Code` line** above the title so reviewers know the publication name is in scope (Gemini in particular treats the article body as a strict whitelist; without this prepend it flags the publication name as fabrication).
+- **SOURCE_CONTENT:** the full beehiiv article body, verbatim. **Prepend a `Publication: Enterprise Vibe Code` line** above the title so reviewers know the publication name is in scope (strict reviewers like `agy` treat the article body as a whitelist; without this prepend they may flag the publication name as fabrication).
 - **SKILL_NAME:** `tease-newsletter`
 - **ARTIFACT_NAME:** "teaser"
 - **RULES_LIST:**

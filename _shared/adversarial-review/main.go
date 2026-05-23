@@ -1,6 +1,6 @@
-// Command adversarial-review dispatches the SAME prompt to every available
-// reviewer CLI in parallel (claude, codex, agent), parses each reviewer's
-// JSON verdict, and emits a merged canonical response on stdout.
+// Command adversarial-review dispatches the SAME prompt to every selected
+// reviewer CLI in parallel (claude, codex, agy by default; agent opt-in),
+// parses each reviewer's JSON verdict, and emits a merged canonical response.
 //
 // Usage:
 //
@@ -40,9 +40,9 @@ import (
 	"time"
 
 	"github.com/michaellady/mike-skills/llm-provider/agent"
+	"github.com/michaellady/mike-skills/llm-provider/agy"
 	"github.com/michaellady/mike-skills/llm-provider/claude"
 	"github.com/michaellady/mike-skills/llm-provider/codex"
-	"github.com/michaellady/mike-skills/llm-provider/gemini"
 	"github.com/michaellady/mike-skills/llm-provider/provider"
 )
 
@@ -77,27 +77,30 @@ type reviewerSpec struct {
 }
 
 // registeredReviewers is every provider the binary knows how to dispatch.
-// The default --reviewers selection is `claude,codex` — `agent` and `gemini`
-// are registered but opt-in (pass --reviewers claude,codex,agent,gemini to
-// enable everything). Reasoning: claude+codex is the validated default for
-// this transport; the other reviewers are kept available for experimentation
-// or high-stakes drafts without changing the default merge behavior.
+// Order here is the canonical reviewer order used for issue attribution.
 var registeredReviewers = []reviewerSpec{
 	{name: "claude", cli: "claude", make: func() provider.Provider { return claude.New() }},
 	{name: "codex", cli: "codex", make: func() provider.Provider { return codex.New() }},
 	{name: "agent", cli: "agent", make: func() provider.Provider { return agent.New() }},
-	{name: "gemini", cli: "gemini", make: func() provider.Provider { return gemini.New() }},
+	{name: "agy", cli: "agy", make: func() provider.Provider { return agy.New() }},
 }
 
 // defaultReviewers is the comma-separated default for the --reviewers flag.
-// As of 2026-05-03 we default to ALL registered providers — Claude is the
-// only paid plan; the rest (Codex, Cursor agent, Gemini) are low-tier or
-// free-tier accounts that may quota-fail or auth-fail at runtime. The
-// per-provider runner already returns per-provider errors that the merge
-// step routes into `parse_error: [<name>]` instead of crashing the whole
-// run. So defaulting to "use everything we can" is safe: when quota runs
-// out on any single reviewer, the others still produce a verdict.
-const defaultReviewers = "claude,codex,agent,gemini"
+//
+// Default = claude + codex + agy: three independent agent families catch
+// different failure modes (Claude: tone/voice/CTA; Codex: logical & structural
+// inconsistency; agy: a third perspective that has, in practice, caught
+// stragglers the other two missed), and all three are reliable enough to run
+// every time. (`agy` replaced the deprecated `gemini` provider.)
+//
+// `agent` (Cursor) is registered but OPT-IN: free/low-tier Cursor plans
+// quota-fail on nearly every run, so including it by default just adds noise.
+// Pass --reviewers claude,codex,agent,agy to add it for high-stakes drafts.
+//
+// Per-reviewer failures degrade gracefully: a reviewer that quota-fails,
+// auth-fails, or times out is reported under `skipped` (see unavailableReason),
+// NOT `parse_error` — so the remaining reviewers still produce a merged verdict.
+const defaultReviewers = "claude,codex,agy"
 
 func main() {
 	var promptFile string
@@ -108,7 +111,7 @@ func main() {
 	flag.IntVar(&timeoutSec, "timeout", 300, "per-reviewer timeout (seconds)")
 	flag.BoolVar(&quiet, "quiet", false, "suppress provider heartbeat lines on stderr")
 	flag.StringVar(&reviewersCSV, "reviewers", defaultReviewers,
-		"comma-separated reviewers to dispatch (registered: claude,codex,agent,gemini)")
+		"comma-separated reviewers to dispatch (registered: claude,codex,agent,agy)")
 	flag.Parse()
 
 	selected, err := selectReviewers(reviewersCSV)
@@ -155,7 +158,14 @@ func main() {
 	parsed := map[string]*reviewerResp{}
 	for res := range resultsCh {
 		if res.err != nil {
-			out.ParseError = append(out.ParseError, res.name)
+			// A reviewer that was dispatched but couldn't produce a verdict for
+			// reasons outside the audit (quota, auth, timeout) is "skipped", not a
+			// malformed-output parse_error. Keeps the merged result honest.
+			if reason, ok := unavailableReason(res.err); ok {
+				out.Skipped[res.name] = reason
+			} else {
+				out.ParseError = append(out.ParseError, res.name)
+			}
 			out.RawResponse += fmt.Sprintf("[%s error] %v\n", res.name, res.err)
 			continue
 		}
@@ -269,6 +279,38 @@ func runProvider(p provider.Provider, promptPath string, timeoutSec int, quiet b
 	}
 	err := p.Run(context.Background(), opts)
 	return buf.String(), err
+}
+
+// unavailableReason classifies a provider error as a graceful "skipped" — the
+// reviewer was dispatched but couldn't produce a verdict for reasons outside
+// the audit itself (quota/rate limit, auth, or timeout) — versus a genuine
+// failure that belongs in parse_error. Returns (reason, true) when the error
+// indicates unavailability. This keeps the merged output honest: a Cursor agent
+// that hit its usage cap is reported as skipped, not as a malformed-JSON
+// parse_error, and a reviewer that ran out of time on a huge prompt is "timed
+// out" rather than looking like it returned garbage.
+func unavailableReason(err error) (string, bool) {
+	if err == nil {
+		return "", false
+	}
+	msg := strings.ToLower(err.Error())
+	containsAny := func(subs ...string) bool {
+		for _, s := range subs {
+			if strings.Contains(msg, s) {
+				return true
+			}
+		}
+		return false
+	}
+	switch {
+	case containsAny("usage limit", "quota", "rate limit", "too many requests", "429"):
+		return "usage/quota limit", true
+	case containsAny("not logged in", "unauthorized", "authentication", "auth error", "401", "403"):
+		return "auth/login required", true
+	case containsAny("timed out", "timeout", "deadline exceeded"):
+		return "timed out", true
+	}
+	return "", false
 }
 
 // parseResponse extracts the JSON verdict object from a reviewer's reply.

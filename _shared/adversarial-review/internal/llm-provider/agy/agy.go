@@ -1,11 +1,12 @@
-// Package gemini implements the Google `gemini` CLI provider.
-// It runs `gemini --prompt <prompt> --output-format text --skip-trust` and
-// captures the final stdout as the assistant's reply.
+// Package agy implements the `agy` CLI provider — a non-interactive agent CLI
+// invoked as `agy --print <prompt> --dangerously-skip-permissions`, capturing
+// stdout as the assistant's reply.
 //
-// The CLI also supports `--output-format stream-json` for richer telemetry
-// (tool calls, intermediate reasoning); switch to that mode if heartbeat
-// output ever becomes important.
-package gemini
+// This replaces the deprecated `gemini` provider. As of this migration no
+// in-repo consumer wires gemini anymore (converge and adversarial-review both
+// use agy); the gemini package remains in llm-provider only for any external
+// consumers, and new consumers should prefer agy.
+package agy
 
 import (
 	"context"
@@ -20,14 +21,14 @@ import (
 	"github.com/michaellady/mike-skills/llm-provider/provider"
 )
 
-// Provider satisfies provider.Provider for the Google Gemini CLI.
+// Provider satisfies provider.Provider for the `agy` CLI.
 type Provider struct{}
 
-// New returns a fresh gemini provider.
+// New returns a fresh agy provider.
 func New() *Provider { return &Provider{} }
 
 // Name implements provider.Provider.
-func (*Provider) Name() string { return "gemini" }
+func (*Provider) Name() string { return "agy" }
 
 // Run implements provider.Provider.
 func (*Provider) Run(ctx context.Context, opts provider.Options) error {
@@ -37,12 +38,12 @@ func (*Provider) Run(ctx context.Context, opts provider.Options) error {
 	if _, err := os.Stat(opts.PromptFile); err != nil {
 		return provider.NewError(provider.ExitBadArgs, "prompt file not found: %s", opts.PromptFile)
 	}
-	if _, err := exec.LookPath("gemini"); err != nil {
-		return provider.NewError(provider.ExitBadArgs, "gemini CLI not on PATH (install via npm i -g @google/gemini-cli)")
+	if _, err := exec.LookPath("agy"); err != nil {
+		return provider.NewError(provider.ExitBadArgs, "agy CLI not on PATH")
 	}
 	if opts.Timeout == 0 {
 		opts.Timeout = 5 * time.Minute
-		if v := os.Getenv("CONVERGE_GEMINI_TIMEOUT"); v != "" {
+		if v := os.Getenv("CONVERGE_AGY_TIMEOUT"); v != "" {
 			if n, err := strconv.Atoi(v); err == nil {
 				opts.Timeout = time.Duration(n) * time.Second
 			}
@@ -71,22 +72,15 @@ func (*Provider) Run(ctx context.Context, opts provider.Options) error {
 		return provider.NewError(provider.ExitBadArgs, "cannot read prompt: %v", err)
 	}
 
-	args := []string{"--prompt", string(prompt), "--output-format", "text", "--skip-trust"}
-	model := opts.Model
-	if model == "" {
-		model = os.Getenv("CONVERGE_GEMINI_MODEL")
-	}
-	if model != "" {
-		args = append(args, "--model", model)
-	}
-	if opts.ResumeID != "" {
-		args = append(args, "--resume", opts.ResumeID)
-	}
+	// `agy --print <prompt>` runs a single prompt non-interactively and prints
+	// the response to stdout; --dangerously-skip-permissions avoids interactive
+	// tool-permission prompts that would otherwise block headless use.
+	args := []string{"--print", string(prompt), "--dangerously-skip-permissions"}
 
 	cctx, cancel := context.WithTimeout(ctx, opts.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(cctx, "gemini", args...)
+	cmd := exec.CommandContext(cctx, "agy", args...)
 	cmd.Stdin = nil
 
 	var outBuf, errBuf strings.Builder
@@ -94,21 +88,21 @@ func (*Provider) Run(ctx context.Context, opts provider.Options) error {
 	cmd.Stderr = &errBuf
 
 	if !opts.Quiet {
-		fmt.Fprintf(opts.Stderr, "[gemini] starting (timeout=%s)\n", opts.Timeout)
+		fmt.Fprintf(opts.Stderr, "[agy] starting (timeout=%s)\n", opts.Timeout)
 	}
 
 	runErr := cmd.Run()
 
 	if cctx.Err() == context.DeadlineExceeded {
-		return provider.NewError(provider.ExitTimeout, "gemini timed out after %s", opts.Timeout)
+		return provider.NewError(provider.ExitTimeout, "agy timed out after %s", opts.Timeout)
 	}
 	if isAuthError(errBuf.String()) {
-		return provider.NewError(provider.ExitAuthError, "gemini auth error — run `gemini` once interactively to authenticate or set GEMINI_API_KEY")
+		return provider.NewError(provider.ExitAuthError, "agy auth error — run `agy` once interactively to authenticate")
 	}
 
 	final := strings.TrimSpace(outBuf.String())
 	if final == "" {
-		msg := "no output from gemini"
+		msg := "no output from agy"
 		if errBuf.Len() > 0 {
 			tail := errBuf.String()
 			if len(tail) > 500 {
@@ -119,11 +113,11 @@ func (*Provider) Run(ctx context.Context, opts provider.Options) error {
 		return provider.NewError(provider.ExitNoFinalMsg, "%s", msg)
 	}
 	if runErr != nil {
-		fmt.Fprintln(opts.Stderr, "[gemini] note: exited non-zero:", runErr)
+		fmt.Fprintln(opts.Stderr, "[agy] note: exited non-zero:", runErr)
 	}
 
 	if !opts.Quiet {
-		fmt.Fprintf(opts.Stderr, "[gemini] done (final message: %d chars)\n", len(final))
+		fmt.Fprintf(opts.Stderr, "[agy] done (final message: %d chars)\n", len(final))
 	}
 
 	_, _ = io.WriteString(opts.Stdout, final)

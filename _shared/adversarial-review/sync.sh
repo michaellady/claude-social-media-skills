@@ -27,14 +27,21 @@ case "${1:-}" in
 esac
 
 # Pairs: <upstream-path>::<vendored-path>
+# NOTE: go.mod is deliberately NOT synced — upstream replaces ../llm-provider
+# (sibling module in the same repo); the vendored copy replaces
+# ./internal/llm-provider (a synced snapshot). Everything else stays in lockstep.
 pairs=(
   "$upstream/adversarial-review/SKILL.md::$dir/SKILL.md"
+  "$upstream/adversarial-review/main.go::$dir/main.go"
+  "$upstream/adversarial-review/main_test.go::$dir/main_test.go"
+  "$upstream/adversarial-review/smoke.sh::$dir/smoke.sh"
+  "$upstream/adversarial-review/README.md::$dir/README.md"
   "$upstream/llm-provider/go.mod::$dir/internal/llm-provider/go.mod"
   "$upstream/llm-provider/provider/provider.go::$dir/internal/llm-provider/provider/provider.go"
   "$upstream/llm-provider/claude/claude.go::$dir/internal/llm-provider/claude/claude.go"
   "$upstream/llm-provider/codex/codex.go::$dir/internal/llm-provider/codex/codex.go"
   "$upstream/llm-provider/agent/agent.go::$dir/internal/llm-provider/agent/agent.go"
-  "$upstream/llm-provider/gemini/gemini.go::$dir/internal/llm-provider/gemini/gemini.go"
+  "$upstream/llm-provider/agy/agy.go::$dir/internal/llm-provider/agy/agy.go"
 )
 
 drift=0

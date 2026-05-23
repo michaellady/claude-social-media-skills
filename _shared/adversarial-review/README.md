@@ -1,9 +1,9 @@
 # adversarial-review (vendored)
 
 Multi-reviewer adversarial-review transport: dispatches the same prompt to
-every selected reviewer CLI in parallel (default `claude,codex`; opt-in
-`agent` for Cursor and `gemini` for Google), parses each reviewer's JSON
-verdict, and emits a merged canonical response.
+every selected reviewer CLI in parallel (default `claude,codex,agy`; `agent`
+for Cursor is opt-in), parses each reviewer's JSON verdict, and emits a merged
+canonical response.
 
 This directory is **vendored from**
 [`mike-skills/adversarial-review`](https://github.com/michaellady/mike-skills/tree/main/adversarial-review)
@@ -29,7 +29,7 @@ _shared/adversarial-review/
     claude/claude.go               # claude CLI provider
     codex/codex.go                 # codex exec provider
     agent/agent.go                 # Cursor agent CLI provider (opt-in)
-    gemini/gemini.go               # Google Gemini CLI provider (opt-in)
+    agy/agy.go                     # agy CLI provider (default; replaced gemini)
 ```
 
 ## Build
@@ -49,25 +49,21 @@ printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review
 
 Flags:
 
-- `--reviewers <csv>` — which reviewers to dispatch (default `claude,codex`; opt-in `agent`, `gemini`)
+- `--reviewers <csv>` — which reviewers to dispatch (default `claude,codex,agy`; `agent` is opt-in)
 - `--prompt-file PATH` — read prompt from file instead of stdin
 - `--timeout SECONDS` — per-reviewer timeout (default 300)
 - `--quiet` — suppress provider heartbeat lines on stderr
 
-To enable the additional opt-in reviewers:
+To add the opt-in `agent` reviewer (needs Cursor quota):
 
 ```bash
-# Add Cursor agent
+# Add Cursor agent to the default trio
 printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review \
-  --reviewers claude,codex,agent
+  --reviewers claude,codex,agy,agent
 
-# Add Google Gemini
+# Or scope down to a specific subset
 printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review \
-  --reviewers claude,codex,gemini
-
-# Maximum redundancy (4-way)
-printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review \
-  --reviewers claude,codex,agent,gemini
+  --reviewers claude,codex
 ```
 
 See [SKILL.md](SKILL.md) for the contract (input requirements, output JSON
@@ -96,7 +92,7 @@ go test ./...                         # pure logic only — fast, no CLIs invoke
 ```
 
 Pure-logic Go tests cover JSON parsing, merge rule, and issue dedup. They
-do NOT invoke the actual `claude` / `codex` / `agent` / `gemini` CLIs
+do NOT invoke the actual `claude` / `codex` / `agent` / `agy` CLIs
 (so they don't burn tokens or require any CLI installed for CI). End-to-end
 provider smoke is a separate `./smoke.sh` — required after every change to
 provider code or after upgrading a provider CLI. Caught the cursor `agent`

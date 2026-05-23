@@ -179,7 +179,7 @@ The render script handles Chrome's 87px window-chrome offset and crops via `sips
 Apply the **[Adversarial Review pattern](../PATTERNS.md#pattern-adversarial-review)** with these per-skill specifics:
 
 - **SOURCE_LABEL:** "SOURCE ARTICLE"
-- **SOURCE_CONTENT:** the full beehiiv article body, verbatim. **Prepend a `Publication: Enterprise Vibe Code` line** above the title so reviewers know the publication name is in scope when validating attribution lines (otherwise stricter reviewers like Gemini flag `<Title> — Enterprise Vibe Code` as a fabrication because "Enterprise Vibe Code" doesn't appear in the article body). Caught 2026-05-03.
+- **SOURCE_CONTENT:** the full beehiiv article body, verbatim. **Prepend a `Publication: Enterprise Vibe Code` line** above the title so reviewers know the publication name is in scope when validating attribution lines (otherwise stricter reviewers like `agy` flag `<Title> — Enterprise Vibe Code` as a fabrication because "Enterprise Vibe Code" doesn't appear in the article body). Caught 2026-05-03 (then with the gemini reviewer; agy now fills that strict-reviewer slot).
 - **SKILL_NAME:** `carousel-newsletter`
 - **ARTIFACT_NAME:** "slide" (run reviewer over all 10 slides — copy + illustration scene prompt — at once)
 - **RULES_LIST:**

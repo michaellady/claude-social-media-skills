@@ -155,13 +155,19 @@ func TestSelectReviewers_Default(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"claude", "codex", "agent", "gemini"}
+	// Default = claude + codex + agy; agent is opt-in.
+	want := []string{"claude", "codex", "agy"}
 	if len(got) != len(want) {
 		t.Fatalf("default should be %v, got %d items", want, len(got))
 	}
 	for i, w := range want {
 		if got[i].name != w {
 			t.Fatalf("default at %d: want %s, got %s", i, w, got[i].name)
+		}
+	}
+	for _, r := range got {
+		if r.name == "agent" {
+			t.Fatalf("agent must NOT be in the default selection (opt-in only)")
 		}
 	}
 }
@@ -176,22 +182,22 @@ func TestSelectReviewers_OptInAgent(t *testing.T) {
 	}
 }
 
-func TestSelectReviewers_OptInGemini(t *testing.T) {
-	got, err := selectReviewers("claude,codex,gemini")
+func TestSelectReviewers_Agy(t *testing.T) {
+	got, err := selectReviewers("claude,codex,agy")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 3 || got[2].name != "gemini" {
-		t.Fatalf("want gemini included, got %#v", got)
+	if len(got) != 3 || got[2].name != "agy" {
+		t.Fatalf("want agy included, got %#v", got)
 	}
 }
 
 func TestSelectReviewers_AllFour(t *testing.T) {
-	got, err := selectReviewers("claude,codex,agent,gemini")
+	got, err := selectReviewers("claude,codex,agent,agy")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"claude", "codex", "agent", "gemini"}
+	want := []string{"claude", "codex", "agent", "agy"}
 	if len(got) != 4 {
 		t.Fatalf("want 4 reviewers, got %d", len(got))
 	}
@@ -217,6 +223,35 @@ func TestSelectReviewers_CustomOrder(t *testing.T) {
 		t.Fatalf("want order [codex, claude], got %#v", got)
 	}
 }
+
+func TestUnavailableReason(t *testing.T) {
+	cases := []struct {
+		name       string
+		err        error
+		wantReason string
+		wantOK     bool
+	}{
+		{"nil", nil, "", false},
+		{"cursor usage limit", errString("no output from agent (stderr: S: You've hit your usage limit Get Cursor Pro)"), "usage/quota limit", true},
+		{"quota", errString("error: quota exceeded for this project"), "usage/quota limit", true},
+		{"429", errString("request failed: 429 Too Many Requests"), "usage/quota limit", true},
+		{"auth", errString("not logged in; run `claude login`"), "auth/login required", true},
+		{"401", errString("HTTP 401 unauthorized"), "auth/login required", true},
+		{"timeout", errString("claude timed out after 9m0s"), "timed out", true},
+		{"genuine bad output", errString("unexpected end of JSON input"), "", false},
+	}
+	for _, tc := range cases {
+		gotReason, gotOK := unavailableReason(tc.err)
+		if gotOK != tc.wantOK || gotReason != tc.wantReason {
+			t.Errorf("%s: unavailableReason = (%q, %v), want (%q, %v)", tc.name, gotReason, gotOK, tc.wantReason, tc.wantOK)
+		}
+	}
+}
+
+// errString is a tiny error helper for table tests.
+type errString string
+
+func (e errString) Error() string { return string(e) }
 
 func TestIssueOverlaps(t *testing.T) {
 	cases := []struct {
