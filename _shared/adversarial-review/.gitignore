@@ -1,0 +1,4 @@
+# compiled binary — each user builds locally (see README)
+/adversarial-review
+# stray run output
+review-output.json
