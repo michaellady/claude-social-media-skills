@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
-# Pull the latest SKILL.md and llm-provider source from the upstream
-# mike-skills repo into this vendored copy. Diffs first; prompts before
-# overwriting so unintended drift is visible.
+# Pull the latest fan-out logic (converge/go/internal/fanout) and llm-provider
+# source from the upstream mike-skills repo into this vendored copy. Diffs
+# first; prompts before overwriting so unintended drift is visible.
+#
+# Background: the standalone `adversarial-review` skill was folded into
+# `converge` as its `audit` mode. The audit fan-out now lives at
+# `converge/go/internal/fanout/` (package fanout). This vendored copy stays
+# self-contained: `internal/fanout/` is synced verbatim from upstream, and the
+# root `main.go` (a thin `fanout.Run` wrapper) + `go.mod` are vendored-specific
+# and NOT synced.
 #
 # Usage:
 #   _shared/adversarial-review/sync.sh             # interactive (prompts)
@@ -27,15 +34,13 @@ case "${1:-}" in
 esac
 
 # Pairs: <upstream-path>::<vendored-path>
-# NOTE: go.mod is deliberately NOT synced — upstream replaces ../llm-provider
-# (sibling module in the same repo); the vendored copy replaces
-# ./internal/llm-provider (a synced snapshot). Everything else stays in lockstep.
+# NOTE: go.mod and main.go are deliberately NOT synced — upstream's fanout is an
+# internal package of the converge binary; here it's a standalone module whose
+# go.mod replaces ./internal/llm-provider and whose main.go wraps fanout.Run.
+# Everything else (fan-out logic + provider transport) stays in lockstep.
 pairs=(
-  "$upstream/adversarial-review/SKILL.md::$dir/SKILL.md"
-  "$upstream/adversarial-review/main.go::$dir/main.go"
-  "$upstream/adversarial-review/main_test.go::$dir/main_test.go"
-  "$upstream/adversarial-review/smoke.sh::$dir/smoke.sh"
-  "$upstream/adversarial-review/README.md::$dir/README.md"
+  "$upstream/converge/go/internal/fanout/fanout.go::$dir/internal/fanout/fanout.go"
+  "$upstream/converge/go/internal/fanout/fanout_test.go::$dir/internal/fanout/fanout_test.go"
   "$upstream/llm-provider/go.mod::$dir/internal/llm-provider/go.mod"
   "$upstream/llm-provider/provider/provider.go::$dir/internal/llm-provider/provider/provider.go"
   "$upstream/llm-provider/claude/claude.go::$dir/internal/llm-provider/claude/claude.go"

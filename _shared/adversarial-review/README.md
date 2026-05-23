@@ -5,24 +5,27 @@ every selected reviewer CLI in parallel (default `claude,codex,agy`; `agent`
 for Cursor is opt-in), parses each reviewer's JSON verdict, and emits a merged
 canonical response.
 
-This directory is **vendored from**
-[`mike-skills/adversarial-review`](https://github.com/michaellady/mike-skills/tree/main/adversarial-review)
-plus the shared
+The standalone `adversarial-review` skill was **folded into `converge` as its
+`audit` mode**. The fan-out logic now lives upstream at
+[`mike-skills/converge/go/internal/fanout`](https://github.com/michaellady/mike-skills/tree/main/converge/go/internal/fanout)
+and is **vendored here** (plus the shared
 [`mike-skills/llm-provider`](https://github.com/michaellady/mike-skills/tree/main/llm-provider)
-module that powers the CLI dispatch. The vendoring exists so a clone of
-`claude-social-media-skills` works end-to-end without a separate `mike-skills`
-checkout.
+module that powers the CLI dispatch) so a clone of `claude-social-media-skills`
+works end-to-end without a separate `mike-skills` checkout. Invoking this
+vendored binary is equivalent to running `converge audit`.
 
 ## Layout
 
 ```
 _shared/adversarial-review/
-  SKILL.md                         # canonical skill spec (authoritative copy in mike-skills)
   README.md                        # this file
-  go.mod                           # binary's module + replace → ./internal/llm-provider
-  main.go                          # parallel dispatch + JSON parse + FAIL-OR merge
-  main_test.go                     # unit tests for parse + merge
+  go.mod                           # binary's module + replace → ./internal/llm-provider  (NOT synced)
+  main.go                          # thin wrapper → fanout.Run (vendored-specific, NOT synced)
   sync.sh                          # pull fresh copies from upstream mike-skills
+  smoke.sh                         # end-to-end provider smoke
+  internal/fanout/                 # vendored from mike-skills/converge/go/internal/fanout/
+    fanout.go                      # parallel dispatch + JSON parse + FAIL-OR merge + clustering
+    fanout_test.go                 # unit tests for parse + merge + dedup
   internal/llm-provider/           # vendored from mike-skills/llm-provider/
     go.mod
     provider/provider.go           # Provider interface + Options + Error
@@ -66,13 +69,14 @@ printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review 
   --reviewers claude,codex
 ```
 
-See [SKILL.md](SKILL.md) for the contract (input requirements, output JSON
-shape, merge rule, when to use, when not to use).
+For the full contract (input requirements, output JSON shape, merge rule, when
+to use / when not to use) see the **`audit` mode** in
+[`mike-skills/converge/SKILL.md`](https://github.com/michaellady/mike-skills/blob/main/converge/SKILL.md).
 
 ## Sync with upstream
 
-When `mike-skills/adversarial-review` or `mike-skills/llm-provider` changes,
-re-vendor:
+When `mike-skills/converge` (the `internal/fanout` package) or
+`mike-skills/llm-provider` changes, re-vendor:
 
 ```bash
 _shared/adversarial-review/sync.sh             # interactive (diffs + prompts)
@@ -80,7 +84,8 @@ _shared/adversarial-review/sync.sh --check     # exit 1 if drift detected
 _shared/adversarial-review/sync.sh --apply     # overwrite without prompt
 ```
 
-The script honors `MIKE_SKILLS_DIR` if your upstream checkout isn't at
+`main.go` and `go.mod` are vendored-specific and intentionally not synced. The
+script honors `MIKE_SKILLS_DIR` if your upstream checkout isn't at
 `~/dev/mike-skills`.
 
 ## Tests
@@ -95,5 +100,4 @@ Pure-logic Go tests cover JSON parsing, merge rule, and issue dedup. They
 do NOT invoke the actual `claude` / `codex` / `agent` / `agy` CLIs
 (so they don't burn tokens or require any CLI installed for CI). End-to-end
 provider smoke is a separate `./smoke.sh` — required after every change to
-provider code or after upgrading a provider CLI. Caught the cursor `agent`
-provider needing `--model auto` on free plans (2026-05-03).
+provider code or after upgrading a provider CLI.

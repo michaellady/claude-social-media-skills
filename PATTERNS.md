@@ -52,7 +52,7 @@ Return ONLY this JSON object, no surrounding prose:
 
 ### How to invoke
 
-The reviewers MUST be fresh — no context from the compose phase. The transport is the **`_shared/adversarial-review/adversarial-review` Go binary** (vendored from `mike-skills/adversarial-review/` + `mike-skills/llm-provider/`; see [`_shared/adversarial-review/README.md`](./_shared/adversarial-review/README.md) for layout + sync).
+The reviewers MUST be fresh — no context from the compose phase. The transport is the **`_shared/adversarial-review/adversarial-review` Go binary** — the vendored build of converge's `audit` fan-out (the standalone adversarial-review skill was folded into `converge`; vendored from `mike-skills/converge/go/internal/fanout/` + `mike-skills/llm-provider/`; see [`_shared/adversarial-review/README.md`](./_shared/adversarial-review/README.md) for layout + sync).
 
 **Build once:**
 

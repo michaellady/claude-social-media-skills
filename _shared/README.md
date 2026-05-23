@@ -11,7 +11,7 @@ See [PATTERNS.md](../PATTERNS.md) for cross-skill workflows that DO involve cogn
 | `cta.sh` | Print the canonical "Comment newsletter" CTA for a beehiiv article title | Shell |
 | `format_tags.json` | Authoritative list of `format:<name>` Buffer post tag values | JSON data |
 | `gstack_auth.sh` | Verify gstack browse is logged in; attempt cookie import once if not | Shell |
-| `adversarial-review/` | Dual-reviewer (Claude + Codex CLIs in parallel) audit of drafted artifacts; vendored from `mike-skills` | Go |
+| `adversarial-review/` | Multi-reviewer (claude + codex + agy in parallel) audit of drafted artifacts — the vendored build of converge's `audit` fan-out | Go |
 | `buffer-post-prep/` | Validate + shape arguments for `mcp__buffer__create_post` | Go |
 | `buffer-queue-check/` | Filter Buffer posts (queued + sent) by distinctive phrases | Go |
 | `buffer-schedule-edit/` | Web-UI driver for Buffer's posting schedule (no API mutation exists) | gstack browse |
@@ -32,7 +32,7 @@ Built binaries are gitignored — each user builds locally. The Go source is the
 
 ## Vendored dependencies
 
-`adversarial-review/` includes a vendored copy of `mike-skills/llm-provider/` so that the dual-reviewer transport works without a separate `mike-skills` checkout. Keep it fresh with `_shared/adversarial-review/sync.sh` (interactive) or `--check` (CI-friendly drift detector).
+`adversarial-review/` is the vendored build of converge's `audit` fan-out: it includes a synced copy of `mike-skills/converge/go/internal/fanout/` plus `mike-skills/llm-provider/` so the multi-reviewer transport works without a separate `mike-skills` checkout. Keep it fresh with `_shared/adversarial-review/sync.sh` (interactive) or `--check` (CI-friendly drift detector).
 
 ## Why these are pure transport
 
