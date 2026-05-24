@@ -18,6 +18,8 @@ Why this exists: Buffer is the fan-out layer for IG/LinkedIn/Facebook/Threads, b
 `/buffer-stats --compare YYYY-MM-DD` — diff against a specific historical snapshot instead of the newest
 `/buffer-stats operational` — skip the Analyze scrape; MCP-only fast path
 
+> **Cron / autonomous runs are operational-only by design.** The engagement scrape (Phases 2a/2b) needs the `gstack browse` binary AND an interactive cookie-import picker — neither is available in an unattended context. Three consecutive weekly cron runs degraded for this reason (2026-05-10 cookie expiry, 2026-05-17 cookie picker, 2026-05-24 `gstack browse` binary absent). When invoked from a cron/weekly-review job, **go straight to the `operational` fast path** and label engagement as DEGRADED rather than attempting (and reporting failure on) a scrape that structurally cannot run. Fresh engagement only arrives from an interactive `/buffer-stats` run. If a cron needs engagement, build a non-interactive cookie-refresh path first.
+
 ## 🟢 Happy Path (read first; everything below is edge-case detail)
 
 For a weekly Buffer stats run when nothing goes wrong. ~2-4 min wall-clock. Each step links to a labeled edge case (`Edge: <name>`) you only need to read if that step fails.
