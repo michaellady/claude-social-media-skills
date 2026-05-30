@@ -1,0 +1,38 @@
+# Peer channels in the AI-coding niche. Used by /yt-ab to ground title
+# generation in what's working *across the niche right now* — alongside
+# Mike's own top-retention long-forms (channel voice) and the video's
+# transcript (don't lie).
+#
+# Refreshed weekly by `go run . fetch-peers` (auto-fired by the Sunday
+# weekly-review LaunchAgent). The angle field is a one-line editorial
+# summary so the model has context when surfacing top titles.
+#
+# To add or remove a channel: edit this file and re-run `go run . fetch-peers`.
+# Handle format accepts `@name`, bare `name`, or full URL — normalized at load.
+
+- handle: "@fireship"
+  angle: "Hyper-tight tech news; 7-9 word titles; one strong hook word"
+
+- handle: "@t3dotgg"
+  angle: "Opinion-led with strong personal POV; topical AI/dev takes (Theo Browne)"
+
+- handle: "@indydevdan"
+  angle: "Long-form narrative titles; descriptive promise of outcome"
+
+- handle: "@matthewberman"
+  angle: "Tool-launch reactions; numbers + benchmarks in titles"
+
+- handle: "@AIJasonZ"
+  angle: "Build-this-X tutorial framing; concrete deliverable in title"
+
+- handle: "@ColeMedin"
+  angle: "Agent-framework deep dives; framework name + outcome"
+
+- handle: "@ThePrimeTimeagen"
+  angle: "Provocative one-liner; reaction/critique angle (ThePrimeagen)"
+
+- handle: "@YannicKilcher"
+  angle: "Research-paper deep dives; paper title + 'explained'"
+
+- handle: "@samwitteveenai"
+  angle: "Hands-on framework walkthroughs; clear implementation framing"

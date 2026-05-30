@@ -18,10 +18,10 @@ This pattern fills that gap. It's a parallel attribution path, not a replacement
 
 ## JSON shape
 
-A manifest is a single JSON object keyed by the source content. Path convention: `~/dev/youtube_analytics/data/<scheduler>/<source_id>.json` — keep manifests near related analytics. Examples:
+A manifest is a single JSON object keyed by the source content. Path convention: `~/dev/claude-social-media-skills/youtube-analytics/data/<scheduler>/<source_id>.json` — keep manifests near related analytics. Examples:
 
-- `~/dev/youtube_analytics/data/opus_clips/P3051823ab0w.json` (OpusClip project)
-- `~/dev/youtube_analytics/data/linkedin_pulses/<pulse_slug>.json` (future)
+- `~/dev/claude-social-media-skills/youtube-analytics/data/opus_clips/P3051823ab0w.json` (OpusClip project)
+- `~/dev/claude-social-media-skills/youtube-analytics/data/linkedin_pulses/<pulse_slug>.json` (future)
 
 ```jsonc
 {
@@ -89,7 +89,7 @@ source ~/dev/claude-social-media-skills/_shared/post-manifest/post_manifest.sh
 Then in your scheduling skill:
 
 ```bash
-MANIFEST=~/dev/youtube_analytics/data/opus_clips/P3051823ab0w.json
+MANIFEST=~/dev/claude-social-media-skills/youtube-analytics/data/opus_clips/P3051823ab0w.json
 
 # 1. Initialize (idempotent — if file exists, leave alone unless --force)
 pm_init "$MANIFEST" \
@@ -124,8 +124,8 @@ The helpers are intentionally thin jq wrappers — they encode the **shape contr
 
 ## Consumers
 
-- **`opus-clips`** — primary user. Schedules OpusClip projects → manifest per project at `~/dev/youtube_analytics/data/opus_clips/<project_id>.json`.
-- **`flywheel`** — future input: read manifests from any scheduler directory under `~/dev/youtube_analytics/data/` to count posts toward Priority 1 throughput + measure derivative-format reach.
+- **`opus-clips`** — primary user. Schedules OpusClip projects → manifest per project at `~/dev/claude-social-media-skills/youtube-analytics/data/opus_clips/<project_id>.json`.
+- **`flywheel`** — future input: read manifests from any scheduler directory under `~/dev/claude-social-media-skills/youtube-analytics/data/` to count posts toward Priority 1 throughput + measure derivative-format reach.
 - **`crosspost-newsletter`** — could write a manifest per article to record LinkedIn pulse / Medium / Substack publish IDs for cross-surface correlation (not wired today; left as future work).
 - **Future** `/opus-clips-performance` (or similar) — would walk the manifest's `scheduled_posts[].api_response.data.scheduleId`s and poll each platform's native analytics API to fill in per-post engagement metrics.
 
@@ -151,7 +151,7 @@ Non-Buffer-published posts → post-manifest + [scheme:id] tag → future native
 
 - **Engagement metrics.** The manifest is a publication ledger, not an analytics store. Engagement comes from platform-native APIs and gets merged downstream (in the fetcher, not here).
 - **Source content body.** Just metadata + IDs. The source video / article / clip lives where it always lived.
-- **Secrets.** No API keys, no OAuth tokens. The manifest is meant to be diff-able and (in principle) shareable — though in practice `~/dev/youtube_analytics/data/` is gitignored.
+- **Secrets.** No API keys, no OAuth tokens. The manifest is meant to be diff-able and (in principle) shareable — though in practice `~/dev/claude-social-media-skills/youtube-analytics/data/` is gitignored.
 
 ## Versioning
 

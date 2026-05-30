@@ -61,7 +61,7 @@ Every compose-and-publish skill has these required phases:
 |---|---|---|---|
 | [`buffer-stats`](buffer-stats/SKILL.md) | Buffer Insights (cross-channel, all 6 channels) + Buffer Analyze (per-post, 3 channels) + Buffer GraphQL (tagIds via MCP `list_posts`) | Per-(channel, format) engagement + channel ROI bucketing + auto skill recs | Live |
 | [`linkedin-stats`](linkedin-stats/SKILL.md) | linkedin.com/dashboard/ + /analytics/creator/* | Followers + impressions + per-post engagement deltas (Phase 3b lands per-post for LinkedIn personal) | Live |
-| [`yt-analytics`](https://github.com/oven-sh/youtube_analytics) (external Go binary at `~/dev/youtube_analytics/`) | YouTube Data API + Analytics API | Per-video metrics; reads OpusClip in-text `[opus:<clip_id>]` tag in Short descriptions | Live |
+| [`yt-analytics`](https://github.com/oven-sh/youtube_analytics) (external Go binary at `~/dev/claude-social-media-skills/youtube-analytics/`) | YouTube Data API + Analytics API | Per-video metrics; reads OpusClip in-text `[opus:<clip_id>]` tag in Short descriptions | Live |
 | [`threads-stats`](threads-stats/SKILL.md) | Meta Graph API (Threads Insights) | Per-post engagement for Threads profiles | **Scaffold-only** (OAuth gated; pending #373-class task) |
 | [`tiktok-stats`](tiktok-stats/SKILL.md) | TikTok Business API | Per-post engagement for TikTok business | **Scaffold-only** (OAuth gated) |
 | [`flywheel`](flywheel/SKILL.md) | Aggregates everything above + beehiiv via `_shared/content-attribution/` JOIN engine | Weekly priorities-keyed report w/ per-source-content ROI (Phase 4.55 — in dev) | Partial — JOIN layer pending #381 |
@@ -136,7 +136,7 @@ The data-collection skills (yt-analytics, buffer-stats, linkedin-stats, tiktok-s
 
 Three layers, clear contracts:
 
-1. **Data collection** (existing/planned `*-stats` skills) — platform-specific fetchers. Each writes a snapshot under a known path (`<skill>/cache/snapshot-*.json` or `~/dev/youtube_analytics/data/`). No skill reads another's cache.
+1. **Data collection** (existing/planned `*-stats` skills) — platform-specific fetchers. Each writes a snapshot under a known path (`<skill>/cache/snapshot-*.json` or `~/dev/claude-social-media-skills/youtube-analytics/data/`). No skill reads another's cache.
 2. **JOIN engine** (`_shared/content-attribution/`, in dev — #381) — reads snapshots + post-manifests, correlates by these keys in priority order:
    1. `[scheme:id]` in-text tag (highest signal)
    2. Buffer `format:<name>` tag (per-format aggregation)

@@ -1,0 +1,329 @@
+{
+  "fetched_at": "2026-05-28T17:53:53.860385-07:00",
+  "videos": {
+    "-lOFyZuu0W8": {
+      "video_id": "-lOFyZuu0W8",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "2pSJJA7ZvEI": {
+      "video_id": "2pSJJA7ZvEI",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "5589aju1r30": {
+      "video_id": "5589aju1r30",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "6mViYwrN9hA": {
+      "video_id": "6mViYwrN9hA",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "7TgoRaXvhn8": {
+      "video_id": "7TgoRaXvhn8",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "7jQ0LbMXZtY": {
+      "video_id": "7jQ0LbMXZtY",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "8qYsGMmyKaA": {
+      "video_id": "8qYsGMmyKaA",
+      "fetched_at": "2026-05-03T09:00:20.884636-07:00",
+      "comments": []
+    },
+    "9nOxvAhZyWo": {
+      "video_id": "9nOxvAhZyWo",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "AIKk9coN_cM": {
+      "video_id": "AIKk9coN_cM",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "Al8pNrBw6Ok": {
+      "video_id": "Al8pNrBw6Ok",
+      "fetched_at": "2026-05-03T09:00:20.884636-07:00",
+      "comments": []
+    },
+    "CUYhyIzSVoc": {
+      "video_id": "CUYhyIzSVoc",
+      "fetched_at": "2026-05-28T17:53:53.860385-07:00",
+      "comments": []
+    },
+    "EE-IMjyvAWQ": {
+      "video_id": "EE-IMjyvAWQ",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "H9HR4_Qz-Z0": {
+      "video_id": "H9HR4_Qz-Z0",
+      "fetched_at": "2026-05-03T09:00:20.884636-07:00",
+      "comments": [
+        {
+          "id": "UgwAKxjnujhyaObX6oJ4AaABAg",
+          "author_name": "@andreash7920",
+          "author_url": "http://www.youtube.com/@andreash7920",
+          "text": "But engineering and solving problems is fun and satisfying, managing is not, to me. Otherwise I would want to be a manager not an engineer.",
+          "like_count": 2,
+          "reply_count": 2,
+          "published_at": "2026-04-29T19:24:00Z",
+          "updated_at": "2026-04-29T19:24:00Z"
+        },
+        {
+          "id": "UgxFNJeIhe5rm-7gzhF4AaABAg",
+          "author_name": "@jasonholmes6543",
+          "author_url": "http://www.youtube.com/@jasonholmes6543",
+          "text": "Doesn’t vibe coding mean you either don’t care about the code or you can’t understand the code. Either way its mass produced slop, right?\n\nMy point is using LLMs to assist decision making (provided you haven’t completely abdicated your own responsibility to understand WTF you are talking about) is not vibe coding.",
+          "like_count": 2,
+          "reply_count": 2,
+          "published_at": "2026-04-29T03:02:28Z",
+          "updated_at": "2026-04-29T03:02:51Z"
+        },
+        {
+          "id": "UgwPntveSQ-F93cT6zR4AaABAg",
+          "author_name": "@elendal",
+          "author_url": "http://www.youtube.com/@elendal",
+          "text": "Hmm, I've tried one of Steve Yegge's AI coded apps, it run for 40.0s, I've optimized it to run in 4 (gastownhall/beads/issues/3520). Pretty sure this would not happen had he used his own intelligence. His app that supposed to replace jira, is already slower than Jira with only 200 issues recorded.",
+          "like_count": 2,
+          "reply_count": 3,
+          "published_at": "2026-04-28T20:23:04Z",
+          "updated_at": "2026-04-28T20:35:46Z"
+        },
+        {
+          "id": "UgyN0J3Sdbuy9_D172R4AaABAg",
+          "author_name": "@countvoncount42",
+          "author_url": "http://www.youtube.com/@countvoncount42",
+          "text": "\"Enterprise rigor\". That's exactly my kind of humor! 😂 \"Rigor mortis\" most of the time, tho.",
+          "like_count": 1,
+          "reply_count": 1,
+          "published_at": "2026-04-30T20:39:52Z",
+          "updated_at": "2026-04-30T20:39:52Z"
+        },
+        {
+          "id": "Ugw_pt7WkjZxA4qR0i54AaABAg",
+          "author_name": "@SaneMie-hu4io",
+          "author_url": "http://www.youtube.com/@SaneMie-hu4io",
+          "text": "Thank you for this video, very enlightening!",
+          "like_count": 1,
+          "reply_count": 1,
+          "published_at": "2026-04-30T17:59:12Z",
+          "updated_at": "2026-04-30T17:59:12Z"
+        },
+        {
+          "id": "Ugx17JVdYI0hOvwOyIV4AaABAg",
+          "author_name": "@jesseparrish1993",
+          "author_url": "http://www.youtube.com/@jesseparrish1993",
+          "text": "At my previous employer, we hired a \"senior developer\" who turned to vibe coding and could never be bothered to learn a stack.  Even a fairly trivial one, React, was beyond his willpower to muster.  He couldn't even ask the bot to find the right principles in order to apply them.\n\nThese are great tools that work for people who have done more than vibe code.  Rapid prototyping?  Toss out Figma?  Great.",
+          "like_count": 1,
+          "reply_count": 2,
+          "published_at": "2026-04-30T02:11:38Z",
+          "updated_at": "2026-04-30T02:11:38Z"
+        }
+      ]
+    },
+    "HqINZnE3F48": {
+      "video_id": "HqINZnE3F48",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "I-JDx4hPqZ4": {
+      "video_id": "I-JDx4hPqZ4",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": [
+        {
+          "id": "UgzLKmuf36id5ecSs894AaABAg",
+          "author_name": "@alisilarbi8073",
+          "author_url": "http://www.youtube.com/@alisilarbi8073",
+          "text": "But you need a base for that kind of toold, in my opinion that's what claude code, codex, pi etc... are trying to solve. Isnt that right ?",
+          "like_count": 1,
+          "reply_count": 1,
+          "published_at": "2026-05-24T00:28:26Z",
+          "updated_at": "2026-05-24T00:28:26Z"
+        }
+      ]
+    },
+    "IDWBji2VpLs": {
+      "video_id": "IDWBji2VpLs",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "IN6c43cITvY": {
+      "video_id": "IN6c43cITvY",
+      "fetched_at": "2026-05-03T09:00:20.884636-07:00",
+      "comments": []
+    },
+    "Ihxif3hpZQE": {
+      "video_id": "Ihxif3hpZQE",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "J4THNnn2mZ0": {
+      "video_id": "J4THNnn2mZ0",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "KLvEbf6p7PI": {
+      "video_id": "KLvEbf6p7PI",
+      "fetched_at": "2026-04-27T13:40:02.733935-07:00",
+      "comments": [
+        {
+          "id": "UgzngIoeisqFUKIm1yB4AaABAg",
+          "author_name": "@DoguhanYaman",
+          "author_url": "http://www.youtube.com/@DoguhanYaman",
+          "text": "Hey! Love your content style and the way you deliver your message — it really stands out! 🙏 Would love to explore a collaboration together. Could you share your business email so we can connect? Looking forward to hearing from you!",
+          "like_count": 1,
+          "published_at": "2026-04-21T10:10:08Z",
+          "updated_at": "2026-04-21T10:10:08Z"
+        }
+      ]
+    },
+    "L60uy8nyHQE": {
+      "video_id": "L60uy8nyHQE",
+      "fetched_at": "2026-04-27T13:40:02.733935-07:00",
+      "comments": []
+    },
+    "Q2XMMcK9wuo": {
+      "video_id": "Q2XMMcK9wuo",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "QUZAgCGfCBE": {
+      "video_id": "QUZAgCGfCBE",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "ST_zaw4mBcQ": {
+      "video_id": "ST_zaw4mBcQ",
+      "fetched_at": "2026-04-27T13:40:02.733935-07:00",
+      "comments": []
+    },
+    "X6azoBYnvKY": {
+      "video_id": "X6azoBYnvKY",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "XBvy8qzeU7o": {
+      "video_id": "XBvy8qzeU7o",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "f0spwtyWhOs": {
+      "video_id": "f0spwtyWhOs",
+      "fetched_at": "2026-04-27T13:40:02.733935-07:00",
+      "comments": []
+    },
+    "gV82NPOvBYw": {
+      "video_id": "gV82NPOvBYw",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "jY9HSphKyOI": {
+      "video_id": "jY9HSphKyOI",
+      "fetched_at": "2026-04-27T13:40:02.733935-07:00",
+      "comments": []
+    },
+    "jcGJfZkYn34": {
+      "video_id": "jcGJfZkYn34",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "jdq_EAG5cu0": {
+      "video_id": "jdq_EAG5cu0",
+      "fetched_at": "2026-05-03T09:00:20.884636-07:00",
+      "comments": []
+    },
+    "kGCKqNz9UhY": {
+      "video_id": "kGCKqNz9UhY",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "qaEcHWsdOb4": {
+      "video_id": "qaEcHWsdOb4",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "sDC8-9HFM6c": {
+      "video_id": "sDC8-9HFM6c",
+      "fetched_at": "2026-05-17T09:00:17.854646-07:00",
+      "comments": []
+    },
+    "sHkVheh1SHM": {
+      "video_id": "sHkVheh1SHM",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "t_XilACa9fc": {
+      "video_id": "t_XilACa9fc",
+      "fetched_at": "2026-05-03T09:00:20.884636-07:00",
+      "comments": []
+    },
+    "uEposKmbFvY": {
+      "video_id": "uEposKmbFvY",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "uZjSyAdTJUE": {
+      "video_id": "uZjSyAdTJUE",
+      "fetched_at": "2026-05-17T09:00:17.854646-07:00",
+      "comments": []
+    },
+    "vBz234iBM2Y": {
+      "video_id": "vBz234iBM2Y",
+      "fetched_at": "2026-05-24T09:00:25.163342-07:00",
+      "comments": []
+    },
+    "vuiS_ofy12o": {
+      "video_id": "vuiS_ofy12o",
+      "fetched_at": "2026-04-27T13:40:02.733935-07:00",
+      "comments": [
+        {
+          "id": "UgxPwcYm-ux1l6Ge4Qp4AaABAg",
+          "author_name": "@stonyuk",
+          "author_url": "http://www.youtube.com/@stonyuk",
+          "text": "I don't see the point of this video. Are you reading somebody's post? Are you trying to do a tutorial?",
+          "like_count": 1,
+          "reply_count": 1,
+          "published_at": "2026-04-26T10:22:36Z",
+          "updated_at": "2026-04-26T10:22:36Z"
+        },
+        {
+          "id": "Ugy5i7CdctNJaWeyFeV4AaABAg",
+          "author_name": "@AStarStarship",
+          "author_url": "http://www.youtube.com/@AStarStarship",
+          "text": "Bro, you gotta fix your compressor settings. Set mic gain to -20db average, set compressor to -18db threshold and +12db output gain. It's called a leveling amplifier. Also, too much bass in voice sounds bad through most speakers and makes it harder to hear you and understand what you're saying.",
+          "like_count": 1,
+          "reply_count": 5,
+          "published_at": "2026-04-25T19:58:53Z",
+          "updated_at": "2026-04-25T19:58:53Z"
+        }
+      ]
+    },
+    "xcbpQPU1hRA": {
+      "video_id": "xcbpQPU1hRA",
+      "fetched_at": "2026-05-03T09:00:20.884636-07:00",
+      "comments": []
+    },
+    "yoHHVgddUyI": {
+      "video_id": "yoHHVgddUyI",
+      "fetched_at": "2026-04-27T14:40:32.403653-07:00",
+      "comments": [
+        {
+          "id": "Ugy78MuL84XJwMGnflZ4AaABAg",
+          "author_name": "@OneRedKraken",
+          "author_url": "http://www.youtube.com/@OneRedKraken",
+          "text": "This video is like watching someone work in complete silence for 2 hours. What's the point exactly? \"First impressions where?\" lol",
+          "like_count": 2,
+          "reply_count": 2,
+          "published_at": "2026-04-21T12:33:33Z",
+          "updated_at": "2026-04-21T12:33:33Z"
+        }
+      ]
+    }
+  }
+}

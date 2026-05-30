@@ -35,14 +35,14 @@ If the key isn't set, defer to the `opusclip:opusclip` plugin skill — its setu
 
 For a long-form YouTube video → ~20 clips at 30/60/90s → review → optionally strip brand overlay → ready for fan-out. ~10-15 min wall-clock (most of it is OpusClip's processing).
 
-**Phase 1 — Find source.** YouTube URL the user provides, OR "latest long-form" via `~/dev/youtube_analytics`:
+**Phase 1 — Find source.** YouTube URL the user provides, OR "latest long-form" via `~/dev/claude-social-media-skills/youtube-analytics`:
 
 ```bash
 jq -r 'if type=="array" then . else (.videos // .items) end
   | map(select(.video_type == "long-form"))
   | sort_by(.published_at) | reverse | .[0]
   | "https://www.youtube.com/watch?v=\(.id)  \(.title)  \(.duration_seconds)s"
-' ~/dev/youtube_analytics/data/videos.json
+' ~/dev/claude-social-media-skills/youtube-analytics/data/videos.json
 ```
 
 **Phase 2 — Submit.**
@@ -241,7 +241,7 @@ OpusClip's native scheduler bypasses Buffer, so the `format:<name>` tag system c
 ```bash
 source ~/dev/claude-social-media-skills/_shared/post-manifest/post_manifest.sh
 
-MANIFEST=~/dev/youtube_analytics/data/opus_clips/$PROJECT.json
+MANIFEST=~/dev/claude-social-media-skills/youtube-analytics/data/opus_clips/$PROJECT.json
 pm_init "$MANIFEST" --project "$PROJECT" --source-video "$SOURCE_YT_ID" --source-title "$TITLE"
 pm_ensure_clip "$MANIFEST" --clip-id "$CLIP" --title "$NEW_TITLE" --description "$NEW_DESC" --score "$SCORE" --duration-sec "$DUR"
 # After each `opusclip post schedule` call:

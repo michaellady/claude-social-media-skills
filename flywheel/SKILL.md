@@ -6,7 +6,7 @@ user_invocable: true
 
 # flywheel
 
-Aggregate signal from YouTube, beehiiv, LinkedIn, and the consulting log into one weekly report against the 5 priorities in `~/dev/youtube_analytics/enterprise_vibe_code_growth_priorities.md`. Answers "is the flywheel spinning this week?" with specific numbers, not vibes.
+Aggregate signal from YouTube, beehiiv, LinkedIn, and the consulting log into one weekly report against the 5 priorities in `~/dev/claude-social-media-skills/youtube-analytics/enterprise_vibe_code_growth_priorities.md`. Answers "is the flywheel spinning this week?" with specific numbers, not vibes.
 
 ## Usage
 
@@ -35,13 +35,13 @@ The default flow auto-detects stale data and prompts to refresh. ~30 sec when no
 # Check each source's snapshot age. Threshold = stale_snapshot_days from the priorities-doc
 # targets block (Phase 1.5 parses it). Phase 0 runs BEFORE Phase 1.5 — read the value directly
 # here so the threshold is a single source of truth across both phases.
-PRIORITIES_DOC=~/dev/youtube_analytics/enterprise_vibe_code_growth_priorities.md
+PRIORITIES_DOC=~/dev/claude-social-media-skills/youtube-analytics/enterprise_vibe_code_growth_priorities.md
 STALE_DAYS=$(awk '/^<!-- flywheel-targets-start -->/{f=1;next} /^<!-- flywheel-targets-end -->/{f=0} f && /^```json/{c=1;next} f && c && /^```/{c=0;next} f && c' "$PRIORITIES_DOC" 2>/dev/null | jq -r '.stale_snapshot_days // 14' 2>/dev/null)
 STALE_DAYS=${STALE_DAYS:-14}
 STALE_DAYS=${STALE_SNAPSHOT_DAYS:-$STALE_DAYS}  # env-var override still wins for debugging
 LN_CACHE=~/dev/claude-social-media-skills/linkedin-stats/cache
 BF_CACHE=~/dev/claude-social-media-skills/buffer-stats/cache
-YT_DATA=~/dev/youtube_analytics/data/videos.json
+YT_DATA=~/dev/claude-social-media-skills/youtube-analytics/data/videos.json
 
 age_days() {
   local f=$1
@@ -75,7 +75,7 @@ STALE=()
   Default to "Yes, refresh now" if no user input arrives within the AskUserQuestion timeout.
 
 **Phase 0a — Per-source refresh invocation (only if `STALE[]` contains the source):**
-- **YouTube** (~3-5 min, no browser, no user attention): `cd ~/dev/youtube_analytics && go run . fetch && go run . fetch-analytics --all && go run . cohort auto`. Cached at `data/videos.json`.
+- **YouTube** (~3-5 min, no browser, no user attention): `cd ~/dev/claude-social-media-skills/youtube-analytics && go run . fetch && go run . fetch-analytics --all && go run . cohort auto`. Cached at `data/videos.json`.
 - **Buffer** (~3-5 min, gstack browser, may need cookie picker click): invoke `/buffer-stats` via the `Skill` tool. The sub-skill writes `~/dev/claude-social-media-skills/buffer-stats/cache/snapshot-<date>.{json,md}` then exits. Auth: `cookie-import-browser chrome buffer.com` if cookies expired — see `Edge: buffer-snapshot-stale`.
 - **LinkedIn** (~2-3 min, gstack browser): invoke `/linkedin-stats` via the `Skill` tool. Writes `~/dev/claude-social-media-skills/linkedin-stats/cache/snapshot-<date>.json`. Auth: gstack browser must be logged in to LinkedIn — see `Edge: linkedin-snapshot-stale`.
 
@@ -83,9 +83,9 @@ If a sub-skill fails (auth lapsed, cookie picker not closed, gstack process drop
 
 **Phase 1 — Resolve window.** Default `DAYS=7`; compute `SINCE` / `UNTIL` and `REPORT=$SNAP_DIR/$(date -u +%Y-%m-%d).md`.
 
-**Phase 1.5 — Load priority targets.** Parse the canonical `flywheel-targets` JSON block from `~/dev/youtube_analytics/enterprise_vibe_code_growth_priorities.md` and expose every numeric target as a shell variable. The skill **must not** hardcode targets — the priorities doc is the single source of truth so cadence shifts only need to be made there. See `Edge: targets-block-missing-or-malformed` for the fallback behavior.
+**Phase 1.5 — Load priority targets.** Parse the canonical `flywheel-targets` JSON block from `~/dev/claude-social-media-skills/youtube-analytics/enterprise_vibe_code_growth_priorities.md` and expose every numeric target as a shell variable. The skill **must not** hardcode targets — the priorities doc is the single source of truth so cadence shifts only need to be made there. See `Edge: targets-block-missing-or-malformed` for the fallback behavior.
 
-**Phase 2 — YouTube.** `go run . analyze --since $SINCE` in `~/dev/youtube_analytics` (reads `data/videos.json` — see `Edge: youtube-videos-json-stale`). Grep the formatted output for streams/long-form/shorts/views/revenue/subs-gained. Compute Priority 1 (`long_form_per_week` against `$P1_MIN`–`$P1_MAX` from the targets block — counts essays + newsletters) + Priority 4 (`livestreams_per_week` against `$P4_PER_WEEK`). **Strategy pivoted 2026-05-18** — see `project_content_strategy_pivot_2026_05_18.md` memory.
+**Phase 2 — YouTube.** `go run . analyze --since $SINCE` in `~/dev/claude-social-media-skills/youtube-analytics` (reads `data/videos.json` — see `Edge: youtube-videos-json-stale`). Grep the formatted output for streams/long-form/shorts/views/revenue/subs-gained. Compute Priority 1 (`long_form_per_week` against `$P1_MIN`–`$P1_MAX` from the targets block — counts essays + newsletters) + Priority 4 (`livestreams_per_week` against `$P4_PER_WEEK`). **Strategy pivoted 2026-05-18** — see `project_content_strategy_pivot_2026_05_18.md` memory.
 
 **Phase 3 — beehiiv.** Two MCP calls: `beehiiv_stats` (current subs + delta) and `beehiiv_attribution` (source mix). If the tool is missing, hit `Edge: beehiiv-mcp-restart-required`. Compute Priority 2 pace toward 1,800 in 12 months and YouTube attribution %.
 
@@ -93,7 +93,7 @@ If a sub-skill fails (auth lapsed, cookie picker not closed, gstack process drop
 
 **Phase 4.5 — Buffer.** Read the latest `~/dev/claude-social-media-skills/buffer-stats/cache/snapshot-*.json`. Render the buffer-tracked subset as `BF_BUFFER_TRACKED_FOLLOWERS` — never call it the cross-channel total.
 
-**Phase 4.55 — Post-manifests (non-Buffer scheduling).** Walk `~/dev/youtube_analytics/data/*/`*.json files that match the post-manifest shape (see [`_shared/post-manifest/README.md`](../_shared/post-manifest/README.md)). These hold per-post schedule IDs for content NOT routed through Buffer (`opus-clips` today; future direct-publish skills). Count posts toward Priority 1 throughput; surface conflicts via `pm_conflicts`. Engagement metrics aren't in the manifest — Phase 4.56 fills those in by JOINing against the per-platform stats snapshots. For now the manifest gives an accurate **publication count** that complements `buffer-stats`'s engagement-side view.
+**Phase 4.55 — Post-manifests (non-Buffer scheduling).** Walk `~/dev/claude-social-media-skills/youtube-analytics/data/*/`*.json files that match the post-manifest shape (see [`_shared/post-manifest/README.md`](../_shared/post-manifest/README.md)). These hold per-post schedule IDs for content NOT routed through Buffer (`opus-clips` today; future direct-publish skills). Count posts toward Priority 1 throughput; surface conflicts via `pm_conflicts`. Engagement metrics aren't in the manifest — Phase 4.56 fills those in by JOINing against the per-platform stats snapshots. For now the manifest gives an accurate **publication count** that complements `buffer-stats`'s engagement-side view.
 
 **Phase 4.56 — Per-source-content closed-loop JOIN.** For each source-content ID discovered in Phase 4.55 (long-form YouTube IDs, newsletter slugs, GitHub PR refs), call `ca_join_engagement` from `_shared/content-attribution/` to assemble a unified record across every platform (`youtube_shorts`, `linkedin_personal`, `instagram_business`, `facebook_page`, `linkedin_page`, `tiktok_business`, etc.). Aggregate `source_engagement` + `derived_engagement` per source; compute `amplification_ratio = derived_reach / source_reach`. Render as "Per-source-content closed-loop attribution" section in the report; persist the array as `content_attribution[]` in the JSON snapshot for week-over-week diffing. **Credits derivative engagement back to Priority 1** — a long-form essay's true throughput value is source + every derivative. See `Edge: content-attribution-module-missing` and `Edge: zero-derivatives-for-source`. Depends on tasks **#381** (the `_shared/content-attribution/` module) and **#377** (buffer-stats Insights coverage of all 6 channels) landing first; until then Phase 4.56 degrades gracefully.
 
@@ -111,7 +111,7 @@ If a sub-skill fails (auth lapsed, cookie picker not closed, gstack process drop
 
 | Source | How | What it gives |
 |---|---|---|
-| YouTube | `go run . analyze --since <date>` in `~/dev/youtube_analytics` | streams/week, long-form count, views, revenue, subs |
+| YouTube | `go run . analyze --since <date>` in `~/dev/claude-social-media-skills/youtube-analytics` | streams/week, long-form count, views, revenue, subs |
 | beehiiv list | `mcp__beehiiv__beehiiv_stats` | current subscriber count |
 | beehiiv attribution | `mcp__beehiiv__beehiiv_attribution` | source mix (YouTube vs LinkedIn vs direct) |
 | LinkedIn | `~/dev/claude-social-media-skills/linkedin-stats/cache/snapshot-<latest>.json` | newsletter subs, profile + page followers |
@@ -136,7 +136,7 @@ If any source fails or is stale, note it in the report — don't silently drop t
 | `/flywheel --cached` | skipped | use cached + flag in report | skip Phase 0 → compose |
 
 **Freshness check implementation:** compare each source's snapshot `mtime` against `stale_snapshot_days` (default 14, configurable per Phase 0 of the Happy Path). Sources to check:
-- `~/dev/youtube_analytics/data/videos.json` → YouTube freshness
+- `~/dev/claude-social-media-skills/youtube-analytics/data/videos.json` → YouTube freshness
 - `~/dev/claude-social-media-skills/buffer-stats/cache/snapshot-*.json` (newest) → Buffer freshness
 - `~/dev/claude-social-media-skills/linkedin-stats/cache/snapshot-*.json` (newest) → LinkedIn freshness
 
@@ -160,7 +160,7 @@ Each has its own auth + scrape; they don't share session:
 
 1. **YouTube data refresh** (~3-5 min, no browser):
    ```bash
-   cd ~/dev/youtube_analytics
+   cd ~/dev/claude-social-media-skills/youtube-analytics
    go run . fetch                       # video metadata, snapshots automatically
    go run . fetch-analytics --all       # aggregate + per-day + traffic-sources + sub-status
    go run . cohort auto                 # refresh cohort assignments from rules
@@ -177,7 +177,7 @@ Each has its own auth + scrape; they don't share session:
 
 4. **YouTube weekly review** (closed-loop, optional):
    ```bash
-   cd ~/dev/youtube_analytics
+   cd ~/dev/claude-social-media-skills/youtube-analytics
    go run . insights pending            # past-due hypotheses; grade them in the report's narrative
    go run . cohort report --since <last-monday>
    ```
@@ -202,7 +202,7 @@ REPORT="$SNAP_DIR/$(date -u +%Y-%m-%d).md"
 The priorities doc carries a fenced JSON block between `<!-- flywheel-targets-start -->` and `<!-- flywheel-targets-end -->` anchors. Parse it and expose every value as a shell variable so the rest of the skill never hardcodes a cadence target.
 
 ```bash
-PRIORITIES_DOC=~/dev/youtube_analytics/enterprise_vibe_code_growth_priorities.md
+PRIORITIES_DOC=~/dev/claude-social-media-skills/youtube-analytics/enterprise_vibe_code_growth_priorities.md
 
 TARGETS_JSON=$(awk '
   /^<!-- flywheel-targets-start -->/ {flag=1; next}
@@ -253,7 +253,7 @@ Two consequences for the rest of the skill:
 If `$TARGETS_FALLBACK=1`, prepend the rendered report with a warning line so the user notices:
 
 ```markdown
-> ⚠ Targets block missing or malformed in priorities doc — using embedded defaults. Fix `~/dev/youtube_analytics/enterprise_vibe_code_growth_priorities.md` and re-run.
+> ⚠ Targets block missing or malformed in priorities doc — using embedded defaults. Fix `~/dev/claude-social-media-skills/youtube-analytics/enterprise_vibe_code_growth_priorities.md` and re-run.
 ```
 
 ### Phase 2 — YouTube analytics
@@ -261,7 +261,7 @@ If `$TARGETS_FALLBACK=1`, prepend the rendered report with a warning line so the
 Run the existing CLI and capture its report:
 
 ```bash
-YT_REPORT=$(cd ~/dev/youtube_analytics && go run . analyze --since "$SINCE" 2>&1)
+YT_REPORT=$(cd ~/dev/claude-social-media-skills/youtube-analytics && go run . analyze --since "$SINCE" 2>&1)
 ```
 
 Extract key numbers from the output:
@@ -387,7 +387,7 @@ If the latest Buffer snapshot is older than `$STALE_SNAPSHOT_DAYS` (from the tar
 
 ### Phase 4.55 — Post-manifest publication count
 
-Walk every JSON file under `~/dev/youtube_analytics/data/*/` that matches the post-manifest shape (top-level `clips[]` or `posts[]` array with `scheduled_posts[]` entries — see [`_shared/post-manifest/README.md`](../_shared/post-manifest/README.md)). Use the `pm_*` helpers to count throughput and surface conflicts:
+Walk every JSON file under `~/dev/claude-social-media-skills/youtube-analytics/data/*/` that matches the post-manifest shape (top-level `clips[]` or `posts[]` array with `scheduled_posts[]` entries — see [`_shared/post-manifest/README.md`](../_shared/post-manifest/README.md)). Use the `pm_*` helpers to count throughput and surface conflicts:
 
 ```bash
 source ~/dev/claude-social-media-skills/_shared/post-manifest/post_manifest.sh
@@ -397,7 +397,7 @@ PM_CONFLICT_COUNT=0
 PM_SOURCES=()  # array of "manifest_path::source_type::source_id" tuples for Phase 4.56
 
 shopt -s nullglob
-for MANIFEST in ~/dev/youtube_analytics/data/*/*.json; do
+for MANIFEST in ~/dev/claude-social-media-skills/youtube-analytics/data/*/*.json; do
   # Accept only manifests with the expected shape — skip yt-analytics videos.json etc.
   jq -e '.clips? // .posts? // empty | type == "array"' "$MANIFEST" >/dev/null 2>&1 || continue
 
@@ -457,7 +457,7 @@ if [ "$CA_AVAILABLE" = "1" ]; then
 
     # ca_join_engagement reads:
     #   - the post-manifest at $MANIFEST (for derivative IDs + scheduleIds)
-    #   - ~/dev/youtube_analytics/data/videos.json (for YouTube Shorts metrics)
+    #   - ~/dev/claude-social-media-skills/youtube-analytics/data/videos.json (for YouTube Shorts metrics)
     #   - ~/dev/claude-social-media-skills/buffer-stats/cache/snapshot-*.json (per-post engagement)
     #   - ~/dev/claude-social-media-skills/linkedin-stats/cache/snapshot-*.json (per-post engagement)
     #   - any other *-stats/cache/snapshot-*.json available
@@ -756,11 +756,11 @@ After a few weeks of running `/flywheel` every Sunday, the snapshots directory b
   *Label: `Edge: linkedin-snapshot-stale`*
 - **Buffer snapshots must be current.** Same `$STALE_SNAPSHOT_DAYS` threshold. If no snapshot exists, the fan-out section shows `⚪ no recent Buffer data` and prompts the user to run `/buffer-stats`. Buffer feeds the fan-out context for Priority 2 — if missing, Priority 2's attribution analysis loses the IG/FB/Threads signal.
   *Label: `Edge: buffer-snapshot-stale`*
-- **YouTube data.** `youtube_analytics` `analyze` reads `data/videos.json` which is only refreshed on `fetch`. If it's stale, the YouTube section will be too. Run `go run . fetch` in `~/dev/youtube_analytics` before running `/flywheel` if the numbers look off.
+- **YouTube data.** `youtube_analytics` `analyze` reads `data/videos.json` which is only refreshed on `fetch`. If it's stale, the YouTube section will be too. Run `go run . fetch` in `~/dev/claude-social-media-skills/youtube-analytics` before running `/flywheel` if the numbers look off.
   *Label: `Edge: youtube-videos-json-stale`*
 - **Consulting log is local-only.** No data migrates from other tools. If the user uses a CRM, they have to update the markdown files themselves.
   *Label: `Edge: consulting-log-local-only`*
-- **Targets block missing or malformed.** Phase 1.5 expects a fenced `json` block in `~/dev/youtube_analytics/enterprise_vibe_code_growth_priorities.md` between `<!-- flywheel-targets-start -->` and `<!-- flywheel-targets-end -->` anchors. If absent or invalid JSON, the skill falls back to embedded defaults (the values that were authoritative as of 2026-05-18: P1=2-3/wk, P2=1800 in 52wk, P3=1/wk, P4=1/wk, P5 yellow/red=1/3, ROI=100/10/50, staleness=14d) and prepends a `⚠` warning to the rendered report. Fix the doc — don't paper over by editing the fallback values in this skill.
+- **Targets block missing or malformed.** Phase 1.5 expects a fenced `json` block in `~/dev/claude-social-media-skills/youtube-analytics/enterprise_vibe_code_growth_priorities.md` between `<!-- flywheel-targets-start -->` and `<!-- flywheel-targets-end -->` anchors. If absent or invalid JSON, the skill falls back to embedded defaults (the values that were authoritative as of 2026-05-18: P1=2-3/wk, P2=1800 in 52wk, P3=1/wk, P4=1/wk, P5 yellow/red=1/3, ROI=100/10/50, staleness=14d) and prepends a `⚠` warning to the rendered report. Fix the doc — don't paper over by editing the fallback values in this skill.
   *Label: `Edge: targets-block-missing-or-malformed`*
 - **Content-attribution module missing.** Phase 4.56 sources `~/dev/claude-social-media-skills/_shared/content-attribution/content_attribution.sh` (task #381). If the file isn't on disk, the phase skips: `content_attribution[]` in the JSON snapshot is `[]`, the markdown section renders as a `⚠ Unavailable` stub, and Priority 1's derivative-credited throughput falls back to raw count. The rest of `/flywheel` is unaffected — don't abort the run. Companion dependency: task **#377** (buffer-stats Insights coverage of all 6 channels) needs to land for the JOIN to cover every platform uniformly; until then derivative reach undercounts the channels Insights doesn't yet reach.
   *Label: `Edge: content-attribution-module-missing`*

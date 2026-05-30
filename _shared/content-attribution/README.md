@@ -39,11 +39,11 @@ The JOIN engine reads from these (NEVER writes):
 
 | Path | What | Status |
 |---|---|---|
-| `~/dev/youtube_analytics/data/videos.json` | YouTube long-form + Shorts engagement (per-video) | live |
+| `~/dev/claude-social-media-skills/youtube-analytics/data/videos.json` | YouTube long-form + Shorts engagement (per-video) | live |
 | `~/dev/claude-social-media-skills/buffer-stats/cache/snapshot-*.json` | Buffer-routed engagement, channel ROI, format_engagement | live (per-format gated on #371) |
 | `~/dev/claude-social-media-skills/linkedin-stats/cache/snapshot-*.json` | LinkedIn newsletter + company + personal per-post (`profile.recent_posts[]` post-#370 Phase 3b) | live (per-post gated on #370 Phase 3b production run) |
-| `~/dev/youtube_analytics/data/opus_clips/*.json` | Post-manifests (publication ledger) | live |
-| `~/dev/youtube_analytics/data/<scheduler>/*.json` | Post-manifests from other schedulers (future) | future |
+| `~/dev/claude-social-media-skills/youtube-analytics/data/opus_clips/*.json` | Post-manifests (publication ledger) | live |
+| `~/dev/claude-social-media-skills/youtube-analytics/data/<scheduler>/*.json` | Post-manifests from other schedulers (future) | future |
 | `~/dev/claude-social-media-skills/tiktok-stats/cache/snapshot-*.json` | TikTok per-post engagement | **pending #373** — handled gracefully if missing |
 | `~/dev/claude-social-media-skills/threads-stats/cache/snapshot-*.json` | Threads per-post engagement | **pending #375** — handled gracefully if missing |
 

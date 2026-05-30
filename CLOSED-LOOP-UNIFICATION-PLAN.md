@@ -66,7 +66,7 @@ What needs to unify is **the analysis layer** — the JOIN that maps a source pi
                                              │ NONE talk to each other.
                                              │
    ┌──────────────────────────┐
-   │ ~/dev/youtube_analytics/  │
+   │ ~/dev/claude-social-media-skills/youtube-analytics/  │
    │ data/opus_clips/*.json    │── post-manifests (publication ledger,
    │ (post-manifests)          │   written by /opus-clips at schedule time)
    └──────────────────────────┘
@@ -93,8 +93,8 @@ A long-form essay (`uEposKmbFvY` = "How to Scale Without the Slop") produces 23 
 
 **After this plan**:
 
-1. `_shared/content-attribution/` walks `~/dev/youtube_analytics/data/opus_clips/P3051823ab0w.json` and finds `clips[].clip_id = "La4Wghg6IX"`.
-2. It scans `~/dev/youtube_analytics/data/videos.json` for any Short whose `description` matches `\[opus:La4Wghg6IX\]`. Finds the Short, captures `views, likes, comments, subscribers_gained, estimated_revenue`.
+1. `_shared/content-attribution/` walks `~/dev/claude-social-media-skills/youtube-analytics/data/opus_clips/P3051823ab0w.json` and finds `clips[].clip_id = "La4Wghg6IX"`.
+2. It scans `~/dev/claude-social-media-skills/youtube-analytics/data/videos.json` for any Short whose `description` matches `\[opus:La4Wghg6IX\]`. Finds the Short, captures `views, likes, comments, subscribers_gained, estimated_revenue`.
 3. It does the same for the LinkedIn-personal scrape (joins on `source_tag.id == "La4Wghg6IX"`), the Buffer-routed channels (joins on `scheduleId` against the manifest), etc.
 4. Output record:
 

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# pre-commit hook: keep main green by gating on `go vet` and `go test`.
+#
+# Enable once per clone:
+#   git config core.hooksPath .githooks
+# Or run the helper:
+#   make hooks-install
+#
+# Skip a specific commit (use sparingly):
+#   git commit --no-verify
+set -euo pipefail
+
+# Only run when Go files are staged. Cheaper than always running tests.
+if ! git diff --cached --name-only --diff-filter=ACMR | grep -qE '\.(go|mod|sum)$'; then
+    exit 0
+fi
+
+cd "$(git rev-parse --show-toplevel)"
+
+echo "pre-commit: go vet ./..."
+go vet ./...
+
+echo "pre-commit: go test ./..."
+go test ./... >/dev/null
+
+echo "pre-commit: ok"

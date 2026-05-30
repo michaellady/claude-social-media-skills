@@ -1,6 +1,6 @@
 ---
 name: opus-clips-performance
-description: Use when user wants engagement metrics for clips scheduled via OpusClip — "how did my clips do", "opus clip performance", "clip engagement report", "which clips landed", "per-clip stats", "opus-clips report". Walks post-manifests under `~/dev/youtube_analytics/data/opus_clips/` and joins each scheduled post against per-platform native analytics. Scaffolded 2026-05-19 (task #372); YouTube join is wired, other platforms gated on tasks #370, #371, #373.
+description: Use when user wants engagement metrics for clips scheduled via OpusClip — "how did my clips do", "opus clip performance", "clip engagement report", "which clips landed", "per-clip stats", "opus-clips report". Walks post-manifests under `~/dev/claude-social-media-skills/youtube-analytics/data/opus_clips/` and joins each scheduled post against per-platform native analytics. YouTube join is wired (via `_shared/content-attribution`); FB/IG/TikTok/LinkedIn are read by in-browser native-analytics scrape (claude-in-chrome), matched by the `[opus:]` tag — folded in from the retired `clip-results` skill (2026-05-30).
 user_invocable: true
 ---
 
@@ -15,7 +15,7 @@ Why this exists: `/opus-clips` writes a publication ledger but no engagement dat
 
 ## Usage
 
-`/opus-clips-performance` — process every manifest under `~/dev/youtube_analytics/data/opus_clips/*.json` whose newest scheduled post is older than 24 h (gives platforms time to ingest analytics).
+`/opus-clips-performance` — process every manifest under `~/dev/claude-social-media-skills/youtube-analytics/data/opus_clips/*.json` whose newest scheduled post is older than 24 h (gives platforms time to ingest analytics).
 `/opus-clips-performance <project_id>` — process one manifest (`P3051823ab0w` or full path).
 `/opus-clips-performance --since YYYY-MM-DD` — only manifests with scheduled posts on/after this date.
 `/opus-clips-performance --dry-run` — render the report to stdout, don't mutate manifests or write files.
@@ -25,9 +25,9 @@ Why this exists: `/opus-clips` writes a publication ledger but no engagement dat
 
 For one fully-fanned-out OpusClip project (23 clips × 6 channels = 138 scheduled posts, the live `P3051823ab0w` shape) once 24 h have elapsed. ~30 sec wall-clock today (only the YouTube join hits disk; other platforms short-circuit).
 
-**Phase 1 — Discover manifests.** Walk `~/dev/youtube_analytics/data/*/` for JSON files matching the post-manifest schema. The signature shape is `clips[].scheduled_posts[].api_response.data.scheduleId` — use `pm_count_scheduled` as a cheap probe (returns 0 for non-manifests).
+**Phase 1 — Discover manifests.** Walk `~/dev/claude-social-media-skills/youtube-analytics/data/*/` for JSON files matching the post-manifest schema. The signature shape is `clips[].scheduled_posts[].api_response.data.scheduleId` — use `pm_count_scheduled` as a cheap probe (returns 0 for non-manifests).
 
-**Phase 2 — YouTube join (the only platform wired today).** For each `scheduled_posts[]` whose `label` contains `YOUTUBE`, correlate against `~/dev/youtube_analytics/data/videos.json`:
+**Phase 2 — YouTube join (the only platform wired today).** For each `scheduled_posts[]` whose `label` contains `YOUTUBE`, correlate against `~/dev/claude-social-media-skills/youtube-analytics/data/videos.json`:
 1. **Primary:** scan video descriptions for `[opus:<clip_id>]`. Exact match wins.
 2. **Fallback:** time-window match — YouTube `published_at` within ±2 h of manifest's `scheduled_at_utc`. If multiple candidates, prefer the one whose duration is closest to the clip's `duration_sec`.
 3. Emit `engagement: { source: "youtube", join_method: "tag" | "time", views, likes, comments, subscribers_gained, estimated_revenue, video_id, fetched_at }`.
@@ -45,7 +45,7 @@ For one fully-fanned-out OpusClip project (23 clips × 6 channels = 138 schedule
 ```bash
 source ~/dev/claude-social-media-skills/_shared/post-manifest/post_manifest.sh
 
-DATA_ROOT=~/dev/youtube_analytics/data
+DATA_ROOT=~/dev/claude-social-media-skills/youtube-analytics/data
 MANIFESTS=()
 for f in "$DATA_ROOT"/*/*.json; do
   COUNT=$(pm_count_scheduled "$f" 2>/dev/null)
@@ -64,7 +64,7 @@ NEWEST=$(jq -r '[.clips[].scheduled_posts[].scheduled_at_utc] | max' "$f")
 ### Phase 2 — YouTube join
 
 ```bash
-VIDEOS=~/dev/youtube_analytics/data/videos.json
+VIDEOS=~/dev/claude-social-media-skills/youtube-analytics/data/videos.json
 
 # Build a clip_id -> youtube_video lookup by scanning descriptions for [opus:<clip_id>]
 yt_by_tag() {
@@ -95,22 +95,29 @@ For each `(clip × YOUTUBE post)`, try tag first, then time. Extract `{view_coun
 
 **Why the tag-first / time-fallback split:** OpusClip's `[opus:<clip_id>]` footer is grep-able from any platform's native search — when present it's a clean exact join. But at manifest-write time we don't yet have the YouTube video ID (Buffer/OpusClip schedule first, YouTube assigns the ID on publish), so the manifest can't carry it. The time-window fallback exists for the case where the user manually re-titled the YouTube short and stripped the description footer in the studio editor.
 
-### Phase 3 — Other platforms (pending)
+### Phase 3 — Other platforms (in-browser native scrape)
 
-Per the constraints, every non-YouTube label gets:
+These platforms have **no analytics API** (the old #370/#371/#373 stubs assumed Meta Graph / TikTok
+Creator API + OAuth that never landed). Instead, read each platform's **native analytics in the user's
+logged-in browser** via `claude-in-chrome` — the proven method (folded in from the retired `clip-results`
+skill; first validated on `P3051823ab0w`, 2026-05-30, total ~31.5K reach across 6 platforms). **Interactive
+only** — needs an open, logged-in session; the daily launchd reminder prompts the user to run it, it can't
+go headless.
 
-```json
-{ "engagement": null, "pending_task": "#370" }
-```
+Load chrome tools first: `ToolSearch select:mcp__claude-in-chrome__tabs_context_mcp,mcp__claude-in-chrome__navigate,mcp__claude-in-chrome__get_page_text,mcp__claude-in-chrome__browser_batch,mcp__claude-in-chrome__computer`.
+**Use `get_page_text`, not screenshots** — it returns full captions (with the `[opus:CLIPID]` tag for exact
+matching) plus the metric columns. Match each post to a clip by its `[opus:]` tag; write the result into
+that `scheduled_posts[].engagement` block (the post-manifest contract `content-attribution` + `/flywheel` read).
 
-| Label prefix in manifest | Pending task | Why blocked |
+| Label prefix | Where (native analytics) | Notes |
 |---|---|---|
-| `FACEBOOK_PAGE` | **#370** | Need Meta Graph API page-level insights wiring (or scrape of FB Creator Studio). |
-| `INSTAGRAM_BUSINESS` | **#370** | Same Meta auth path as FB — bundled under one task. |
-| `LINKEDIN` (page + personal) | **#371** | `linkedin-stats` is per-channel snapshot today, not per-post; needs the per-post scrape from `linkedin-stats/SPEC-per-post-scrape.md`. |
-| `TIKTOK_BUSINESS` | **#373** | TikTok Creator API access pending; manual export workaround not in scope here. |
+| `FACEBOOK_PAGE` + `INSTAGRAM_BUSINESS` | **Meta Business Suite** → `business.facebook.com/latest/posts/published_posts/` (Content) | Covers BOTH. Widen window ~1920; Columns → add **Views** + **Follows**, drop Reach/Shares. IG captions carry the `[opus:]` tag; FB shows a short title only — match FB by the same publish time-slot as the tagged IG post. FB ≫ IG on views. NB: FB EVC/Sandbox/Mike share one `postAccountId`. |
+| `TIKTOK_BUSINESS` | **TikTok Studio** → `tiktok.com/tiktokstudio/content` | Views/Likes/Comments columns; captions carry the `[opus:]` tag. **Virtualized list** — scroll in modest steps and dedupe by tag (big jumps skip rows). Highest engagement of any platform. |
+| `LINKEDIN` (org) | `linkedin.com/company/<ORG_ID>/admin/analytics/updates/` → Content engagement table | Impressions per post; "Show: 20" + paginate. Usually negligible (org page ~tiny). |
+| `LINKEDIN` (personal) | Me → Posts & Activity → `linkedin.com/in/<vanity>/recent-activity/all/` | "N impressions" per post; scroll-load. The personal profile reaches far more than the org page. |
 
-When those tasks land, replace the `pending_task` stub with a real fetcher and re-run the skill — the manifest's `scheduleId` / `postId` from `api_response.data` is the join key those fetchers will use.
+If a platform nav is permission-denied, ask the user before retrying; don't loop. Emit `engagement: null,
+pending_reason: "<platform> not captured"` for any clip a sweep couldn't reach, so a later run can fill it.
 
 ### Phase 4 — Render report
 
@@ -139,7 +146,7 @@ Generated: <now>
 Total views: N · Total likes: N · Total comments: N · Subs gained: N · Est. revenue: $N.NN
 ```
 
-Write to `~/dev/youtube_analytics/data/opus_clips/report-<YYYY-MM-DD>-<project_id>.md`.
+Write to `~/dev/claude-social-media-skills/youtube-analytics/data/opus_clips/report-<YYYY-MM-DD>-<project_id>.md`.
 
 ### Phase 5 — Persist back to manifest
 
@@ -182,6 +189,6 @@ None of these block the current scaffold — they're future-work notes.
 - **`/opus-clips`** — upstream; writes the manifests this skill reads.
 - **`_shared/post-manifest/`** — the shape contract; helper functions (`pm_count_scheduled`, `pm_schedule_ids`, `pm_find_clip`) are sourced here.
 - **`/flywheel`** — downstream; Phase 4.55 will read this skill's reports to credit clip output toward Priority 1 (long-form throughput, since each clip is a derivative of a long-form essay).
-- **`/yt-analytics`** — owns `~/dev/youtube_analytics/data/videos.json`; refresh it (`go run . fetch-analytics --all`) before running this skill if YouTube data is stale.
+- **`/yt-analytics`** — owns `~/dev/claude-social-media-skills/youtube-analytics/data/videos.json`; refresh it (`go run . fetch-analytics --all`) before running this skill if YouTube data is stale.
 - **`/linkedin-stats`** — when task **#371** lands, its `SPEC-per-post-scrape.md` becomes Phase 3's LinkedIn fetcher.
 - **`/buffer-stats`** — does NOT cover these posts (they bypass Buffer); that's the entire reason post-manifests exist.

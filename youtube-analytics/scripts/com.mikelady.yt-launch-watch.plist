@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Daily launch-window watch for a single video. Lighter than the Sunday
+  weekly review — refreshes data + prints the deep-dive to a per-run log.
+  Use during the first 3-5 days after a video drops, then uninstall.
+
+  Install:   make launch-watch-install VIDEO=<video-id>
+  Uninstall: make launch-watch-uninstall
+  Test:      make launch-watch-test VIDEO=<video-id>
+
+  Schedule: every day at 09:00 local time. Single daily check-in is
+  enough resolution for launch-window deltas and minimizes the OAuth
+  re-auth nag if refresh tokens expire mid-window (GCP "Testing"-
+  status apps invalidate refresh tokens after ~7 days).
+
+  Logs: ~/Library/Logs/yt-launch-watch/<video-id>/<YYYY-MM-DD-HHMM>.log
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.mikelady.yt-launch-watch</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-l</string>
+    <string>__REPO_DIR__/scripts/launch-watch.sh</string>
+    <string>__VIDEO_ID__</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__REPO_DIR__</string>
+
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict>
+      <key>Hour</key><integer>9</integer>
+      <key>Minute</key><integer>0</integer>
+    </dict>
+  </array>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/yt-launch-watch/launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/yt-launch-watch/launchd.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__HOME__/.local/bin:/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+</dict>
+</plist>

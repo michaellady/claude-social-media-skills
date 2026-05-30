@@ -253,7 +253,7 @@ Once snapshots exist, these skills will read them:
 
 - **`/flywheel`** — pulls `profile.follower_count` and the sum of `recent_posts[].view_count` into the weekly rollup, contributing to Priority 1 (long-form essays + newsletters + clips) throughput measurement.
 - **`/buffer-stats`** — for the ~1/day historical Buffer→TikTok posts, joins on `caption` substring or `share_url` to attribute Buffer-scheduled posts (since Buffer Analyze can't). Will need a small bridge in `buffer-stats` to walk the TikTok snapshot.
-- **`/opus-clips-performance`** (future) — walks `~/dev/youtube_analytics/data/opus_clips/*.json` manifests, finds entries with `scheduled_posts[].label` containing `TIKTOK`, then matches the `clip_id` against this snapshot's `recent_posts[].closed_loop_tags[].id` where `scheme === "opus"`. That join gives per-clip view counts — the actual ROI signal for the OpusClip native scheduler vs. Buffer-scheduled TikTok.
+- **`/opus-clips-performance`** (future) — walks `~/dev/claude-social-media-skills/youtube-analytics/data/opus_clips/*.json` manifests, finds entries with `scheduled_posts[].label` containing `TIKTOK`, then matches the `clip_id` against this snapshot's `recent_posts[].closed_loop_tags[].id` where `scheme === "opus"`. That join gives per-clip view counts — the actual ROI signal for the OpusClip native scheduler vs. Buffer-scheduled TikTok.
 
 ## Known issues / robustness notes
 

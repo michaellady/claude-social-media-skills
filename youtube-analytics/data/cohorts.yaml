@@ -1,0 +1,44 @@
+# Local cohort definitions for the youtube_analytics CLI.
+#
+# Each cohort has an id (stable handle), a name, optional description, and
+# optional rules. Rules are OR'd: a video is auto-assigned if ANY rule
+# matches. A rule's predicates (title_regex, video_type, duration_min, etc.)
+# are AND'd within that rule.
+#
+# Cohorts with NO rules are manual-only — managed via `cohort assign/unassign`.
+#
+# Run `go run . cohort auto` to (re)derive assignments from these rules.
+
+- id: gastown-series
+  name: Gas Town / Gastown content
+  description: Reviews, deep-dives, and dev sessions using Steve Yegge's Gas Town agent framework
+  rules:
+    - title_regex: '(?i)gas\s*town|gastown'
+
+- id: evc-numbered
+  name: Enterprise Vibe Code numbered episodes
+  description: The Enterprise Vibe Code N live series (long-form, weekly cadence)
+  rules:
+    - title_regex: '(?i)enterprise\s+vibe\s+code\s+(episode\s+)?\d+|enterprise\s+vibe\s+code\s+ep\s+\d+'
+
+- id: claude-code
+  name: Claude Code / $200/mo content
+  description: Videos featuring Claude Code as the primary tool. The "$200" alternative
+    requires "claude" nearby so unrelated $200/mo investing/finance videos don't get swept in.
+  rules:
+    - title_regex: '(?i)claude\s+code|claude\s+max|\$200\s*/?\s*m(?:o|onth).{0,40}claude|claude.{0,40}\$200\s*/?\s*m(?:o|onth)'
+
+- id: live-deep-dives
+  name: Long live streams (30+ min)
+  description: Live streams over 30 minutes — meaningful watch-time engagement
+  rules:
+    - video_type: live
+      duration_min: 1800
+
+- id: evergreen-explainers
+  name: Evergreen explainers (manual)
+  description: |
+    Manually curated videos that age well and merit re-promotion.
+    Curation heuristic when seeding new candidates: genuine long-form
+    (duration >= 120s, no '#shorts' in title), views >= 100, retention >= 30%.
+    Manual-only — no rules; assignments are added via `cohort assign`.

@@ -48,13 +48,13 @@ func envOr(key, def string) string {
 }
 
 func ytVideosPath() string {
-	return envOr("CA_YT_VIDEOS", filepath.Join(home(), "dev/youtube_analytics/data/videos.json"))
+	return envOr("CA_YT_VIDEOS", filepath.Join(home(), "dev/claude-social-media-skills/youtube-analytics/data/videos.json"))
 }
 func opusManifestsDir() string {
-	return envOr("CA_OPUS_MANIFESTS_DIR", filepath.Join(home(), "dev/youtube_analytics/data/opus_clips"))
+	return envOr("CA_OPUS_MANIFESTS_DIR", filepath.Join(home(), "dev/claude-social-media-skills/youtube-analytics/data/opus_clips"))
 }
 func manifestsRoot() string {
-	return envOr("CA_MANIFESTS_ROOT", filepath.Join(home(), "dev/youtube_analytics/data"))
+	return envOr("CA_MANIFESTS_ROOT", filepath.Join(home(), "dev/claude-social-media-skills/youtube-analytics/data"))
 }
 func bufferCacheDir() string {
 	return envOr("CA_BUFFER_CACHE_DIR", filepath.Join(home(), "dev/claude-social-media-skills/buffer-stats/cache"))

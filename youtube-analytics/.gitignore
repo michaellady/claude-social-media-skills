@@ -1,0 +1,22 @@
+.env
+client_secret.json
+youtube-analytics
+node_modules/
+__pycache__/
+*.pyc
+# Track authored config + ledger artifacts (cohorts.yaml, insights/*.md,
+# comments.json). Ignore fetched/generated bulk data and secrets.
+data/videos.json
+data/cohort_assignments.json
+data/peer-videos.json
+data/tags.json
+data/snapshots/
+data/dashboard.html
+data/analytics_report*.md
+data/shorts_analysis_and_competitive_research.md
+data/reviews/
+data/launch-experiments/
+data/opus_clips/
+data/token*.json
+.gstack/
+enterprise_vibe_code_growth_priorities.md

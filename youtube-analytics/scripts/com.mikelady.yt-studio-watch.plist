@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Daily Studio-screenshot pass for a single video. Complements
+  launch-watch.sh — that script covers what the YouTube Data + Analytics
+  APIs expose; this script covers what's ONLY in Studio's UI (realtime
+  48h numbers, labeled traffic surfaces, retention curve, A/B verdict).
+
+  Requires: Chrome running + claude-in-chrome extension connected.
+
+  Install:   make studio-watch-install VIDEO=<video-id>
+  Uninstall: make studio-watch-uninstall
+  Test:      make studio-watch-test VIDEO=<video-id>
+
+  Schedule: every day at 09:15 local. Offset by 15 minutes from
+  launch-watch.sh (9:00) so the API + Studio passes don't compete
+  for resources and the macOS notifications don't pile up at the
+  same instant.
+
+  Output: ~/Library/Logs/yt-studio-watch/<video-id>/<YYYY-MM-DD>/
+            overview.png + ab-report.png + summary.md
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.mikelady.yt-studio-watch</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-l</string>
+    <string>__REPO_DIR__/scripts/studio-watch.sh</string>
+    <string>__VIDEO_ID__</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__REPO_DIR__</string>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>9</integer>
+    <key>Minute</key><integer>15</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/yt-studio-watch/launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/yt-studio-watch/launchd.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__HOME__/.local/bin:/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+</dict>
+</plist>

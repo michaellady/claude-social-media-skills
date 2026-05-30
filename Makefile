@@ -5,9 +5,9 @@ LAUNCH_AGENT_LABEL := com.mikelady.csms-weekly-review
 LAUNCH_AGENT_DIR := $(HOME)/Library/LaunchAgents
 LAUNCH_AGENT_PLIST := $(LAUNCH_AGENT_DIR)/$(LAUNCH_AGENT_LABEL).plist
 
-# Build all _shared/ Go binaries. Idempotent.
+# Build all in-repo Go binaries (_shared/ modules + the migrated youtube-analytics CLI). Idempotent.
 build-shared:
-	@for d in _shared/buffer-post-prep _shared/buffer-queue-check _shared/voice-corpus; do \
+	@for d in _shared/buffer-post-prep _shared/buffer-queue-check _shared/voice-corpus _shared/content-attribution youtube-analytics; do \
 		echo "--- $$d"; \
 		(cd $$d && go build .) || exit 1; \
 	done

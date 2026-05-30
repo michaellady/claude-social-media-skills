@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd daily reminder to run the cross-platform clip closed loop interactively.
+  Install:   make clip-loop-reminder-install
+  Uninstall: make clip-loop-reminder-uninstall   (do this when the ~2-3 week window closes)
+  Test now:  make clip-loop-reminder-test
+  Inspect:   launchctl list | grep yt-clip-loop-reminder
+
+  Fires daily at 9:30 AM local (after launch-watch 9:00 / studio-watch 9:15).
+  It only posts a notification — it does NOT scrape, because the FB/IG/TikTok/
+  LinkedIn half needs a logged-in browser (claude-in-chrome) that can't run
+  headless. Notification log: ~/Library/Logs/yt-clip-loop-reminder/reminder.log
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.mikelady.yt-clip-loop-reminder</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-l</string>
+    <string>__REPO_DIR__/scripts/clip-loop-reminder.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__REPO_DIR__</string>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>9</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/yt-clip-loop-reminder/launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/yt-clip-loop-reminder/launchd.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__HOME__/.local/bin:/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+</dict>
+</plist>
