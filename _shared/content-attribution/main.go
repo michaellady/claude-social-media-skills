@@ -390,9 +390,37 @@ func liPersonalMatch(clipID string) platformRecord {
 	return noMatchRec()
 }
 
-// bufferMatch: Buffer snapshot doesn't yet carry per-post records keyed on
-// scheduleId (gated on #371). Probe; pending until present.
-func bufferMatch(scheduleID string) platformRecord {
+// bufferChannelForPlatform maps a JOIN platform key to the buffer snapshot's
+// "<service>/<type>" channel key. The TYPE half is what keeps linkedin_page
+// (a Buffer-routed company page) distinct from linkedin_personal (matched
+// separately via liPersonalMatch against the linkedin-stats snapshot) — without
+// it, a clip posted to BOTH would double-count.
+func bufferChannelForPlatform(platform string) string {
+	switch platform {
+	case "instagram_business":
+		return "instagram/business"
+	case "facebook_page":
+		return "facebook/page"
+	case "linkedin_page":
+		return "linkedin/page"
+	default:
+		return ""
+	}
+}
+
+// bufferMatch resolves an IG/FB/LinkedIn-page derivative's engagement from the
+// buffer-stats snapshot. Two paths, in priority order (#371):
+//
+//  1. Per-service recent_posts[] (preferred): buffer-stats emits a top-level
+//     recent_posts[] where each entry carries {channel:"<service>/<type>",
+//     caption|source_tag, engagement{}}. Match on BOTH the channel (service+type,
+//     so the same clip on IG vs FB vs LI-page stays distinct — no triple-count)
+//     AND the opus clipID. Mirrors snapshotPostsMatch but adds the channel filter
+//     a single-platform snapshot (tiktok/threads) doesn't need.
+//  2. scheduleId probe (legacy fallback): if no recent_posts[], fall back to the
+//     original forward-compat behavior — pending #371 until the snapshot carries
+//     per-post records keyed on scheduleId.
+func bufferMatch(platform, clipID, scheduleID string) platformRecord {
 	snap := newestSnapshot(bufferCacheDir())
 	if snap == "" {
 		return pendingRec(pendingBufferFormat)
@@ -401,15 +429,58 @@ func bufferMatch(scheduleID string) platformRecord {
 	if err != nil {
 		return pendingRec(pendingBufferFormat)
 	}
-	// Cheap probe: does the snapshot mention scheduleId anywhere?
-	if !strings.Contains(string(b), "scheduleId") {
-		return pendingRec(pendingBufferFormat)
-	}
-	var doc any
+	var doc map[string]any
 	if json.Unmarshal(b, &doc) != nil {
 		return pendingRec(pendingBufferFormat)
 	}
-	if hit := findByScheduleID(doc, scheduleID); hit != nil {
+
+	// Path 1: per-service recent_posts[] matched by channel + opus clipID.
+	if posts, ok := doc["recent_posts"].([]any); ok && len(posts) > 0 {
+		want := bufferChannelForPlatform(platform)
+		tag := "[opus:" + clipID + "]"
+		for _, p := range posts {
+			pm, ok := p.(map[string]any)
+			if !ok {
+				continue
+			}
+			if want != "" && str(pm, "channel") != want {
+				continue
+			}
+			matched := strings.Contains(str(pm, "caption"), tag)
+			if st, ok := pm["source_tag"].(map[string]any); ok {
+				if str(st, "scheme") == "opus" && str(st, "id") == clipID {
+					matched = true
+				}
+			}
+			if matched {
+				eng := map[string]any{}
+				if e, ok := pm["engagement"].(map[string]any); ok {
+					for k, v := range e {
+						eng[k] = v
+					}
+				}
+				eng["join_method"] = "tag"
+				if id := str(pm, "post_id"); id != "" {
+					eng["post_id"] = id
+				}
+				return platformRecord{Engagement: eng}
+			}
+		}
+		// recent_posts[] present but this (channel, clip) absent → genuinely not
+		// measured this run (not posted there, or not scraped). Symmetric with
+		// snapshotPostsMatch's noMatch.
+		return noMatchRec()
+	}
+
+	// Path 2 (legacy): scheduleId probe — pending until the snapshot carries it.
+	if !strings.Contains(string(b), "scheduleId") {
+		return pendingRec(pendingBufferFormat)
+	}
+	var tree any
+	if json.Unmarshal(b, &tree) != nil {
+		return pendingRec(pendingBufferFormat)
+	}
+	if hit := findByScheduleID(tree, scheduleID); hit != nil {
 		hit["join_method"] = "schedule_id"
 		return platformRecord{Engagement: hit}
 	}
@@ -505,7 +576,7 @@ func platformLookup(platform, clipID, schedAt string, dur float64, scheduleID st
 	case "linkedin_personal":
 		rec = liPersonalMatch(clipID)
 	case "facebook_page", "instagram_business", "linkedin_page":
-		rec = bufferMatch(scheduleID)
+		rec = bufferMatch(platform, clipID, scheduleID)
 	case "tiktok_business":
 		rec = tiktokMatch(clipID)
 	case "threads":

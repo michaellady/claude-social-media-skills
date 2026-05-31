@@ -82,6 +82,70 @@ func TestSnapshotPostsMatch_PendingWhenAbsent(t *testing.T) {
 	}
 }
 
+// Buffer (#371): per-service recent_posts[] resolves an IG opus derivative by
+// channel + clipID, and the whole engagement object + join_method come through.
+func TestBufferMatch_ByChannelAndTag(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CA_BUFFER_CACHE_DIR", dir)
+	writeSnap(t, dir, map[string]any{
+		"recent_posts": []any{
+			map[string]any{
+				"channel":    "instagram/business",
+				"caption":    "Claude, Codex, Gemini … [opus:WSJqHQbFXl]",
+				"source_tag": map[string]any{"scheme": "opus", "id": "WSJqHQbFXl"},
+				"engagement": map[string]any{"impressions": 214, "reach": 162, "likes": 3, "comments": 0},
+			},
+		},
+	})
+	rec := bufferMatch("instagram_business", "WSJqHQbFXl", "")
+	if rec.Pending || rec.Engagement == nil {
+		t.Fatalf("expected IG match, got %+v", rec)
+	}
+	if rec.Engagement["join_method"] != "tag" {
+		t.Errorf("join_method = %v, want tag", rec.Engagement["join_method"])
+	}
+	if v, _ := rec.Engagement["impressions"].(float64); v != 214 {
+		t.Errorf("impressions = %v, want 214", rec.Engagement["impressions"])
+	}
+}
+
+// Buffer channel filter prevents cross-service double-counting: the same clip
+// posted to IG must NOT resolve when the JOIN asks for facebook_page.
+func TestBufferMatch_ChannelFilterNoCrossService(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CA_BUFFER_CACHE_DIR", dir)
+	writeSnap(t, dir, map[string]any{
+		"recent_posts": []any{
+			map[string]any{
+				"channel":    "instagram/business",
+				"source_tag": map[string]any{"scheme": "opus", "id": "WSJqHQbFXl"},
+				"engagement": map[string]any{"impressions": 214},
+			},
+		},
+	})
+	rec := bufferMatch("facebook_page", "WSJqHQbFXl", "")
+	if rec.Pending {
+		t.Fatalf("expected no_match (wrong channel), got pending: %+v", rec)
+	}
+	if rec.Reason != "no_match" {
+		t.Errorf("reason = %q, want no_match (IG post must not satisfy a facebook_page query)", rec.Reason)
+	}
+}
+
+// Buffer legacy fallback: a snapshot with neither recent_posts[] nor scheduleId
+// stays pending #371 (unchanged behavior for old snapshots).
+func TestBufferMatch_PendingWhenNoRecentPosts(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CA_BUFFER_CACHE_DIR", dir)
+	writeSnap(t, dir, map[string]any{
+		"channel_roi": []any{map[string]any{"channel": "instagram/business"}},
+	})
+	rec := bufferMatch("instagram_business", "WSJqHQbFXl", "")
+	if !rec.Pending || rec.PendingTask != pendingBufferFormat {
+		t.Fatalf("expected pending %s, got %+v", pendingBufferFormat, rec)
+	}
+}
+
 // Snapshot present but the clip's tag isn't in it → no_match (NOT pending).
 func TestSnapshotPostsMatch_NoMatchWhenTagAbsent(t *testing.T) {
 	dir := t.TempDir()
