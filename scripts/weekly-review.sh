@@ -65,10 +65,19 @@ PREV_SUNDAY="$(date -v-mon -v-8d +%Y-%m-%d 2>/dev/null || date -d 'last monday -
   git pull --ff-only origin main || echo "(pull skipped/failed; continuing with local state)"
 
   # --- ensure shared Go binaries are built (no-op if already built)
-  echo "--- build _shared/ helpers"
-  for d in _shared/buffer-post-prep _shared/buffer-queue-check _shared/voice-corpus; do
+  echo "--- build _shared/ helpers + dashboard + youtube-analytics"
+  for d in _shared/buffer-post-prep _shared/buffer-queue-check _shared/voice-corpus _shared/content-attribution _shared/dashboard youtube-analytics; do
     if [ -d "$d" ]; then (cd "$d" && go build .) || echo "($d build failed; continuing)"; fi
   done
+
+  # --- refresh the dual-source voice corpus (newsletters + livestream transcripts).
+  # Own TTLs, so this is cheap when warm; degrades gracefully if youtube_transcript_api
+  # is missing (newsletters still refresh). Keeps the dashboard's voice card + the
+  # compose skills' grounding current.
+  echo "--- refresh voice corpus"
+  if [ -x _shared/voice-corpus/voice-corpus ]; then
+    _shared/voice-corpus/voice-corpus --refresh >/dev/null 2>&1 || echo "(voice-corpus refresh failed; continuing)"
+  fi
 
   echo
   echo "--- invoking claude -p for the weekly review ---"
@@ -117,7 +126,18 @@ data being on disk):
 4. Run /flywheel.
    - Cross-platform priorities-keyed rollup using buffer-stats +
      linkedin-stats + YouTube + beehiiv data.
-   - This is the synthesis step.
+   - This is the synthesis step. It now also runs Phase 5.5 (Compound):
+     GRADE last week's cross-surface hypotheses in the repo-level ledger
+     (~/dev/claude-social-media-skills/insights/) against this run's
+     numbers, and WRITE 2-4 new ones for next cycle — using the
+     youtube-analytics `insights --ledger-dir` binary (flags before the
+     positional id/date). Capture the graded verdicts + new hypotheses
+     for the report's "Compounding" section.
+   - It writes the FROZEN snapshot contract to ~/dev/flywheel-snapshots/
+     (every key present, incl. channel_roi/format_engagement/
+     reconciled_reach/voice_corpus_freshness/content_attribution). The
+     single-pane dashboard (`make dashboard`) reads that snapshot live —
+     no regeneration needed here.
 
 5. Write __REPORT_FILE__ with this structure:
 

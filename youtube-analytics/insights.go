@@ -12,19 +12,27 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const insightsDir = "data/insights"
+// defaultInsightsDir is the YouTube-only ledger. Commands accept --ledger-dir
+// to point at a different ledger (e.g. the repo-level cross-surface ledger that
+// /flywheel drives), so the same tested parser/grader serves both.
+const defaultInsightsDir = "data/insights"
 
 // Hypothesis is a single testable prediction tracked across weeks.
 //
 // Why YAML dates are wrapped: stdlib time.Time UnmarshalYAML expects RFC3339,
 // but humans write `2026-04-26`. The custom unmarshaler accepts the date-only
 // form too.
+//
+// Surface generalizes the ledger beyond YouTube: a cross-surface hypothesis
+// (Buffer format, LinkedIn, per-source amplification) sets Surface and usually
+// has no EvidenceVideoIDs. YouTube hypotheses omit Surface and carry video IDs.
 type Hypothesis struct {
 	ID               string   `yaml:"id"`
 	Cohort           string   `yaml:"cohort"`
+	Surface          string   `yaml:"surface,omitempty"` // "youtube"|"linkedin"|"cross"|"format:<name>"|"source/<id>"
 	Prediction       string   `yaml:"prediction"`
 	EvidenceVideoIDs []string `yaml:"evidence_video_ids,omitempty"`
-	Metric           string   `yaml:"metric,omitempty"`    // e.g., "retention", "subs_per_1k"
+	Metric           string   `yaml:"metric,omitempty"`    // e.g., "retention", "subs_per_1k", "amplification_ratio"
 	Direction        string   `yaml:"direction,omitempty"` // "up" | "down"
 	EvaluateAfter    time.Time `yaml:"evaluate_after"`
 	Outcome          string    `yaml:"outcome,omitempty"`
@@ -50,6 +58,7 @@ type frontmatter struct {
 type hypothesisYAML struct {
 	ID               string   `yaml:"id"`
 	Cohort           string   `yaml:"cohort"`
+	Surface          string   `yaml:"surface,omitempty"`
 	Prediction       string   `yaml:"prediction"`
 	EvidenceVideoIDs []string `yaml:"evidence_video_ids,omitempty"`
 	Metric           string   `yaml:"metric,omitempty"`
@@ -111,6 +120,7 @@ func readInsightFile(path string) (*InsightFile, error) {
 		out.Hypotheses = append(out.Hypotheses, Hypothesis{
 			ID:               h.ID,
 			Cohort:           h.Cohort,
+			Surface:          h.Surface,
 			Prediction:       h.Prediction,
 			EvidenceVideoIDs: h.EvidenceVideoIDs,
 			Metric:           h.Metric,
@@ -131,6 +141,7 @@ func writeInsightFile(path string, f *InsightFile) error {
 		fm.Hypotheses = append(fm.Hypotheses, hypothesisYAML{
 			ID:               h.ID,
 			Cohort:           h.Cohort,
+			Surface:          h.Surface,
 			Prediction:       h.Prediction,
 			EvidenceVideoIDs: h.EvidenceVideoIDs,
 			Metric:           h.Metric,

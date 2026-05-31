@@ -1,8 +1,14 @@
 # voice-corpus
 
-Fetches the author's recent newsletters from beehiiv RSS, caches locally, and prints as JSON for compose-phase prompts in skills that generate **original copy** (not verbatim quotes, not full-article syndication).
+Fetches the author's recent newsletters from beehiiv RSS **and** recent YouTube **livestream** transcripts, caches locally, and prints as JSON for compose-phase prompts in skills that generate **original copy** (not verbatim quotes, not full-article syndication).
 
-Pure transport per [PRIMITIVE-TEST.md](../../PRIMITIVE-TEST.md). The judgment about which excerpts to use, how to weight them, or how to interpret the voice belongs in the caller skill's prompt — not here.
+Two voice sources, merged into one flat `posts[]` and tagged with `source_type`:
+- `newsletter` — beehiiv RSS (the author's *written* register).
+- `youtube_live` — transcripts of recent livestreams (`video_type=="live"` in `youtube-analytics/data/videos.json`), the author's *spoken* register. Long-form videos are **excluded** (they're just the author reading the newsletter, already covered by the beehiiv slice) and so are Shorts (clip captions, not authored voice).
+
+The two slices refresh on **independent TTLs** (`stale_days` for newsletters, `youtube_stale_days` for livestream archives, which rarely change). A livestream failure (no captions / private / `youtube_transcript_api` not installed) is per-video and **never fatal** — the newsletter slice the consumer skills depend on always survives.
+
+Pure transport per [PRIMITIVE-TEST.md](../../PRIMITIVE-TEST.md). The judgment about which excerpts to use, how to weight them, or how to interpret the voice belongs in the caller skill's prompt — not here. In particular: transcripts are intentionally passed **raw** (unpunctuated, filler included). Cleaning, summarizing, or down-weighting the spoken register vs the written one is the consumer's call — use the `source_type` tag.
 
 ## Build
 
@@ -14,24 +20,35 @@ cd _shared/voice-corpus && go build .
 
 ```bash
 voice-corpus                # fetch if cache stale, print cache JSON to stdout
-voice-corpus --refresh      # force fetch, ignore cache age
-voice-corpus --num 3        # override num_recent (-1 = use config; 0 = all in feed)
+voice-corpus --refresh      # force fetch, ignore cache age (both sources)
+voice-corpus --num 3        # override num_recent (-1 = use config; 0 = all in feed) — newsletters
 voice-corpus --print-only   # print existing cache, do not fetch
+voice-corpus --youtube      # force-enable livestream transcript ingestion
+voice-corpus --no-youtube   # force-disable livestream transcript ingestion
 ```
 
 ## Output shape
 
 ```json
 {
-  "fetched_at": "2026-04-27T...",
+  "fetched_at": "2026-04-27T...",            // newsletter slice fetch time
+  "youtube_fetched_at": "2026-04-27T...",    // livestream slice fetch time (omitted if not ingested)
   "feed_url": "https://rss.beehiiv.com/feeds/9AbhG8CTgD.xml",
-  "num_posts": 12,
+  "num_posts": 24,
   "posts": [
     {
       "title": "Tokens From Our Past and The Great Re-Why-ing",
       "url": "https://www.enterprisevibecode.com/p/...",
       "published_at": "2026-04-26",
-      "body_text": "<full plain-text body, capped per max_chars_per_post — currently 50000 chars, effectively full body>"
+      "source_type": "newsletter",
+      "body_text": "<full plain-text body, capped per max_chars_per_post>"
+    },
+    {
+      "title": "What do we build now? The Bitter Lesson … Enterprise Vibe Code 45",
+      "url": "https://www.youtube.com/watch?v=PLl-6JQQVbo",
+      "published_at": "2026-05-30",
+      "source_type": "youtube_live",
+      "body_text": "<raw livestream transcript, capped per youtube_max_chars_per_post>"
     }
   ]
 }
@@ -41,12 +58,20 @@ voice-corpus --print-only   # print existing cache, do not fetch
 
 `config.json` (committed):
 - `feed_url` — beehiiv RSS feed
-- `num_recent` — how many recent posts to cache (default `0` = all items the feed returns; ~12 for an active beehiiv account)
-- `max_chars_per_post` — truncate bodies (default **50000**, effectively full body since the largest beehiiv post in this corpus is ~23K chars; bumped from 2000 on 2026-05-17 after a redundant-truncation incident — see Consumers section below)
-- `stale_days` — cache TTL (default 7)
+- `num_recent` — how many recent newsletter posts to cache (default `0` = all items the feed returns; ~14 for an active beehiiv account)
+- `max_chars_per_post` — truncate newsletter bodies (default **50000**, effectively full body; bumped from 2000 on 2026-05-17 after a redundant-truncation incident — see Consumers section below)
+- `stale_days` — newsletter cache TTL (default 7)
 - `cache_path` — relative to binary dir
+- `ingest_youtube` — merge recent livestream transcripts (default **true**)
+- `youtube_videos_path` — `youtube-analytics` video list (relative to binary dir or absolute)
+- `youtube_transcript_script` — path to `generate-transcript.sh` (relative to binary dir or absolute)
+- `youtube_num_recent` — most-recent N livestreams to transcribe (default 10)
+- `youtube_max_chars_per_post` — per-transcript truncation cap (default 50000)
+- `youtube_stale_days` — livestream slice TTL (default 30 — archives don't change)
 
 `config.local.json` (optional, gitignored): override any of the above per-user.
+
+**Dependency:** livestream ingestion shells out to `youtube_transcript_api` (via `youtube-analytics/scripts/generate-transcript.sh`). Install once: `pipx install youtube-transcript-api`. If absent, livestream ingestion degrades gracefully (logged to stderr) and the newsletter slice is unaffected.
 
 ## Consumers of this binary — do NOT add a second truncation
 

@@ -95,7 +95,7 @@ Same pattern as `promote-newsletter`. WebFetch the beehiiv RSS feed (or the URL 
 _shared/voice-corpus/voice-corpus  # auto-refreshes if cache > 7 days old
 ```
 
-Output is JSON with `posts: [{title, url, published_at, body_text}]`. Hold onto this output for Phase 2. See [PATTERNS.md#pattern-voice-grounding-for-original-copy-generation](../PATTERNS.md#pattern-voice-grounding-for-original-copy-generation) for the rationale.
+Output is JSON with `posts: [{title, url, published_at, source_type, body_text}]` (`source_type` = `newsletter` or `youtube_live`). Hold onto this output for Phase 2. See [PATTERNS.md#pattern-voice-grounding-for-original-copy-generation](../PATTERNS.md#pattern-voice-grounding-for-original-copy-generation) for the rationale.
 
 **Use `body_text` as-is in Phase 2 prompts — do NOT add a second truncation** (no `body_text[:N]` inline). The binary already caps each post per its config. See [`_shared/voice-corpus/README.md` § Consumers](../_shared/voice-corpus/README.md#consumers-of-this-binary--do-not-add-a-second-truncation).
 

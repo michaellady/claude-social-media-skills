@@ -1,4 +1,4 @@
-.PHONY: schedule-install schedule-uninstall schedule-test build-shared
+.PHONY: schedule-install schedule-uninstall schedule-test build-shared dashboard
 
 REPO_DIR := $(shell pwd)
 LAUNCH_AGENT_LABEL := com.mikelady.csms-weekly-review
@@ -7,10 +7,17 @@ LAUNCH_AGENT_PLIST := $(LAUNCH_AGENT_DIR)/$(LAUNCH_AGENT_LABEL).plist
 
 # Build all in-repo Go binaries (_shared/ modules + the migrated youtube-analytics CLI). Idempotent.
 build-shared:
-	@for d in _shared/buffer-post-prep _shared/buffer-queue-check _shared/voice-corpus _shared/content-attribution youtube-analytics; do \
+	@for d in _shared/buffer-post-prep _shared/buffer-queue-check _shared/voice-corpus _shared/content-attribution _shared/dashboard youtube-analytics; do \
 		echo "--- $$d"; \
 		(cd $$d && go build .) || exit 1; \
 	done
+
+# Build + serve the single-pane-of-glass dashboard, opening it in the browser.
+# Reads the newest ~/dev/flywheel-snapshots/<date>.json live (run /flywheel to
+# refresh the data). Bound to 127.0.0.1 only. Ctrl-C to stop.
+dashboard:
+	@(cd _shared/dashboard && go build .)
+	@_shared/dashboard/dashboard serve --open
 
 # Install the Sunday 09:30am weekly-review LaunchAgent. Materializes the
 # template at scripts/com.mikelady.csms-weekly-review.plist with absolute

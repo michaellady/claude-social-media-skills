@@ -4,5 +4,11 @@
   "max_chars_per_post": 50000,
   "stale_days": 7,
   "cache_path": "cache.json",
-  "_comment": "num_recent=0 means use ALL items the feed returns (~50 for beehiiv). max_chars_per_post=50000 effectively passes the full post body (Mike's largest beehiiv post is ~16KB stripped text); the cap remains as a runaway-guard. Override either via _shared/voice-corpus/config.local.json (gitignored)."
+  "ingest_youtube": true,
+  "youtube_videos_path": "../../youtube-analytics/data/videos.json",
+  "youtube_transcript_script": "../../youtube-analytics/scripts/generate-transcript.sh",
+  "youtube_num_recent": 10,
+  "youtube_max_chars_per_post": 50000,
+  "youtube_stale_days": 30,
+  "_comment": "num_recent=0 means use ALL items the feed returns (~50 for beehiiv). max_chars_per_post=50000 effectively passes the full post body (Mike's largest beehiiv post is ~16KB stripped text); the cap remains as a runaway-guard. ingest_youtube=true merges recent livestream transcripts (video_type=='live' only — long-form is the author reading the newsletter, Shorts are clip captions) into the same posts[] tagged source_type:'youtube_live', on a separate youtube_stale_days TTL (archives don't change). Requires youtube_transcript_api on PATH (pipx install youtube-transcript-api); if absent, livestream ingestion degrades gracefully and newsletters still work. Override any key via _shared/voice-corpus/config.local.json (gitignored)."
 }

@@ -4,21 +4,31 @@
 // Pure transport. No cognition. The judgment about which excerpts to use, how to weight them,
 // or how to interpret the voice belongs in the caller skill's prompt — not here.
 //
+// The corpus optionally also ingests recent YouTube *livestream* transcripts
+// (video_type=="live" only — long-form videos are just the author reading the
+// newsletter, and Shorts are clip captions). Newsletter and livestream slices
+// refresh on independent TTLs and are merged into one flat posts[] array,
+// each post tagged with source_type so consumer skills can weight them.
+//
 // Usage:
 //
 //	voice-corpus                  # fetch if cache stale, print cache JSON to stdout
-//	voice-corpus --refresh        # force fetch, ignore cache age
-//	voice-corpus --num 3          # override num_recent (use 0 for all)
+//	voice-corpus --refresh        # force fetch, ignore cache age (both sources)
+//	voice-corpus --num 3          # override num_recent (use 0 for all) — newsletters
 //	voice-corpus --print-only     # print existing cache, do not fetch
+//	voice-corpus --youtube        # force-enable livestream transcript ingestion
+//	voice-corpus --no-youtube     # force-disable livestream transcript ingestion
 //
 // Output JSON shape:
 //
 //	{
-//	  "fetched_at": "2026-04-27T...",
+//	  "fetched_at": "2026-04-27T...",            # newsletter slice fetch time
+//	  "youtube_fetched_at": "2026-04-27T...",    # livestream slice fetch time (if ingested)
 //	  "feed_url": "https://rss.beehiiv.com/feeds/9AbhG8CTgD.xml",
 //	  "num_posts": 5,
 //	  "posts": [
-//	    {"title": "...", "url": "...", "published_at": "...", "body_text": "<plain text>"},
+//	    {"title": "...", "url": "...", "published_at": "...", "source_type": "newsletter", "body_text": "<plain text>"},
+//	    {"title": "...", "url": "...", "published_at": "...", "source_type": "youtube_live", "body_text": "<transcript>"},
 //	    ...
 //	  ]
 //	}
@@ -47,6 +57,15 @@ type config struct {
 	MaxCharsPerPost int    `json:"max_chars_per_post"`
 	StaleDays       int    `json:"stale_days"`
 	CachePath       string `json:"cache_path"`
+
+	// YouTube livestream ingestion (Pillar 2). All optional; ingestion is off
+	// unless IngestYouTube is true (or forced via --youtube).
+	IngestYouTube           bool   `json:"ingest_youtube"`
+	YouTubeVideosPath       string `json:"youtube_videos_path"`        // relative to the binary dir, or absolute
+	YouTubeTranscriptScript string `json:"youtube_transcript_script"`  // relative to the binary dir, or absolute
+	YouTubeNumRecent        int    `json:"youtube_num_recent"`         // most-recent N livestreams to transcribe
+	YouTubeMaxCharsPerPost  int    `json:"youtube_max_chars_per_post"` // per-transcript truncation cap
+	YouTubeStaleDays        int    `json:"youtube_stale_days"`         // separate TTL (archives don't change)
 }
 
 type rssFeed struct {
@@ -68,21 +87,25 @@ type post struct {
 	Title       string `json:"title"`
 	URL         string `json:"url"`
 	PublishedAt string `json:"published_at"`
+	SourceType  string `json:"source_type"` // "newsletter" | "youtube_live"
 	BodyText    string `json:"body_text"`
 }
 
 type cache struct {
-	FetchedAt time.Time `json:"fetched_at"`
-	FeedURL   string    `json:"feed_url"`
-	NumPosts  int       `json:"num_posts"`
-	Posts     []post    `json:"posts"`
+	FetchedAt        time.Time `json:"fetched_at"`                  // newsletter slice
+	YouTubeFetchedAt time.Time `json:"youtube_fetched_at,omitempty"` // livestream slice
+	FeedURL          string    `json:"feed_url"`
+	NumPosts         int       `json:"num_posts"`
+	Posts            []post    `json:"posts"`
 }
 
 func main() {
 	var (
-		refresh   = flag.Bool("refresh", false, "force fetch, ignore cache age")
-		numFlag   = flag.Int("num", -1, "override num_recent (-1 = use config; 0 = all in feed)")
-		printOnly = flag.Bool("print-only", false, "print existing cache, do not fetch")
+		refresh    = flag.Bool("refresh", false, "force fetch, ignore cache age (both sources)")
+		numFlag    = flag.Int("num", -1, "override num_recent (-1 = use config; 0 = all in feed)")
+		printOnly  = flag.Bool("print-only", false, "print existing cache, do not fetch")
+		youtubeOn  = flag.Bool("youtube", false, "force-enable livestream transcript ingestion")
+		youtubeOff = flag.Bool("no-youtube", false, "force-disable livestream transcript ingestion")
 	)
 	flag.Parse()
 
@@ -99,6 +122,15 @@ func main() {
 		cfg.NumRecent = *numFlag
 	}
 
+	// Resolve livestream ingestion: config default, overridable by flags (off wins).
+	ingestYT := cfg.IngestYouTube
+	if *youtubeOn {
+		ingestYT = true
+	}
+	if *youtubeOff {
+		ingestYT = false
+	}
+
 	cachePath := filepath.Join(exeDir, cfg.CachePath)
 
 	if *printOnly {
@@ -110,28 +142,90 @@ func main() {
 		return
 	}
 
-	if !*refresh {
-		if c, ok := readCacheIfFresh(cachePath, cfg.StaleDays); ok {
-			writeJSON(os.Stdout, c)
-			return
+	// Load any existing cache so each source can reuse a still-fresh slice.
+	existing, _ := readCache(cachePath) // zero value if missing/unreadable
+	now := time.Now().UTC()
+
+	// ---- Newsletter slice (own TTL) ----
+	newsletterPosts := filterBySource(existing.Posts, "newsletter")
+	newsletterFetchedAt := existing.FetchedAt
+	if *refresh || isStale(existing.FetchedAt, cfg.StaleDays) || len(newsletterPosts) == 0 {
+		np, err := fetchAndParse(cfg.FeedURL, cfg.NumRecent, cfg.MaxCharsPerPost)
+		if err != nil {
+			// Never lose newsletters: degrade to the cached slice if we have one.
+			if len(newsletterPosts) == 0 {
+				fail(66, "fetch: "+err.Error())
+			}
+			fmt.Fprintln(os.Stderr, "voice-corpus: newsletter fetch failed; using cached newsletters: "+err.Error())
+		} else {
+			newsletterPosts = np
+			newsletterFetchedAt = now
 		}
 	}
-
-	posts, err := fetchAndParse(cfg.FeedURL, cfg.NumRecent, cfg.MaxCharsPerPost)
-	if err != nil {
-		fail(66, "fetch: "+err.Error())
+	for i := range newsletterPosts {
+		newsletterPosts[i].SourceType = "newsletter" // stamp legacy/reused posts
 	}
 
+	// ---- Livestream slice (own TTL; never fatal — newsletters must always survive) ----
+	youtubePosts := filterBySource(existing.Posts, "youtube_live")
+	youtubeFetchedAt := existing.YouTubeFetchedAt
+	if ingestYT {
+		if *refresh || isStale(existing.YouTubeFetchedAt, cfg.YouTubeStaleDays) || len(youtubePosts) == 0 {
+			yp, n, err := fetchYouTubeTranscripts(exeDir, cfg)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "voice-corpus: livestream ingestion skipped: "+err.Error())
+			} else {
+				youtubePosts = yp
+				youtubeFetchedAt = now
+				fmt.Fprintf(os.Stderr, "voice-corpus: ingested %d/%d livestream transcripts\n", len(yp), n)
+			}
+		}
+	} else {
+		youtubePosts = nil // disabled → drop any cached livestream slice from output
+	}
+
+	merged := make([]post, 0, len(newsletterPosts)+len(youtubePosts))
+	merged = append(merged, newsletterPosts...)
+	merged = append(merged, youtubePosts...)
+
 	c := cache{
-		FetchedAt: time.Now().UTC(),
-		FeedURL:   cfg.FeedURL,
-		NumPosts:  len(posts),
-		Posts:     posts,
+		FetchedAt:        newsletterFetchedAt,
+		YouTubeFetchedAt: youtubeFetchedAt,
+		FeedURL:          cfg.FeedURL,
+		NumPosts:         len(merged),
+		Posts:            merged,
 	}
 	if err := writeCache(cachePath, c); err != nil {
 		fail(67, "write cache: "+err.Error())
 	}
 	writeJSON(os.Stdout, c)
+}
+
+// isStale reports whether t is older than days (a zero time is always stale).
+func isStale(t time.Time, days int) bool {
+	if t.IsZero() {
+		return true
+	}
+	return time.Since(t) > time.Duration(days)*24*time.Hour
+}
+
+// effectiveSource treats a missing source_type as "newsletter" so a pre-Pillar-2
+// cache (written before the field existed) still classifies correctly on read.
+func effectiveSource(p post) string {
+	if p.SourceType == "" {
+		return "newsletter"
+	}
+	return p.SourceType
+}
+
+func filterBySource(posts []post, source string) []post {
+	out := make([]post, 0, len(posts))
+	for _, p := range posts {
+		if effectiveSource(p) == source {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func exeDir() (string, error) {
@@ -153,6 +247,14 @@ func loadConfig(defaultPath, localPath string) (config, error) {
 		MaxCharsPerPost: 50000,
 		StaleDays:       7,
 		CachePath:       "cache.json",
+
+		// Livestream defaults: OFF unless config.json / config.local.json opts in.
+		IngestYouTube:           false,
+		YouTubeVideosPath:       "../../youtube-analytics/data/videos.json",
+		YouTubeTranscriptScript: "../../youtube-analytics/scripts/generate-transcript.sh",
+		YouTubeNumRecent:        10,
+		YouTubeMaxCharsPerPost:  50000,
+		YouTubeStaleDays:        30,
 	}
 	for _, p := range []string{defaultPath, localPath} {
 		raw, err := os.ReadFile(p)
@@ -167,18 +269,6 @@ func loadConfig(defaultPath, localPath string) (config, error) {
 		}
 	}
 	return cfg, nil
-}
-
-func readCacheIfFresh(path string, staleDays int) (cache, bool) {
-	c, err := readCache(path)
-	if err != nil {
-		return cache{}, false
-	}
-	age := time.Since(c.FetchedAt)
-	if age > time.Duration(staleDays)*24*time.Hour {
-		return cache{}, false
-	}
-	return c, true
 }
 
 func readCache(path string) (cache, error) {
@@ -254,6 +344,7 @@ func fetchAndParse(feedURL string, n, maxChars int) ([]post, error) {
 			Title:       strings.TrimSpace(it.Title),
 			URL:         strings.TrimSpace(it.Link),
 			PublishedAt: normalizeDate(it.PubDate),
+			SourceType:  "newsletter",
 			BodyText:    text,
 		})
 	}

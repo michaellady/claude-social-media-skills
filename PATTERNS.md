@@ -294,7 +294,9 @@ React's controlled inputs override the prototype's `value` setter to track chang
 
 ## Pattern: Voice grounding for original-copy generation
 
-Any skill that generates **NEW copy** (not verbatim extraction, not full-article syndication) MUST inject the author's recent newsletters as a **voice corpus** into the compose-phase prompt. Without this, model output reverts to baseline corporate-LinkedIn voice — factually correct but tonally off (generic "shipped a thing!" energy instead of the author's slight-irreverent grounded-practical first-person voice).
+Any skill that generates **NEW copy** (not verbatim extraction, not full-article syndication) MUST inject the author's recent newsletters **and livestream transcripts** as a **voice corpus** into the compose-phase prompt. Without this, model output reverts to baseline corporate-LinkedIn voice — factually correct but tonally off (generic "shipped a thing!" energy instead of the author's slight-irreverent grounded-practical first-person voice).
+
+The corpus spans **two registers**, tagged by `source_type`: `newsletter` (written) and `youtube_live` (spoken livestream transcripts). They are different — transcripts are unpunctuated, lowercase, filler-heavy. Treat the **newsletter** slice as the primary anchor for polished sentence rhythm and the **livestream** slice as the anchor for phrasing, idiom, and stance (how the author actually talks). Do not paste transcript filler verbatim into a post.
 
 ### Skills using this pattern
 
@@ -317,15 +319,19 @@ Any skill that generates **NEW copy** (not verbatim extraction, not full-article
 _shared/voice-corpus/voice-corpus  # auto-refreshes if cache > 7 days old
 ```
 
-Output: JSON with `posts: [{title, url, published_at, body_text}]`.
+Output: JSON with `posts: [{title, url, published_at, source_type, body_text}]` where `source_type` is `newsletter` or `youtube_live`.
 
 **Compose phase — inject + enforce:**
 
-Prepend the voice-corpus output into the compose context as inline excerpts:
+Prepend the voice-corpus output into the compose context as inline excerpts, **grouped by `source_type`** so the model can tell the written register from the spoken one:
 
-> The author's recent newsletters (full corpus from beehiiv RSS — all available; default ~12 posts truncated to 2000 chars each ≈ 24k total):
+> The author's recent **newsletters** (written register, from beehiiv RSS):
 > ---
-> [for each post] **<Title>** (<published_at>): <body_text>
+> [for each post where source_type=="newsletter"] **<Title>** (<published_at>): <body_text>
+> ---
+> The author's recent **livestream transcripts** (spoken register — raw captions, filler included; mine for phrasing/idiom/stance, not for verbatim lifting):
+> ---
+> [for each post where source_type=="youtube_live"] **<Title>** (<published_at>): <body_text>
 > ---
 
 Then state the voice-grounding rule alongside the existing CRITICAL RULES (verbatim, no fabrication, etc.) — same enforcement weight. The drafts MUST match: sentence rhythm, vocabulary preferences, recurring framings ("vibe coding", "agentic", "tokens from our past"), first-person stance, the slight-irreverent grounded-practical tone. **Mismatched voice is a fail signal — same weight as a fabrication.**

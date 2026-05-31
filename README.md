@@ -170,10 +170,17 @@ Scrape LinkedIn Creator analytics (`/dashboard/`, `/analytics/creator/content`, 
 ```
 
 #### `/flywheel`
-Cross-platform weekly rollup keyed to your 5 growth priorities. Combines `buffer-stats` + `linkedin-stats` + YouTube + beehiiv into one report. Includes per-channel ROI scoring to surface deprioritization candidates.
+Cross-platform weekly rollup keyed to your 5 growth priorities. Combines `buffer-stats` + `linkedin-stats` + YouTube + beehiiv into one report. Includes per-channel ROI scoring to surface deprioritization candidates. Writes a **frozen JSON snapshot** (`~/dev/flywheel-snapshots/<date>.json`, `schema_version:"1"`) the dashboard reads, and runs **Phase 5.5 (Compound)** — grading last week's cross-surface hypotheses and writing next week's into the [`insights/`](insights/) ledger.
 
 ```
 /flywheel
+```
+
+#### `make dashboard` — the single pane of glass
+A localhost web app that shows your **whole** presence in one view: reach per surface, format ROI, channel-ROI buckets, the per-source amplification leaderboard (click a source → its derivatives across every platform), the YouTube scatter, voice-corpus freshness, and both hypothesis ledgers side by side. Reads the newest `/flywheel` snapshot live (refresh to pick up a new run); Chart.js is vendored so it renders offline. Pure transport — it renders flywheel's numbers, never recomputes them. See [`_shared/dashboard/`](_shared/dashboard/).
+
+```
+make dashboard          # build + serve at http://127.0.0.1:7777 + open browser
 ```
 
 ### 🧹 Hygiene & adapt (close-the-loop side)
@@ -199,7 +206,9 @@ Pure-transport (deterministic, no judgment) per [PRIMITIVE-TEST.md](PRIMITIVE-TE
 
 | Helper | Used by | Purpose |
 |---|---|---|
-| [`voice-corpus`](_shared/voice-corpus/) | `/tease-newsletter`, `/promote-github`, `/carousel-newsletter` | Fetches recent beehiiv newsletters as voice reference for original-copy compose phases. Cached locally with 7-day TTL. |
+| [`voice-corpus`](_shared/voice-corpus/) | `/tease-newsletter`, `/promote-github`, `/carousel-newsletter` | Fetches recent beehiiv newsletters (written register) **and** YouTube livestream transcripts (spoken register) as voice reference for original-copy compose phases, tagged by `source_type`. Independent TTLs; livestream ingestion degrades gracefully if `youtube_transcript_api` is absent. |
+| [`dashboard`](_shared/dashboard/) | `make dashboard` | Localhost single-pane web app over the frozen `/flywheel` snapshot + per-platform drill-downs. Read/render only; offline (vendored Chart.js). |
+| [`content-attribution`](_shared/content-attribution/) | `/flywheel`, `/opus-clips-performance` | JOIN engine mapping a source (long-form, newsletter, PR) → every derivative's engagement across platforms, with `amplification_ratio`. |
 | [`cta.sh`](_shared/cta.sh) | All newsletter compose skills | Generates the canonical `Comment "newsletter" to get my latest post, "<Title>"` CTA string (Manychat trigger word — don't edit ad-hoc). |
 | [`buffer-post-prep`](_shared/buffer-post-prep/) | All compose skills | Validates + shapes Buffer `create_post` args. Enforces channel filtering (skip disconnected/locked/below-threshold), platform char limits, format-tag attachment. |
 | [`buffer-queue-check`](_shared/buffer-queue-check/) | All compose skills + `/audit-buffer-queue` | Substring-matches Buffer posts against keywords for queue/recently-sent overlap detection. |
@@ -212,12 +221,11 @@ Pure-transport (deterministic, no judgment) per [PRIMITIVE-TEST.md](PRIMITIVE-TE
 2. **Connect a [Buffer MCP server](https://publish.buffer.com/settings/api)** with your Personal Key from the Buffer API settings page (the "Personal Keys" tab — NOT "App Clients" which is for OAuth apps)
 3. **Install [gstack](https://github.com/nichochar/gstack) browse** (required for `/crosspost-newsletter`, `/buffer-stats`, `/linkedin-stats`, `/audit-buffer-queue`, `/tune-posting-schedule`)
 4. **For carousel + promote-github image generation:** run `gcloud auth application-default login` once. Default project: `gen-lang-client-0527845499` (override via `GOOGLE_CLOUD_PROJECT` env var).
-5. **Build the Go helpers in `_shared/`:**
+5. **Build the Go helpers** (or just `make build-shared` from the repo root, which builds them all):
    ```bash
-   cd _shared/buffer-post-prep && go build .
-   cd ../buffer-queue-check && go build .
-   cd ../voice-corpus && go build .
+   make build-shared        # _shared/* + youtube-analytics, idempotent
    ```
+   Livestream voice ingestion also needs `pipx install youtube-transcript-api` (degrades gracefully if absent).
 6. **Symlink each skill directory into `~/.claude/skills/`:**
    ```bash
    for skill in promote-newsletter tease-newsletter carousel-newsletter \
@@ -231,7 +239,7 @@ Pure-transport (deterministic, no judgment) per [PRIMITIVE-TEST.md](PRIMITIVE-TE
 8. **Use the slash commands from any Claude Code session.** Recommended weekly cadence:
    - As you ship: `/promote-github`, `/promote-newsletter` or `/tease-newsletter`, optionally `/carousel-newsletter` and `/crosspost-newsletter` for major articles
    - Mid-week: `/audit-buffer-queue` if posts feel bunched
-   - End-of-week: `/buffer-stats`, `/linkedin-stats`, then `/flywheel` for the weekly rollup (or install the Sunday cron — see next step)
+   - End-of-week: `/buffer-stats`, `/linkedin-stats`, then `/flywheel` for the weekly rollup (or install the Sunday cron — see next step), then `make dashboard` to see the single pane
    - Periodically: `/tune-posting-schedule` when the audit keeps re-flagging the same structural bunches
 
-9. **(Optional) Install the Sunday weekly-review cron.** Runs the full closed-loop review (`/buffer-stats` → `/linkedin-stats` → `/audit-buffer-queue` → `/flywheel`) headlessly via `claude -p` every Sunday at 09:30 local time and writes the report to `data/reviews/<date>.md`. Macros: `make schedule-install`, `make schedule-uninstall`, `make schedule-test` (fires immediately). Logs at `~/Library/Logs/csms-weekly-review/`. Read-mostly — does NOT auto-apply destructive queue actions; surfaces them for your Monday review.
+9. **(Optional) Install the Sunday weekly-review cron.** Runs the full closed-loop review (`/buffer-stats` → `/linkedin-stats` → `/audit-buffer-queue` → `/flywheel`) headlessly via `claude -p` every Sunday at 09:30 local time and writes the report to `data/reviews/<date>.md`. It also rebuilds the Go binaries, refreshes the dual-source voice corpus, and — via `/flywheel` Phase 5.5 — grades + writes the cross-surface hypothesis ledger and persists the frozen snapshot the dashboard reads. Macros: `make schedule-install`, `make schedule-uninstall`, `make schedule-test` (fires immediately). Logs at `~/Library/Logs/csms-weekly-review/`. Read-mostly — does NOT auto-apply destructive queue actions; surfaces them for your Monday review. After it runs, `make dashboard` shows the week in one pane.

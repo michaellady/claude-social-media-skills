@@ -103,7 +103,30 @@ If a sub-skill fails (auth lapsed, cookie picker not closed, gstack process drop
 
 **Phase 5 — Consulting pipeline.** `(cd ~/dev/consulting-log && ./cl json)` (local-only — see `Edge: consulting-log-local-only`). Aggregate pipeline / realized revenue / content gaps for Priority 5.
 
-**Phase 6 — Compose report.** Write the fixed-structure markdown to `$REPORT` and print to stdout. Also write the parallel `$SNAP_DIR/<date>.json` for bulletproof week-over-week diffing.
+**Phase 5.5 — Compound (cross-surface hypothesis ledger).** This is the closed-loop's *learning* step — generalize YouTube's predict→grade→learn ledger to the whole presence. Runs the **same tested binary** (`youtube-analytics insights`) pointed at the repo-level ledger `~/dev/claude-social-media-skills/insights/` via `--ledger-dir`. **Flags must precede the positional id/date** (Go stdlib `flag` quirk — see `yt-analytics` SKILL.md). Degrades gracefully: if the binary or ledger is missing, note it and skip (don't abort the run). See `Edge: insights-ledger-missing`.
+
+```bash
+LED=~/dev/claude-social-media-skills/insights
+YT=~/dev/claude-social-media-skills/youtube-analytics
+# 1) GRADE last week's predictions using THIS run's numbers (content_attribution[],
+#    format_engagement, channel_roi[] computed in Phases 4.5–4.7). The MODEL judges
+#    the verdict — the binary only persists it.
+( cd "$YT" && go run . insights pending --ledger-dir "$LED" --as-of "$(date -u +%Y-%m-%d)" )
+#    For each pending hypothesis, decide confirm|refute|inconclusive from the data above, then:
+# ( cd "$YT" && go run . insights grade --ledger-dir "$LED" --verdict <v> --outcome "<what the data showed>" <id> )
+# 2) WRITE 2–4 new hypotheses for next cycle, grounded in this run's data
+( cd "$YT" && go run . insights new --ledger-dir "$LED" "$(date -u -v+7d +%Y-%m-%d 2>/dev/null || date -u -d '+7 days' +%Y-%m-%d)" )
+#    Then edit the new <date>.md frontmatter: each hypothesis sets surface
+#    (e.g. format:carousel, source/<id>, linkedin, cross), metric, direction,
+#    evaluate_after, prediction — drawn from the highest-amplification source in
+#    content_attribution[], the winning format in format_engagement, or a
+#    channel_roi[] bucket transition. NO evidence_video_ids needed for
+#    cross-surface hypotheses.
+```
+
+Surface the graded verdicts + new hypotheses in the report's "Compounding" section (Phase 6). This is what makes the system **compound** — predictions get scored, and the score informs next week's compose decisions.
+
+**Phase 6 — Compose report.** Write the fixed-structure markdown to `$REPORT` and print to stdout. Then **always** write the parallel `$SNAP_DIR/<date>.json` per the **frozen contract** in Phase 7 (every top-level key present — `schema_version`, `channel_roi[]`, `format_engagement`, `reconciled_reach[]`, `voice_corpus_freshness`, `content_attribution[]` — empty/null when a phase degraded). Read `voice_corpus_freshness` from `_shared/voice-corpus/cache.json` (`voice-corpus --print-only`). The `_shared/dashboard/` single-pane app reads this snapshot live — it is the dashboard's source of truth, so a complete snapshot is not optional.
 
 **Phase 7 — Week-over-week diff.** If `$SNAP_DIR/$(date -v-7d).md` exists, diff key numbers into the "Week-over-week delta" section.
 
@@ -716,10 +739,12 @@ if [ -f "$PRIOR_PATH" ]; then
 fi
 ```
 
-Consider also writing a parallel `$SNAP_DIR/<date>.json` with the raw numbers to make diffing bulletproof:
+**The JSON snapshot is a FROZEN CONTRACT (`schema_version: "1"`).** Phase 6 **MUST** write `$SNAP_DIR/<date>.json` with **every** top-level key below present on **every** run. When a phase degrades (missing source, stale snapshot, CA binary absent), emit that key as an empty array / null / zeroed object — **never omit it**. Downstream consumers — the `_shared/dashboard/` single-pane web app and week-over-week diffing — code against this fixed shape: a present-but-empty key reads as "section unavailable," a *missing* key crashes the reader. (This froze the previously ad-hoc shape that varied run-to-run and dropped `channel_roi` / `format_engagement` entirely.)
 
 ```json
 {
+  "schema_version": "1",
+  "generated_at": "2026-05-30T...Z",
   "window": { "since": "...", "until": "..." },
   "youtube": { "streams": N, "long_form": N, "shorts": N, "views": N, "revenue": F, "subs_gained": N },
   "beehiiv": { "total_subs": N, "new_subs_in_window": N, "attribution": { "youtube": N, "linkedin": N, "...": N } },
@@ -727,6 +752,14 @@ Consider also writing a parallel `$SNAP_DIR/<date>.json` with the raw numbers to
   "buffer": { "channels": N, "total_followers": N, "total_followers_delta": N, "avg_engagement_rate": F, "snapshot_date": "..." },
   "consulting": { "pipeline": F, "realized_revenue": F, "content_gaps": N },
   "priority_1": { "raw_long_form": N, "derivative_credited_throughput": F, "derivative_amp_bonus": F, "total_derived_reach": N, "total_derived_subs_gained": N },
+  "channel_roi": [
+    { "channel": "...", "service": "...", "followers": N, "posts": N, "avg_impressions": F, "eng_rate": F, "roi_score": F, "bucket": "green|yellow|red|grey" }
+  ],
+  "format_engagement": { "format:teaser": { "posts": N, "reactions": N, "impressions": N, "eng_rate_pct": F }, "...": {} },
+  "reconciled_reach": [
+    { "channel": "...", "followers": N, "delta": N, "source": "linkedin-stats|buffer-stats|yt-analytics|beehiiv-mcp|unavailable" }
+  ],
+  "voice_corpus_freshness": { "newsletter_fetched_at": "...", "youtube_transcript_fetched_at": "...", "num_newsletter": N, "num_youtube": N },
   "content_attribution": [
     {
       "source": { "type": "long_form", "id": "uEposKmbFvY", "title": "...", "published_at": "..." },
@@ -740,9 +773,14 @@ Consider also writing a parallel `$SNAP_DIR/<date>.json` with the raw numbers to
 }
 ```
 
-`content_attribution[]` is written verbatim from Phase 4.56's `$CONTENT_ATTR_JSON` accumulator. Empty array (`[]`) when the `_shared/content-attribution/` module is missing or no post-manifests exist. Week-over-week diffing of this array surfaces: which sources gained new derivatives, which derivatives gained engagement, which long-forms went from "no derivatives yet" to live amplifiers.
+Per-key provenance (all computed today; the new work is **persisting** them, not computing them):
+- `channel_roi[]` — the **Phase 4.6** table, now persisted (previously computed then dropped). `[]` if no Buffer snapshot.
+- `format_engagement` — passed through from the buffer snapshot's `format_engagement` (read in **Phase 4.5**). `{}` if absent or all posts untagged.
+- `reconciled_reach[]` — the **Phase 4.7** cross-source table; each row names its authoritative `source`.
+- `voice_corpus_freshness` — read from `_shared/voice-corpus/cache.json` via `voice-corpus --print-only`: `newsletter_fetched_at` ← `.fetched_at`, `youtube_transcript_fetched_at` ← `.youtube_fetched_at`, and the two counts from `.posts[].source_type`. Nulls/zeros if the cache is absent. (Ties the single pane to the dual-source voice corpus.)
+- `content_attribution[]` — written verbatim from Phase 4.56's `$CONTENT_ATTR_JSON` accumulator. `[]` when the `_shared/content-attribution/` module is missing or no post-manifests exist.
 
-Diffing JSON is trivially reliable even if the markdown structure evolves.
+Week-over-week diffing of `content_attribution[]` surfaces which sources gained derivatives and which long-forms went from "no derivatives yet" to live amplifiers. Diffing JSON is trivially reliable even if the markdown structure evolves.
 
 ## Growth-plan hook
 
@@ -768,3 +806,5 @@ After a few weeks of running `/flywheel` every Sunday, the snapshots directory b
   *Label: `Edge: content-attribution-binary-missing`*
 - **Zero derivatives for a source.** Phase 4.56 may encounter a long-form (or newsletter) whose post-manifest exists but has no `clips[]`/`posts[]` populated yet — i.e. the user hasn't fanned it out via `/opus-clips` or `/promote-newsletter`. This is NOT an error; the source still belongs in the report so the user sees the gap. The record is emitted with `status: "no_derivatives_yet"` and `amplification_ratio: 0`. Surface the count in the "Sources with zero derivatives" line of the attribution section as actionable: those are the next `/opus-clips` candidates.
   *Label: `Edge: zero-derivatives-for-source`*
+- **Insights ledger missing.** Phase 5.5 drives the repo-level ledger `~/dev/claude-social-media-skills/insights/` via `youtube-analytics insights --ledger-dir`. If the `youtube-analytics` binary won't build or the `insights/` dir is absent, skip the Compound phase, note `⚠ Compounding skipped: <reason>` in the report, and continue — the rest of `/flywheel` is unaffected. A cross-surface hypothesis has no `evidence_video_ids`, so `insights pending` does **not** require a fresh `data/videos.json` to surface it. Flags must precede the positional id/date (Go stdlib `flag` quirk).
+  *Label: `Edge: insights-ledger-missing`*

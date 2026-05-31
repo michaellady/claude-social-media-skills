@@ -43,7 +43,7 @@ For a GitHub promotion run when nothing goes wrong. ~10-15 min wall-clock.
 _shared/voice-corpus/voice-corpus  # auto-refreshes if cache > 7 days old
 ```
 
-Output is JSON with `posts: [{title, url, published_at, body_text}]`. Hold onto this output for Phase 4. See [PATTERNS.md#pattern-voice-grounding-for-original-copy-generation](../PATTERNS.md#pattern-voice-grounding-for-original-copy-generation) for the rationale.
+Output is JSON with `posts: [{title, url, published_at, source_type, body_text}]` (`source_type` = `newsletter` or `youtube_live`). Hold onto this output for Phase 4. See [PATTERNS.md#pattern-voice-grounding-for-original-copy-generation](../PATTERNS.md#pattern-voice-grounding-for-original-copy-generation) for the rationale.
 
 **Detect the authenticated GitHub user:**
 ```bash

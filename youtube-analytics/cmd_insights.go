@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -31,19 +32,26 @@ func cmdInsights(args []string) error {
 
 func runInsightsList(args []string) error {
 	fs := flag.NewFlagSet("insights list", flag.ExitOnError)
+	ledgerDir := fs.String("ledger-dir", defaultInsightsDir, "ledger directory to read")
+	asJSON := fs.Bool("json", false, "emit hypotheses as JSON (for the dashboard / programmatic consumers)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	files, err := listInsightFiles(insightsDir)
+	files, err := listInsightFiles(*ledgerDir)
 	if err != nil {
 		return err
 	}
+
+	if *asJSON {
+		return emitInsightsJSON(files)
+	}
+
 	if len(files) == 0 {
-		fmt.Printf("No insight files in %s. Use `insights new <date>` to create one.\n", insightsDir)
+		fmt.Printf("No insight files in %s. Use `insights new <date>` to create one.\n", *ledgerDir)
 		return nil
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "DATE\tHYPOTHESIS_ID\tCOHORT\tEVAL_AFTER\tVERDICT\tPREDICTION")
+	fmt.Fprintln(w, "DATE\tHYPOTHESIS_ID\tSCOPE\tEVAL_AFTER\tVERDICT\tPREDICTION")
 	for _, f := range files {
 		date := f.Date.Format("2006-01-02")
 		if f.Date.IsZero() {
@@ -59,12 +67,62 @@ func runInsightsList(args []string) error {
 				verdict = "(pending)"
 			}
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-				date, h.ID, h.Cohort,
+				date, h.ID, scopeLabel(h),
 				h.EvaluateAfter.Format("2006-01-02"),
 				verdict, truncate(h.Prediction, 60))
 		}
 	}
 	return w.Flush()
+}
+
+// scopeLabel prefers Surface (cross-surface ledger) and falls back to Cohort
+// (YouTube ledger) so one column reads sensibly for either ledger.
+func scopeLabel(h Hypothesis) string {
+	if h.Surface != "" {
+		return h.Surface
+	}
+	return h.Cohort
+}
+
+// emitInsightsJSON prints every hypothesis (with its file date) as a JSON array.
+// The dashboard's /api/learning consumes this for both ledgers rather than
+// re-implementing the frontmatter parser.
+func emitInsightsJSON(files []*InsightFile) error {
+	type row struct {
+		Date          string   `json:"date"`
+		ID            string   `json:"id"`
+		Surface       string   `json:"surface,omitempty"`
+		Cohort        string   `json:"cohort,omitempty"`
+		Prediction    string   `json:"prediction"`
+		Metric        string   `json:"metric,omitempty"`
+		Direction     string   `json:"direction,omitempty"`
+		EvaluateAfter string   `json:"evaluate_after,omitempty"`
+		Outcome       string   `json:"outcome,omitempty"`
+		Verdict       string   `json:"verdict,omitempty"`
+		EvidenceIDs   []string `json:"evidence_video_ids,omitempty"`
+	}
+	out := make([]row, 0)
+	for _, f := range files {
+		date := f.Date.Format("2006-01-02")
+		if f.Date.IsZero() {
+			date = filepath.Base(f.Path)
+		}
+		for _, h := range f.Hypotheses {
+			ea := ""
+			if !h.EvaluateAfter.IsZero() {
+				ea = h.EvaluateAfter.Format("2006-01-02")
+			}
+			out = append(out, row{
+				Date: date, ID: h.ID, Surface: h.Surface, Cohort: h.Cohort,
+				Prediction: h.Prediction, Metric: h.Metric, Direction: h.Direction,
+				EvaluateAfter: ea, Outcome: h.Outcome, Verdict: h.Verdict,
+				EvidenceIDs: h.EvidenceVideoIDs,
+			})
+		}
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
 }
 
 // runInsightsPending lists hypotheses past their evaluate_after with no verdict,
@@ -73,6 +131,7 @@ func runInsightsList(args []string) error {
 func runInsightsPending(args []string) error {
 	fs := flag.NewFlagSet("insights pending", flag.ExitOnError)
 	asOf := fs.String("as-of", "", "evaluate as of this date (default: today)")
+	ledgerDir := fs.String("ledger-dir", defaultInsightsDir, "ledger directory to read")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -85,7 +144,7 @@ func runInsightsPending(args []string) error {
 		now = t
 	}
 
-	pending, err := pendingHypotheses(insightsDir, now)
+	pending, err := pendingHypotheses(*ledgerDir, now)
 	if err != nil {
 		return err
 	}
@@ -94,17 +153,26 @@ func runInsightsPending(args []string) error {
 		return nil
 	}
 
-	data, err := loadData(videosJSONPath)
-	if err != nil {
-		return err
-	}
-	byID := make(map[string]Video, len(data.Videos))
-	for _, v := range data.Videos {
-		byID[v.ID] = v
+	// Only load videos.json when at least one pending hypothesis cites video
+	// evidence. A cross-surface ledger (Buffer/LinkedIn/source hypotheses with
+	// no evidence_video_ids) must not require a fresh YouTube snapshot to grade —
+	// the caller (/flywheel) supplies cross-surface evidence at grade time.
+	byID := make(map[string]Video)
+	if anyHasVideoEvidence(pending) {
+		data, err := loadData(videosJSONPath)
+		if err != nil {
+			return err
+		}
+		for _, v := range data.Videos {
+			byID[v.ID] = v
+		}
 	}
 
 	for _, h := range pending {
 		fmt.Printf("─── %s ───────────────────────────────────────────\n", h.ID)
+		if h.Surface != "" {
+			fmt.Printf("  Surface:       %s\n", h.Surface)
+		}
 		fmt.Printf("  Cohort:        %s\n", h.Cohort)
 		fmt.Printf("  Prediction:    %s\n", h.Prediction)
 		if h.Metric != "" {
@@ -156,10 +224,22 @@ func runInsightsPending(args []string) error {
 	return nil
 }
 
+// anyHasVideoEvidence reports whether any hypothesis cites a YouTube video,
+// gating the (potentially stale/absent) videos.json load.
+func anyHasVideoEvidence(hs []Hypothesis) bool {
+	for _, h := range hs {
+		if len(h.EvidenceVideoIDs) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func runInsightsGrade(args []string) error {
 	fs := flag.NewFlagSet("insights grade", flag.ExitOnError)
 	verdict := fs.String("verdict", "", "confirm | refute | inconclusive")
 	outcome := fs.String("outcome", "", "free-form outcome description (required)")
+	ledgerDir := fs.String("ledger-dir", defaultInsightsDir, "ledger directory to write")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -175,7 +255,7 @@ func runInsightsGrade(args []string) error {
 	if *outcome == "" {
 		return fmt.Errorf("--outcome is required (describe what actually happened)")
 	}
-	if err := gradeHypothesis(insightsDir, id, *verdict, *outcome); err != nil {
+	if err := gradeHypothesis(*ledgerDir, id, *verdict, *outcome); err != nil {
 		return err
 	}
 	fmt.Printf("Graded %s: %s — %s\n", id, *verdict, *outcome)
@@ -184,6 +264,7 @@ func runInsightsGrade(args []string) error {
 
 func runInsightsNew(args []string) error {
 	fs := flag.NewFlagSet("insights new", flag.ExitOnError)
+	ledgerDir := fs.String("ledger-dir", defaultInsightsDir, "ledger directory to write")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -202,7 +283,7 @@ func runInsightsNew(args []string) error {
 		date = t
 	}
 
-	path := filepath.Join(insightsDir, date.Format("2006-01-02")+".md")
+	path := filepath.Join(*ledgerDir, date.Format("2006-01-02")+".md")
 	if _, err := os.Stat(path); err == nil {
 		return fmt.Errorf("%s already exists; edit it directly", path)
 	}

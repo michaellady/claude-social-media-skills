@@ -147,6 +147,18 @@ Three layers, clear contracts:
 
 Net effect: a long-form essay's true ROI = source-video metrics PLUS every derivative clip's metrics across every platform. Today the OpusClip→YouTube-Short→LinkedIn-personal chain has all three snapshots but no JOIN; #380/#381 close that gap. Full design + worked example in [`CLOSED-LOOP-UNIFICATION-PLAN.md`](CLOSED-LOOP-UNIFICATION-PLAN.md).
 
+## The single pane of glass
+
+The loop above produces data on many surfaces. Three things unify the **view**, the **learning**, and the **voice** without merging the platform-specific fetchers (which stay separate by design):
+
+1. **One dashboard (`_shared/dashboard/`).** A localhost Go web app (`make dashboard`) that reads the **frozen** `/flywheel` JSON snapshot (`~/dev/flywheel-snapshots/<date>.json`, `schema_version:"1"`) for every cross-surface aggregate, and the raw per-platform snapshots only for drill-down. It shows reach per surface, format ROI, channel-ROI buckets, the per-source amplification leaderboard (click → derivatives), the YouTube scatter, voice-corpus freshness, and both hypothesis ledgers. **Pure transport** — it renders flywheel's numbers, never recomputes them. Tolerant of schema drift (an old-shape snapshot renders partially, never crashes). Reads live on each request, so a fresh `/flywheel` shows up on refresh. See [`_shared/dashboard/README.md`](_shared/dashboard/README.md).
+
+2. **One cross-surface learning ledger (`insights/`).** YouTube's predict→grade→learn hypothesis ledger, generalized to every surface via the **same tested binary** (`youtube-analytics insights --ledger-dir`). `/flywheel` Phase 5.5 (Compound) grades last week's cross-surface predictions against this run's `content_attribution[]` / `format_engagement` / `channel_roi[]` and writes next week's. This is what makes the system *compound* — predictions get scored, and the score informs the next compose cycle. The YouTube ledger (`youtube-analytics/data/insights/`) stays the per-video detail; the dashboard's Learning panel shows both. See [`insights/README.md`](insights/README.md).
+
+3. **One voice corpus spanning two registers.** `_shared/voice-corpus` now merges beehiiv newsletters (*written* register) **and** recent YouTube livestream transcripts (`video_type=="live"` only — *spoken* register; long-form is excluded as newsletter-readings, Shorts as clip captions), tagged by `source_type`. The three original-copy compose skills (`tease-newsletter`, `promote-github`, `carousel-newsletter`) get richer grounding with zero changes (the output stays backward-compatible). See [`PATTERNS.md` § Voice grounding](PATTERNS.md#pattern-voice-grounding-for-original-copy-generation).
+
+The **frozen snapshot contract** is the seam: `/flywheel` Phase 7 always emits `schema_version`, `channel_roi[]`, `format_engagement`, `reconciled_reach[]`, `voice_corpus_freshness`, and `content_attribution[]` (empty/null when a phase degraded, never omitted) so the dashboard codes against a stable shape.
+
 ## Dead channel awareness
 
 Buffer Insights surfaces engagement per channel over a 30-day window. A channel that publishes consistently but produces zero reactions/impressions over that window is **dead** — continuing to fan out to it burns compose-skill budget for no return.

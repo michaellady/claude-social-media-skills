@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EVC — Single Pane</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <script src="/static/chart.umd.min.js"></script>
+</head>
+<body>
+  <header id="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <h1>Enterprise Vibe Code — Single Pane</h1>
+    </div>
+    <div id="meta" class="meta"></div>
+    <button id="refresh" title="Re-read the newest snapshot">⟳ Refresh</button>
+  </header>
+
+  <div id="banner" class="banner hidden"></div>
+
+  <main>
+    <!-- Headline stat cards -->
+    <section id="cards" class="cards"></section>
+
+    <!-- Charts row -->
+    <section class="grid">
+      <div class="panel">
+        <h2>Reach by surface</h2>
+        <div class="canvas-wrap"><canvas id="reachChart"></canvas></div>
+        <p class="empty hidden" id="reachEmpty"></p>
+      </div>
+      <div class="panel">
+        <h2>Format ROI <span class="sub">engagement rate %</span></h2>
+        <div class="canvas-wrap"><canvas id="formatChart"></canvas></div>
+        <p class="empty hidden" id="formatEmpty"></p>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="panel">
+        <h2>Channel ROI buckets</h2>
+        <div class="canvas-wrap"><canvas id="roiChart"></canvas></div>
+        <div id="roiTable" class="mini-table"></div>
+        <p class="empty hidden" id="roiEmpty"></p>
+      </div>
+      <div class="panel">
+        <h2>YouTube — views vs retention
+          <span class="filters" id="ytFilters"></span>
+        </h2>
+        <div class="canvas-wrap"><canvas id="ytChart"></canvas></div>
+        <p class="empty hidden" id="ytEmpty"></p>
+      </div>
+    </section>
+
+    <!-- Amplification leaderboard -->
+    <section class="panel wide">
+      <h2>Per-source amplification <span class="sub">click a row → derivatives</span></h2>
+      <table id="ampTable" class="data-table"><thead><tr>
+        <th>Source</th><th>Type</th><th class="num">Source reach</th>
+        <th class="num">Derived reach</th><th class="num">Amplification</th><th class="num">Derivatives</th>
+      </tr></thead><tbody></tbody></table>
+      <p class="empty hidden" id="ampEmpty"></p>
+      <div id="sourceDetail" class="detail hidden"></div>
+    </section>
+
+    <!-- Learning panel -->
+    <section class="panel wide">
+      <h2>Learning — hypothesis ledger
+        <span class="filters" id="learnFilters"></span>
+      </h2>
+      <div id="learnSummary" class="summary"></div>
+      <table id="learnTable" class="data-table"><thead><tr>
+        <th>Date</th><th>Ledger</th><th>Scope</th><th>Prediction</th><th>Metric</th><th>Verdict</th>
+      </tr></thead><tbody></tbody></table>
+      <p class="empty hidden" id="learnEmpty"></p>
+    </section>
+  </main>
+
+  <footer><span id="foot"></span></footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>
