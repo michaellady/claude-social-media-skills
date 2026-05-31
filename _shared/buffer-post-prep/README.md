@@ -71,3 +71,39 @@ Run the binary against any channel and check that the emitted JSON includes `"ta
 ## Graceful degradation
 
 If `tag-ids.local.json` is missing, malformed, or the format key isn't in it, the binary **still emits the post args** — just without `tagIds`. It warns on stderr so the caller can surface it. This means closed-loop attribution silently degrades instead of blocking publication. `audit-buffer-queue` will catch the resulting untagged posts at the next weekly review.
+
+## Dead-channel deny-list
+
+The skill-level `min_followers_to_promote = 50` guard skips channels that have *too few followers*. It does **not** catch a channel that HAS followers but produces *zero engagement* — a channel that's actively posted-to but dead. `buffer-post-prep` enforces that case at the transport layer with a **deny-list**.
+
+When the target channel matches the deny-list, the binary **skips the post**: it prints a structured JSON object to stdout and exits `75` (distinct from `0`=ok, `64`/`65`=caller bug, `70`=internal):
+
+```json
+{
+  "skipped": true,
+  "reason": "skipped: dead channel (0 reactions/0 comments over 64 posts in 30d; …)",
+  "channelId": "6935604f29ea336fd65bacf8",
+  "service": "threads",
+  "handle": "enterprisevibecode"
+}
+```
+
+Callers should parse stdout and branch on the `"skipped"` key (or on exit code `75`): treat it as "intentionally not posted, keep going" — NOT as an error. The `reason` is formatted like the skills' other skip reasons, so an existing publish loop already handles it.
+
+### How matching works
+
+A channel matches a deny-list row if **either**:
+- its `channel_id` equals the row's `channel_id` (preferred — stable, unambiguous), **or**
+- its `service` + `--handle` both equal the row's `service` + `handle` (resilient if Buffer ever reissues the channel id). Pass `--handle` so this path is available; matching is case-insensitive and ignores a leading `@`.
+
+### Config files
+
+- **`dead-channels.json`** — committed seed/default. Empty list (or absent) = the mechanism is **OFF**; only explicitly-listed channels are ever skipped. Seeded with the Threads `enterprisevibecode` account (`6935604f29ea336fd65bacf8`) per `audits/threads-evc-dead-channel.md`.
+- **`dead-channels.local.json`** — optional, gitignored operator override. If present, it's read **instead of** `dead-channels.json` (it does not merge — copy the committed rows in if you want to keep them). Use it to extend the list without a commit. Copy `dead-channels.example.json` to start.
+
+A missing or malformed deny-list never blocks a post — the binary warns on stderr and treats it as empty. The mechanism only ever blocks channels that are explicitly and parseably listed.
+
+### Adding / removing a channel
+
+- **Add:** append a row to `dead-channels.json` with at least `channel_id` (preferred) and a `reason` that cites the audit doc, then `go build .` is not required (the file is read at runtime). First write/update the investigation at `audits/<channel>-dead-channel.md`.
+- **Remove (re-enable a channel):** delete its row and revisit the audit doc's re-assessment criteria.

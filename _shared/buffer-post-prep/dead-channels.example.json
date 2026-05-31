@@ -1,0 +1,12 @@
+{
+  "_comment": "OPTIONAL operator override for the dead-channel deny-list. Copy this to dead-channels.local.json (gitignored) ONLY if you want to extend or shadow the committed dead-channels.json without making a commit. If dead-channels.local.json exists, buffer-post-prep reads it INSTEAD OF dead-channels.json (it does not merge — copy the committed rows in if you want to keep them). Same shape as dead-channels.json: each row matches a channel by `channel_id` OR by `service`+`handle`, and `reason` is the human-readable skip text. An empty list (or a missing file) skips nothing.",
+
+  "dead_channels": [
+    {
+      "channel_id": "REPLACE_WITH_24_HEX_CHARS",
+      "service": "threads",
+      "handle": "some-handle",
+      "reason": "dead channel (0 engagement 30d, see audits/...)"
+    }
+  ]
+}

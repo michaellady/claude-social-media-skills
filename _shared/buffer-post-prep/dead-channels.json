@@ -1,0 +1,12 @@
+{
+  "_comment": "Dead-channel deny-list for buffer-post-prep. A channel listed here HAS followers (so it passes the skill-level min_followers_to_promote=50 guard) but is dead by ENGAGEMENT — fan-out to it is wasted. buffer-post-prep SKIPS any post whose target matches a row by `channel_id` OR by `service`+`handle` (both case-insensitive; a leading @ on the handle is ignored). On a match it prints a JSON {\"skipped\": true, \"reason\": \"...\"} object and exits 75. EMPTY = OFF: only channels listed here are ever skipped. This committed file is the seed/default; an operator can shadow it with a gitignored dead-channels.local.json (same shape) to extend the list without a commit. To add a channel: append a row with at least `channel_id` (preferred — stable) and a `reason` citing the audit doc. To re-enable a channel: remove its row (and revisit audits/<channel>-dead-channel.md).",
+
+  "dead_channels": [
+    {
+      "channel_id": "6935604f29ea336fd65bacf8",
+      "service": "threads",
+      "handle": "enterprisevibecode",
+      "reason": "dead channel (0 reactions/0 comments over 64 posts in 30d; 19 followers; see audits/threads-evc-dead-channel.md, task #379)"
+    }
+  ]
+}

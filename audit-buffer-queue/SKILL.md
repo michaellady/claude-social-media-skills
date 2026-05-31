@@ -33,11 +33,13 @@ For a routine queue health check when nothing is on fire. ~3-5 min wall-clock. A
 
 **Phase 4 — Untagged posts + auto-backfill (1-2 min).** Find posts missing any of the 5 expected `format:<name>` tags (verbatim-quote, teaser, carousel, link-share, batch-summary). Classify each by text content (quote+CTA → verbatim-quote, GitHub URL → link-share, etc.). For SCHEDULED untagged posts: fetch full post via `mcp__buffer__get_post`, then call `editPost` GraphQL mutation with full payload (text + assets + metadata + tagIds — NOT just tagIds). For SENT untagged posts: surface as "manual backfill needed" (Buffer API blocks `editPost` on sent posts).
 
-**Phase 5 — Dead channels (20 sec).** Cross-reference `list_channels` against `list_posts(status: ["sent"], last 14d)` and `list_posts(status: ["scheduled"])`. Channels with 0 of both = dead.
+**Phase 5 — Dead channels — silent (20 sec).** Cross-reference `list_channels` against `list_posts(status: ["sent"], last 14d)` and `list_posts(status: ["scheduled"])`. Channels with 0 of both = dead (nothing posted, nothing queued).
+
+**Phase 5b — Deny-listed dead channels — actively-posted-to (20 sec).** DIFFERENT from Phase 5: these channels ARE being posted to (often have queued posts) but are dead by *engagement* and were deny-listed in `_shared/buffer-post-prep/dead-channels.json` (read `dead-channels.local.json` first if it exists; it shadows the committed file). Flag any queued post whose `channelId` matches a deny-list row (or whose `service`+handle match) — those posts slipped in before the deny-list, or via a path that bypassed `buffer-post-prep`. Recommend cancelling them. See the deny-list mechanism in `_shared/buffer-post-prep/README.md`.
 
 **Phase 6 — Below-threshold channels (20 sec).** For each channel with queued posts, `mcp__buffer__get_channel` → follower count. Flag any below `min_followers_to_promote` (default 50) with queued posts.
 
-**Phase 7 — Render report.** Markdown tables, one section per finding type: 🔴 Bunched, 🟡 Theme over-saturation, ⚪ Untagged, 🔴 Dead channels, 🔴 Below-threshold. Include channel + recommendation columns.
+**Phase 7 — Render report.** Markdown tables, one section per finding type: 🔴 Bunched, 🟡 Theme over-saturation, ⚪ Untagged, 🔴 Dead channels (silent), 🔴 Deny-listed dead channels (queued), 🔴 Below-threshold. Include channel + recommendation columns.
 
 **Phase 8 — Batch approval.** Present all recommendations and ask "apply all N? Or pick which ones?" before any `delete_post` / `update_post` calls. Default to surfacing, not acting.
 
@@ -138,6 +140,39 @@ mcp__buffer__list_posts (status: ["scheduled"])
 
 Flag dead channels — recommend either deleting them from Buffer or reactivating with a posting goal.
 
+### Phase 5b — Deny-listed dead-channel check (dead by engagement)
+
+This is a **different** notion of "dead" than Phase 5. Phase 5 finds channels with *nothing posted and nothing queued* (silent channels). Phase 5b finds channels that are **actively being posted to** but are dead by **engagement** — they HAVE followers (so they pass the `min_followers_to_promote = 50` guard) yet produce ~zero reactions. These are recorded in the `buffer-post-prep` deny-list, which makes compose skills SKIP them at fan-out time.
+
+Source of truth — the deny-list file (gitignored override shadows the committed seed):
+
+```python
+# Prefer the operator override, else the committed seed.
+import json, os
+base = "_shared/buffer-post-prep"   # relative to repo root (git rev-parse --show-toplevel)
+path = f"{base}/dead-channels.local.json"
+if not os.path.exists(path):
+    path = f"{base}/dead-channels.json"
+deny = json.load(open(path)).get("dead_channels", []) if os.path.exists(path) else []
+```
+
+Each deny-list row has `channel_id`, `service`, `handle`, `reason`. A queued post is flagged if its `channelId` equals a row's `channel_id`, **or** its `channelService` + handle match a row's `service` + `handle` (case-insensitive, ignore a leading `@`).
+
+```python
+def is_deny_listed(post, deny):
+    for row in deny:
+        if row.get("channel_id") and post["channelId"].lower() == row["channel_id"].lower():
+            return row
+        # handle match is best-effort — list_posts may not carry the handle;
+        # channelId match is the reliable path. Fall back to channelService when present.
+    return None
+
+flagged = [(p, is_deny_listed(p, deny)) for p in posts]
+flagged = [(p, r) for p, r in flagged if r]
+```
+
+For each flagged queued post, recommend **cancel** (`mcp__buffer__delete_post`) — fan-out to this channel is wasted spend. If you find *many* such posts, it means a compose run bypassed `buffer-post-prep` (the deny-list lives in the transport layer); note that in the report so the skill path gets fixed. As of 2026-05-30 the deny-list contains Threads `enterprisevibecode` (`6935604f29ea336fd65bacf8`, 0 reactions / 64 posts / 30d — `audits/threads-evc-dead-channel.md`).
+
 ### Phase 6 — Below-threshold-channel check
 
 For each channel in the queue, compare its follower count (via `mcp__buffer__get_channel`) against the `min_followers_to_promote` threshold (default 50, configurable in promote-* skills). If a channel below threshold has queued posts, those were probably scheduled before the threshold was added — recommend cancelling them.
@@ -173,6 +208,12 @@ For each channel in the queue, compare its follower count (via `mcp__buffer__get
 |---|---|---|
 | Mastodon (mikelady) | mastodon | 2026-03-14 |
 
+## 🔴 Deny-listed dead channels with queued posts (dead by engagement)
+
+| Channel | Service | Queued | Deny reason | Recommendation |
+|---|---|---:|---|---|
+| enterprisevibecode (Threads) | threads | 2 | 0 reactions / 64 posts / 30d (audits/threads-evc-dead-channel.md) | Cancel — deny-listed in buffer-post-prep; fan-out is wasted |
+
 ## 🔴 Below-threshold channels with queued posts
 
 | Channel | Followers | Queued | Recommendation |
@@ -183,7 +224,7 @@ For each channel in the queue, compare its follower count (via `mcp__buffer__get
 ### Phase 8 — User action
 
 For each flagged item, present a 1-click action:
-- **Cancel** the offending post → `mcp__buffer__delete_post`
+- **Cancel** the offending post → `mcp__buffer__delete_post` (also the action for a deny-listed dead-channel post — fan-out there is wasted)
 - **Reschedule** with a new dueAt → `mcp__buffer__update_post` with `mode: "customScheduled"`
 - **Tag** an untagged post → `mcp__buffer__update_post` adding the suggested `format:<name>` tag
 

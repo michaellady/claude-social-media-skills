@@ -15,10 +15,22 @@
 //	  [--image-alt "<alt text>"] \
 //	  [--mode addToQueue|shareNow|customScheduled] \
 //	  [--due-at <ISO 8601>] \
-//	  [--pinterest-board-id <id>]
+//	  [--pinterest-board-id <id>] \
+//	  [--handle <username>]   # lets the dead-channel deny-list match by service+handle
 //
 // Output: JSON dict ready to pass as create_post args.
-// Exit codes: 0=ok, 64=usage error, 65=validation error.
+// Exit codes: 0=ok, 64=usage error, 65=validation error, 75=skipped (dead channel).
+//
+// Dead-channel deny-list: a channel that HAS followers (so it passes the
+// skill-level min_followers_to_promote=50 guard) but produces zero engagement
+// is still a waste of fan-out. The min_followers guard can't catch it. This
+// binary reads a deny-list (dead-channels.local.json, gitignored, with a
+// committed dead-channels.json example/default) and, when the target channel
+// matches by id OR by service+handle, it SKIPS the post: prints a structured
+// "skipped" JSON object to stdout and exits 75. The deny-list is empty-by-
+// default — only explicitly-listed channels are skipped. Seeded with the
+// Threads enterprisevibecode account (0 reactions over 30d, see
+// audits/threads-evc-dead-channel.md).
 package main
 
 import (
@@ -69,6 +81,7 @@ func main() {
 		mode           = flag.String("mode", "addToQueue", "scheduling mode (addToQueue|shareNow|shareNext|customScheduled|recommendedTime)")
 		dueAt          = flag.String("due-at", "", "ISO 8601 dueAt (required if mode=customScheduled)")
 		pinterestBoard = flag.String("pinterest-board-id", "", "Pinterest board service ID (required for service=pinterest)")
+		handle         = flag.String("handle", "", "optional channel handle/username (lets the dead-channel deny-list match by service+handle as well as by id)")
 	)
 	flag.Parse()
 
@@ -81,6 +94,16 @@ func main() {
 	if !ok {
 		fail(64, "invalid --service: must be one of "+strings.Join(keys(platformLimits), ", "))
 	}
+
+	// --- Dead-channel deny-list (skip BEFORE shaping/printing the post args) ---
+	// A channel on the deny-list HAS followers (passes the skill min_followers
+	// guard) but is dead by engagement. We refuse to prep a post for it: print a
+	// structured "skipped" object (same shape every caller already parses) and
+	// exit 75 so the caller can branch on a non-zero, non-error status.
+	if reason := deadChannelReason(*channelID, *service, *handle); reason != "" {
+		skip(*channelID, *service, *handle, reason)
+	}
+
 	if strings.TrimSpace(*text) == "" {
 		fail(64, "missing --text")
 	}
@@ -177,6 +200,30 @@ func fail(code int, msg string) {
 	os.Exit(code)
 }
 
+// skip emits a structured "skipped" object on stdout and exits 75. The shape
+// mirrors a normal output dict enough that callers can json-parse stdout
+// unconditionally and branch on the presence of the "skipped" key (or on the
+// exit code). The "reason" string is the human-readable skip reason, formatted
+// the same way the skills' other skip reasons are (so callers already handle
+// it). Exit 75 is distinct from 0 (ok), 64/65 (caller bugs), and 70 (internal)
+// so a publish loop can treat it as "intentionally not posted, keep going."
+func skip(channelID, service, handle, reason string) {
+	out := map[string]any{
+		"skipped":   true,
+		"reason":    reason,
+		"channelId": channelID,
+		"service":   service,
+	}
+	if handle != "" {
+		out["handle"] = handle
+	}
+	fmt.Fprintf(os.Stderr, "buffer-post-prep: %s\n", reason)
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(out)
+	os.Exit(75)
+}
+
 func keys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
@@ -235,4 +282,89 @@ func lookupTagID(formatKey, tagValue string) string {
 		return ""
 	}
 	return id
+}
+
+// deadChannelEntry is one row of the dead-channel deny-list. A channel matches
+// if its id equals ChannelID (case-insensitive) OR (Service AND Handle both
+// match, both case-insensitive). At least one match key must be set per row.
+type deadChannelEntry struct {
+	ChannelID string `json:"channel_id"`
+	Service   string `json:"service"`
+	Handle    string `json:"handle"`
+	Reason    string `json:"reason"`
+}
+
+type deadChannelsFile struct {
+	DeadChannels []deadChannelEntry `json:"dead_channels"`
+}
+
+// deadChannelReason returns a non-empty skip reason if the target channel is on
+// the dead-channel deny-list, or "" if it isn't (the OFF-by-default case for
+// every channel not explicitly listed).
+//
+// It reads dead-channels.local.json next to the resolved binary if present,
+// otherwise falls back to the committed dead-channels.json default. The local
+// file is gitignored so an operator can extend the list without touching the
+// committed seed. A missing/empty/malformed deny-list means "skip nothing" —
+// the mechanism never blocks a post by accident; it only blocks channels that
+// are explicitly and parseably listed.
+//
+// Matching: by channel id (preferred — stable, unambiguous) and/or by
+// service+handle (resilient if Buffer ever reissues the channel id). A row
+// with neither key set is ignored.
+func deadChannelReason(channelID, service, handle string) string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	resolved, err := filepath.EvalSymlinks(exe)
+	if err != nil {
+		return ""
+	}
+	dir := filepath.Dir(resolved)
+
+	raw, err := os.ReadFile(filepath.Join(dir, "dead-channels.local.json"))
+	if err != nil {
+		// No operator override — fall back to the committed seed list.
+		raw, err = os.ReadFile(filepath.Join(dir, "dead-channels.json"))
+		if err != nil {
+			// Neither file present: deny-list is OFF. Skip nothing.
+			return ""
+		}
+	}
+
+	var f deadChannelsFile
+	if err := json.Unmarshal(raw, &f); err != nil {
+		// Malformed deny-list must NOT block posting — warn and let it through.
+		fmt.Fprintf(os.Stderr, "buffer-post-prep: WARN failed to parse dead-channels deny-list: %v — treating as empty.\n", err)
+		return ""
+	}
+
+	wantID := strings.ToLower(strings.TrimSpace(channelID))
+	wantSvc := strings.ToLower(strings.TrimSpace(service))
+	wantHandle := normalizeHandle(handle)
+
+	for _, e := range f.DeadChannels {
+		eID := strings.ToLower(strings.TrimSpace(e.ChannelID))
+		eSvc := strings.ToLower(strings.TrimSpace(e.Service))
+		eHandle := normalizeHandle(e.Handle)
+
+		idMatch := eID != "" && eID == wantID
+		handleMatch := eSvc != "" && eHandle != "" && eSvc == wantSvc && eHandle == wantHandle && wantHandle != ""
+
+		if idMatch || handleMatch {
+			reason := strings.TrimSpace(e.Reason)
+			if reason == "" {
+				reason = "dead channel (deny-listed in dead-channels.json)"
+			}
+			return "skipped: " + reason
+		}
+	}
+	return ""
+}
+
+// normalizeHandle lowercases and strips a leading "@" so "@EnterpriseVibeCode"
+// and "enterprisevibecode" compare equal.
+func normalizeHandle(h string) string {
+	return strings.ToLower(strings.TrimPrefix(strings.TrimSpace(h), "@"))
 }
