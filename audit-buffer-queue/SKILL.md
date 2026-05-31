@@ -103,9 +103,14 @@ The helper output makes this deterministic; the thresholds above are tunable jud
 
 Every post created by the promote-* skills should have a `format:<name>` tag (`format:verbatim-quote`, `format:teaser`, `format:carousel`, `format:link-share`, `format:batch-summary` — `format:long-form-pulse` is future-reserved and not produced by any current skill, so don't flag its absence). Posts without one of those tags break the closed-loop measurement system — `buffer-stats`'s Phase 5 format-performance analyzer can't attribute them.
 
+**Filter by `via` first — only `via:buffer` posts are expected to carry a format tag.** Buffer surfaces two kinds of post: `via:buffer` (composed through the promote-*/carousel skills, which set the format tag at compose time) and `via:network` (organic posts authored natively on the platform and auto-synced into Buffer — these never pass through `buffer-post-prep`, so they have no `format:` tag *by design*). Flagging `via:network` posts as an attribution gap is a false positive: they were never meant to be tagged. Confirmed 2026-05-31 — of 100 sent posts in the window, all 23 `via:buffer` posts were format-tagged (100%) and all 77 untagged posts were `via:network` organic cross-posts. The closed loop was healthy; a naïve "77 untagged" count read as broken. **Scope the untagged check to `via:buffer` only**; report `via:network` volume separately as informational (organic cross-post activity), not as a gap.
+
 ```python
 EXPECTED = {'format:verbatim-quote', 'format:teaser', 'format:carousel', 'format:link-share', 'format:batch-summary'}
-untagged = [p for p in posts if not any(t['name'] in EXPECTED for t in p['tags'])]
+# Only via:buffer posts are expected to be format-tagged; via:network are organic, tagged by design = never.
+composed = [p for p in posts if p.get('via') == 'buffer']
+untagged = [p for p in composed if not any(t['name'] in EXPECTED for t in p['tags'])]
+organic_count = sum(1 for p in posts if p.get('via') == 'network')  # informational, NOT a gap
 ```
 
 For each untagged post, classify by text content:
