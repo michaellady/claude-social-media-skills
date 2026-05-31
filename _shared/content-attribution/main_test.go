@@ -190,3 +190,46 @@ func TestSnapshotPostsMatch_NoMatchWhenTagAbsent(t *testing.T) {
 		t.Errorf("reason = %q, want no_match", rec.Reason)
 	}
 }
+
+// joinEngagement must dedup clips by clip_id: the same source appearing in two
+// qualifying manifests (e.g. a re-clip run) must NOT double-count the clip into
+// derivatives[] or the headline reach — aggregation has to be idempotent.
+func TestJoinEngagement_DedupsClipIDAcrossManifests(t *testing.T) {
+	opus := t.TempDir()
+	t.Setenv("CA_OPUS_MANIFESTS_DIR", opus)
+	t.Setenv("CA_MANIFESTS_ROOT", t.TempDir()) // no linkedin_pulses/medium/substack subdirs
+	// isolate every platform-match cache dir so the matchers don't read real snapshots
+	for _, k := range []string{"CA_TIKTOK_CACHE_DIR", "CA_THREADS_CACHE_DIR", "CA_BUFFER_CACHE_DIR", "CA_LINKEDIN_CACHE_DIR"} {
+		t.Setenv(k, t.TempDir())
+	}
+	vids := t.TempDir()
+	vfile := filepath.Join(vids, "videos.json")
+	if err := os.WriteFile(vfile, []byte(`[{"id":"SRC1","title":"Src","view_count":100}]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CA_YT_VIDEOS", vfile)
+
+	writeManifest := func(name string) {
+		doc := map[string]any{
+			"source_video": map[string]any{"id": "SRC1", "title": "Src"},
+			"clips": []any{
+				map[string]any{
+					"clip_id":         "CLIP_A",
+					"scheduled_posts": []any{map[string]any{"label": "TIKTOK_BUSINESS", "scheduled_at_utc": ""}},
+				},
+			},
+		}
+		b, _ := json.Marshal(doc)
+		if err := os.WriteFile(filepath.Join(opus, name), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Two manifests for the same source, both carrying CLIP_A.
+	writeManifest("run1.json")
+	writeManifest("run2.json")
+
+	res := joinEngagement("SRC1")
+	if len(res.Derivatives) != 1 {
+		t.Fatalf("expected 1 deduped derivative, got %d (CLIP_A double-counted across manifests)", len(res.Derivatives))
+	}
+}

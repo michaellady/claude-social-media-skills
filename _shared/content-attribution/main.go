@@ -690,6 +690,12 @@ func joinEngagement(sourceID string) joinResult {
 	// Walk manifests pointing at this source.
 	derivatives := []any{}
 	derived := map[string]float64{"reach": 0, "reactions": 0, "comments": 0, "subs_gained": 0, "estimated_revenue": 0}
+	// Dedup by clip_id so aggregation is idempotent: the same source can appear
+	// in more than one qualifying manifest (a re-clip run, or a staging file that
+	// carries scheduled_posts), and a single manifest could repeat a clip_id.
+	// Without this, a duplicated clip double-counts into BOTH derivatives[] and
+	// the headline reach/amplification — a silent corruption of the key metric.
+	seenClips := map[string]bool{}
 
 	for _, m := range allManifests() {
 		var doc map[string]any
@@ -707,6 +713,12 @@ func joinEngagement(sourceID string) joinResult {
 				continue
 			}
 			cid := str(clip, "clip_id")
+			if cid != "" {
+				if seenClips[cid] {
+					continue
+				}
+				seenClips[cid] = true
+			}
 			dur := num(clip, "duration_sec")
 			platforms := map[string]any{}
 			dReach, dReact, dComments := 0.0, 0.0, 0.0
