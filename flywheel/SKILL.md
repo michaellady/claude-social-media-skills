@@ -6,7 +6,7 @@ user_invocable: true
 
 # flywheel
 
-Aggregate signal from YouTube, beehiiv, LinkedIn, and the consulting log into one weekly report against the 5 priorities in `~/dev/claude-social-media-skills/youtube-analytics/enterprise_vibe_code_growth_priorities.md`. Answers "is the flywheel spinning this week?" with specific numbers, not vibes.
+Aggregate signal from **every surface** — YouTube, beehiiv, LinkedIn, Buffer (IG/FB), TikTok, Threads — plus the consulting log into one weekly report against the 5 priorities. `/flywheel` is the **single front door**: `--refresh` collects the latest data from all accounts (invoking each platform's stats skill), runs the per-source-content JOIN, and compounds the cross-surface hypothesis ledger — so one command gets you current numbers everywhere and scores last week's predictions. It runs against the 5 priorities in `~/dev/claude-social-media-skills/youtube-analytics/enterprise_vibe_code_growth_priorities.md`. Answers "is the flywheel spinning this week?" with specific numbers, not vibes.
 
 ## Usage
 
@@ -41,6 +41,8 @@ STALE_DAYS=${STALE_DAYS:-14}
 STALE_DAYS=${STALE_SNAPSHOT_DAYS:-$STALE_DAYS}  # env-var override still wins for debugging
 LN_CACHE=~/dev/claude-social-media-skills/linkedin-stats/cache
 BF_CACHE=~/dev/claude-social-media-skills/buffer-stats/cache
+TT_CACHE=~/dev/claude-social-media-skills/tiktok-stats/cache
+TH_CACHE=~/dev/claude-social-media-skills/threads-stats/cache
 YT_DATA=~/dev/claude-social-media-skills/youtube-analytics/data/videos.json
 
 age_days() {
@@ -53,17 +55,21 @@ age_days() {
 
 LN_AGE=$(age_days "$(ls -1 $LN_CACHE/snapshot-*.json 2>/dev/null | tail -1)")
 BF_AGE=$(age_days "$(ls -1 $BF_CACHE/snapshot-*.json 2>/dev/null | tail -1)")
+TT_AGE=$(age_days "$(ls -1 $TT_CACHE/snapshot-*.json 2>/dev/null | tail -1)")
+TH_AGE=$(age_days "$(ls -1 $TH_CACHE/snapshot-*.json 2>/dev/null | tail -1)")
 YT_AGE=$(age_days "$YT_DATA")
 
 STALE=()
 [ "$LN_AGE" -ge "$STALE_DAYS" ] && STALE+=("linkedin-stats (age ${LN_AGE}d)")
 [ "$BF_AGE" -ge "$STALE_DAYS" ] && STALE+=("buffer-stats (age ${BF_AGE}d)")
+[ "$TT_AGE" -ge "$STALE_DAYS" ] && STALE+=("tiktok-stats (age ${TT_AGE}d)")
+[ "$TH_AGE" -ge "$STALE_DAYS" ] && STALE+=("threads-stats (age ${TH_AGE}d)")
 [ "$YT_AGE" -ge "$STALE_DAYS" ] && STALE+=("yt-analytics videos.json (age ${YT_AGE}d)")
 ```
 
 **Routing logic based on flags + staleness:**
 - **`--cached`** → skip Phase 0 entirely; mark stale sources in the report and proceed to Phase 1.
-- **`--refresh`** → refresh ALL three sub-skills unconditionally (skip the prompt). Equivalent to a forced Sunday review.
+- **`--refresh`** → refresh ALL surface sub-skills unconditionally (YouTube, Buffer, LinkedIn, TikTok, Threads — skip the prompt). The canonical "get latest data from every account" run. (Unattended/headless contexts skip the interactive browser scrapes — TikTok/Threads — gracefully.)
 - **`--refresh-stale`** → if `STALE[]` is non-empty, refresh those sources without prompting. If empty, skip Phase 0.
 - **Plain `/flywheel`** (no flags) → if `STALE[]` is non-empty, surface the list via `AskUserQuestion`:
 
@@ -78,8 +84,10 @@ STALE=()
 - **YouTube** (~3-5 min, no browser, no user attention): `cd ~/dev/claude-social-media-skills/youtube-analytics && go run . fetch && go run . fetch-analytics --all && go run . cohort auto`. Cached at `data/videos.json`.
 - **Buffer** (~3-5 min, gstack browser, may need cookie picker click): invoke `/buffer-stats` via the `Skill` tool. The sub-skill writes `~/dev/claude-social-media-skills/buffer-stats/cache/snapshot-<date>.{json,md}` then exits. Auth: `cookie-import-browser chrome buffer.com` if cookies expired — see `Edge: buffer-snapshot-stale`.
 - **LinkedIn** (~2-3 min, gstack browser): invoke `/linkedin-stats` via the `Skill` tool. Writes `~/dev/claude-social-media-skills/linkedin-stats/cache/snapshot-<date>.json`. Auth: gstack browser must be logged in to LinkedIn — see `Edge: linkedin-snapshot-stale`.
+- **TikTok** (~2-4 min, claude-in-chrome — INTERACTIVE only): invoke `/tiktok-stats` via the `Skill` tool. Scrapes TikTok Studio per-post engagement → `tiktok-stats/cache/snapshot-<date>.json`; resolves the JOIN's `tiktok_business` (`#373`). No headless path — on an unattended cron run, **skip** it (the JOIN stays `pending #373` until a later interactive run). See `Edge: interactive-stats-skipped`.
+- **Threads** (~1-2 min, claude-in-chrome — INTERACTIVE only): invoke `/threads-stats` via the `Skill` tool. Scrapes Threads Insights for the live `@mikelady` account → `threads-stats/cache/snapshot-<date>.json`; resolves the JOIN's `threads` (`#375`). Same interactive-only caveat. See `Edge: interactive-stats-skipped`.
 
-If a sub-skill fails (auth lapsed, cookie picker not closed, gstack process dropped), surface the failure clearly and continue with the OTHER sub-skills + cached data for the failed one. **Don't abort the whole flywheel composition over one stale source** — the report still has value with 2 of 3 sources fresh.
+If a sub-skill fails (auth lapsed, cookie picker not closed, gstack process dropped), surface the failure clearly and continue with the OTHER sub-skills + cached data for the failed one. **Don't abort the whole flywheel composition over one stale source** — the report still has value with most sources fresh.
 
 **Phase 1 — Resolve window.** Default `DAYS=7`; compute `SINCE` / `UNTIL` and `REPORT=$SNAP_DIR/$(date -u +%Y-%m-%d).md`.
 
@@ -97,7 +105,7 @@ If a sub-skill fails (auth lapsed, cookie picker not closed, gstack process drop
 
 **Phase 4.56 — Per-source-content closed-loop JOIN.** For each source-content ID discovered in Phase 4.55 (long-form YouTube IDs, newsletter slugs, GitHub PR refs), call `ca_join_engagement` from `_shared/content-attribution/` to assemble a unified record across every platform (`youtube_shorts`, `linkedin_personal`, `instagram_business`, `facebook_page`, `linkedin_page`, `tiktok_business`, etc.). Aggregate `source_engagement` + `derived_engagement` per source; compute `amplification_ratio = derived_reach / source_reach`. Render as "Per-source-content closed-loop attribution" section in the report; persist the array as `content_attribution[]` in the JSON snapshot for week-over-week diffing. **Credits derivative engagement back to Priority 1** — a long-form essay's true throughput value is source + every derivative. See `Edge: content-attribution-module-missing` and `Edge: zero-derivatives-for-source`. Depends on tasks **#381** (the `_shared/content-attribution/` module) and **#377** (buffer-stats Insights coverage of all 6 channels) landing first; until then Phase 4.56 degrades gracefully.
 
-**Phase 4.7 — Cross-source reconciliation.** Compose the cross-channel reach table from the authoritative source per channel (LinkedIn personal/page → linkedin-stats; IG/FB → buffer-stats; YouTube → yt-analytics; beehiiv → beehiiv-mcp; Threads → unavailable). Annotate each row with its source.
+**Phase 4.7 — Cross-source reconciliation.** Compose the cross-channel reach table from the authoritative source per channel (LinkedIn personal/page → linkedin-stats; IG/FB → buffer-stats; YouTube → yt-analytics; beehiiv → beehiiv-mcp; **Threads → threads-stats; TikTok → tiktok-stats**). Annotate each row with its source.
 
 **Phase 4.6 — Channel ROI.** Per Buffer-connected channel: `channel_roi_score = (avg_impressions_per_post * eng_rate * 100) / (sent_count + 1)`. Bucket into 🟢/🟡/🔴/⚪ and render the ROI table.
 
@@ -138,7 +146,9 @@ Surface the graded verdicts + new hypotheses in the report's "Compounding" secti
 | beehiiv list | `mcp__beehiiv__beehiiv_stats` | current subscriber count |
 | beehiiv attribution | `mcp__beehiiv__beehiiv_attribution` | source mix (YouTube vs LinkedIn vs direct) |
 | LinkedIn | `~/dev/claude-social-media-skills/linkedin-stats/cache/snapshot-<latest>.json` | newsletter subs, profile + page followers |
-| Buffer | `~/dev/claude-social-media-skills/buffer-stats/cache/snapshot-<latest>.json` | per-channel followers/engagement for IG/FB/Threads fan-out + queue health |
+| Buffer | `~/dev/claude-social-media-skills/buffer-stats/cache/snapshot-<latest>.json` | per-channel followers/engagement for IG/FB fan-out + queue health |
+| TikTok | `~/dev/claude-social-media-skills/tiktok-stats/cache/snapshot-<latest>.json` (via `/tiktok-stats` scrape) | per-post TikTok engagement → JOIN `tiktok_business` |
+| Threads | `~/dev/claude-social-media-skills/threads-stats/cache/snapshot-<latest>.json` (via `/threads-stats` scrape) | per-post Threads engagement + followers (live `@mikelady`) → JOIN `threads` |
 | Consulting | `(cd ~/dev/consulting-log && ./cl json)` | pipeline stages, realized revenue, content gaps |
 
 If any source fails or is stale, note it in the report — don't silently drop the row.
@@ -154,7 +164,7 @@ If any source fails or is stale, note it in the report — don't silently drop t
 | Invocation | Freshness check? | If stale found | If all fresh |
 |---|---|---|---|
 | `/flywheel` | yes | prompt user (default yes) → refresh + compose | skip Phase 0 → compose immediately |
-| `/flywheel --refresh` | no | force-refresh all 3 sources | force-refresh all 3 sources |
+| `/flywheel --refresh` | no | force-refresh all surfaces (YT, Buffer, LinkedIn, TikTok, Threads) | force-refresh all surfaces |
 | `/flywheel --refresh-stale` | yes | refresh stale without prompting | skip Phase 0 → compose |
 | `/flywheel --cached` | skipped | use cached + flag in report | skip Phase 0 → compose |
 
@@ -198,7 +208,15 @@ Each has its own auth + scrape; they don't share session:
    Invoke `/linkedin-stats` skill (or scrape `linkedin.com/dashboard` directly for the headline numbers if the full skill isn't required). Writes `~/dev/claude-social-media-skills/linkedin-stats/cache/snapshot-<date>.json`.
    Auth: gstack browser must be logged in to LinkedIn (cookies usually carry from a prior session).
 
-4. **YouTube weekly review** (closed-loop, optional):
+4. **TikTok refresh** (~2-4 min, claude-in-chrome — interactive only):
+   Invoke `/tiktok-stats` skill. Scrapes TikTok Studio (`tiktok.com/tiktokstudio/content`) per-post engagement → `~/dev/claude-social-media-skills/tiktok-stats/cache/snapshot-<date>.json`, resolving the JOIN's `tiktok_business` (`#373`).
+   Auth: logged into TikTok in the browser. **No headless path** — skip on unattended runs.
+
+5. **Threads refresh** (~1-2 min, claude-in-chrome — interactive only):
+   Invoke `/threads-stats` skill. Scrapes Threads Insights (`threads.com/insights`) for the live `@mikelady` account → `~/dev/claude-social-media-skills/threads-stats/cache/snapshot-<date>.json`, resolving the JOIN's `threads` (`#375`). (`@enterprisevibecode` is dead/paused, #588 — don't scrape it.)
+   Auth: logged into Threads. **No headless path** — skip on unattended runs.
+
+6. **YouTube weekly review** (closed-loop, optional):
    ```bash
    cd ~/dev/claude-social-media-skills/youtube-analytics
    go run . insights pending            # past-due hypotheses; grade them in the report's narrative
@@ -559,7 +577,8 @@ Each surface has its own follower count source — reconcile them before reporti
 | LinkedIn EVC page | `linkedin-stats` company section | Buffer Analyze tracks but linkedin-stats has the canonical number |
 | Instagram (EVC) | `buffer-stats` (Buffer Analyze) | only source we have for IG followers |
 | Facebook (EVC) | `buffer-stats` (Buffer Analyze) | only source for FB |
-| Threads (×2) | none — neither source tracks Threads followers | report as "unavailable" |
+| Threads (mikelady) | `threads-stats` (Threads Insights scrape) | live `@mikelady`; `enterprisevibecode` is dead/paused (#588) → unavailable |
+| TikTok (mikelady) | `tiktok-stats` (TikTok Studio scrape) | per-post engagement + 7d account metrics (follower total on a separate Studio tab) |
 | YouTube subscribers | `yt-analytics` (`subscribers_gained` + lifetime) | independent surface |
 | Beehiiv | `beehiiv-mcp` `subscribers.current` | authoritative |
 
@@ -805,6 +824,8 @@ After a few weeks of running `/flywheel` every Sunday, the snapshots directory b
   *Label: `Edge: linkedin-snapshot-stale`*
 - **Buffer snapshots must be current.** Same `$STALE_SNAPSHOT_DAYS` threshold. If no snapshot exists, the fan-out section shows `⚪ no recent Buffer data` and prompts the user to run `/buffer-stats`. Buffer feeds the fan-out context for Priority 2 — if missing, Priority 2's attribution analysis loses the IG/FB/Threads signal.
   *Label: `Edge: buffer-snapshot-stale`*
+- **Interactive stats skills can't run headless.** `/tiktok-stats` and `/threads-stats` scrape the logged-in browser via `claude-in-chrome` — there is no API/headless path. In an interactive session, `--refresh` invokes them like buffer/linkedin. In an **unattended** context (the Sunday `claude -p` cron, or any session without a live browser), they must be **skipped gracefully**: the JOIN reports `tiktok_business` as `pending #373` and `threads` as `pending #375`, the reconciled-reach rows show `unavailable`, and the rest of `/flywheel` proceeds. A later interactive `/flywheel --refresh` (or a standalone `/tiktok-stats` / `/threads-stats`) fills them in. Never block the run waiting on a browser that isn't there.
+  *Label: `Edge: interactive-stats-skipped`*
 - **YouTube data.** `youtube_analytics` `analyze` reads `data/videos.json` which is only refreshed on `fetch`. If it's stale, the YouTube section will be too. Run `go run . fetch` in `~/dev/claude-social-media-skills/youtube-analytics` before running `/flywheel` if the numbers look off.
   *Label: `Edge: youtube-videos-json-stale`*
 - **Consulting log is local-only.** No data migrates from other tools. If the user uses a CRM, they have to update the markdown files themselves.
