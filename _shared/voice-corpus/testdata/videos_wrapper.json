@@ -1,0 +1,42 @@
+{
+  "channel_id": "UCyxYcJWs5WstpM2h8KjabUw",
+  "channel_title": "Enterprise Vibe Code",
+  "videos": [
+    {
+      "id": "short001",
+      "title": "A Short",
+      "published_at": "2026-05-29T10:00:00Z",
+      "video_type": "short"
+    },
+    {
+      "id": "long001",
+      "title": "Long-form: reading the newsletter",
+      "published_at": "2026-05-28T10:00:00Z",
+      "video_type": "long-form"
+    },
+    {
+      "id": "live001",
+      "title": "Livestream Oldest",
+      "published_at": "2026-05-01T18:00:00Z",
+      "video_type": "live"
+    },
+    {
+      "id": "live002",
+      "title": "Livestream Newest",
+      "published_at": "2026-05-30T18:00:00Z",
+      "video_type": "live"
+    },
+    {
+      "id": "live003",
+      "title": "Livestream Middle",
+      "published_at": "2026-05-15T18:00:00Z",
+      "video_type": "live"
+    },
+    {
+      "id": "",
+      "title": "Live but empty ID — should be dropped",
+      "published_at": "2026-05-20T18:00:00Z",
+      "video_type": "live"
+    }
+  ]
+}

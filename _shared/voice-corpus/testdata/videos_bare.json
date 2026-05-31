@@ -1,0 +1,20 @@
+[
+  {
+    "id": "bareshort",
+    "title": "Bare-array Short",
+    "published_at": "2026-04-10T10:00:00Z",
+    "video_type": "short"
+  },
+  {
+    "id": "barelive1",
+    "title": "Bare-array Livestream A",
+    "published_at": "2026-04-20T18:00:00Z",
+    "video_type": "live"
+  },
+  {
+    "id": "barelive2",
+    "title": "Bare-array Livestream B",
+    "published_at": "2026-04-25T18:00:00Z",
+    "video_type": "live"
+  }
+]

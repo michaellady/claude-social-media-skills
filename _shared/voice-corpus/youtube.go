@@ -49,13 +49,7 @@ func fetchYouTubeTranscripts(exeDir string, cfg config) ([]post, int, error) {
 		return nil, 0, err
 	}
 
-	// Most-recent first; published_at is RFC3339 so lexical sort == chronological.
-	sort.SliceStable(videos, func(i, j int) bool {
-		return videos[i].PublishedAt > videos[j].PublishedAt
-	})
-	if cfg.YouTubeNumRecent > 0 && len(videos) > cfg.YouTubeNumRecent {
-		videos = videos[:cfg.YouTubeNumRecent]
-	}
+	videos = sortAndLimitVideos(videos, cfg.YouTubeNumRecent)
 
 	posts := make([]post, 0, len(videos))
 	for _, v := range videos {
@@ -81,6 +75,19 @@ func fetchYouTubeTranscripts(exeDir string, cfg config) ([]post, int, error) {
 		})
 	}
 	return posts, len(videos), nil
+}
+
+// sortAndLimitVideos orders videos most-recent first (published_at is RFC3339, so
+// lexical sort == chronological) and, when numRecent > 0, keeps only the first
+// numRecent. numRecent <= 0 keeps all. Sort is stable so ties preserve input order.
+func sortAndLimitVideos(videos []ytVideo, numRecent int) []ytVideo {
+	sort.SliceStable(videos, func(i, j int) bool {
+		return videos[i].PublishedAt > videos[j].PublishedAt
+	})
+	if numRecent > 0 && len(videos) > numRecent {
+		videos = videos[:numRecent]
+	}
+	return videos
 }
 
 // loadLiveVideos reads videos.json and returns only video_type=="live" entries.
