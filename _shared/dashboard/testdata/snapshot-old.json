@@ -1,0 +1,16 @@
+{
+  "window": { "since": "2026-05-13", "until": "2026-05-20" },
+  "youtube": {
+    "streams": 1,
+    "long_form": 2,
+    "shorts": 23,
+    "views": 9148,
+    "revenue": 12.10,
+    "subs_gained": 7
+  },
+  "beehiiv": {
+    "total_subs": 1805,
+    "new_subs_in_window": 21,
+    "attribution": { "youtube": 8, "organic": 13 }
+  }
+}

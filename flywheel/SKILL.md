@@ -763,7 +763,18 @@ fi
   "content_attribution": [
     {
       "source": { "type": "long_form", "id": "uEposKmbFvY", "title": "...", "published_at": "..." },
-      "derivatives": [ /* full ca_join_engagement output per source — see CLOSED-LOOP-UNIFICATION-PLAN.md */ ],
+      "derivatives": [
+        {
+          "type": "opus_clip", "clip_id": "...", "title": "...",
+          "platforms": {
+            /* one key per platform (youtube_shorts | linkedin_personal | instagram_business | facebook_page | linkedin_page | tiktok_business | …).
+               A JOINED platform nests its metrics under `engagement`; a not-yet-joined one is `engagement:null` + `pending:true`/`pending_task`. */
+            "linkedin_personal": { "engagement": { "join_method": "tag|format|schedule_id|time", "reactions": N, "comments": N, "reposts": N, "urn": "..." } },
+            "tiktok_business":   { "engagement": null, "pending": true, "pending_task": "#373" }
+          }
+        }
+        /* full per-source ca_join_engagement output — see CLOSED-LOOP-UNIFICATION-PLAN.md + _shared/content-attribution/README.md */
+      ],
       "source_engagement": { "views": N, "likes": N, "comments": N, "subs_gained": N, "estimated_revenue": F },
       "derived_engagement": { "reach": N, "reactions": N, "comments": N, "subs_gained": N, "estimated_revenue": F },
       "amplification_ratio": F,

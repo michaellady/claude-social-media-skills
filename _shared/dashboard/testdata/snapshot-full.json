@@ -1,0 +1,142 @@
+{
+  "schema_version": "1",
+  "generated_at": "2026-05-30T14:05:00Z",
+  "window": { "since": "2026-05-24", "until": "2026-05-30" },
+  "youtube": {
+    "streams": 2,
+    "long_form": 3,
+    "shorts": 5,
+    "views": 9148,
+    "revenue": 18.42,
+    "subs_gained": 11
+  },
+  "beehiiv": {
+    "total_subs": 1842,
+    "new_subs_in_window": 37,
+    "attribution": { "youtube": 12, "linkedin": 9, "organic": 16 }
+  },
+  "linkedin": {
+    "newsletter_subs": 612,
+    "profile_followers": 4231,
+    "company_followers": 188,
+    "snapshot_date": "2026-05-29"
+  },
+  "buffer": {
+    "channels": 4,
+    "total_followers": 5310,
+    "total_followers_delta": 84,
+    "avg_engagement_rate": 2.7,
+    "snapshot_date": "2026-05-29"
+  },
+  "consulting": {
+    "pipeline": 24000.0,
+    "realized_revenue": 6000.0,
+    "content_gaps": 2
+  },
+  "priority_1": {
+    "raw_long_form": 3,
+    "derivative_credited_throughput": 4.6,
+    "derivative_amp_bonus": 1.6,
+    "total_derived_reach": 1842,
+    "total_derived_subs_gained": 4
+  },
+  "channel_roi": [
+    { "channel": "LinkedIn (personal)", "service": "linkedin", "followers": 4231, "posts": 6, "avg_impressions": 1840.0, "eng_rate": 0.031, "roi_score": 142.5, "bucket": "green" },
+    { "channel": "Instagram", "service": "instagram", "followers": 980, "posts": 4, "avg_impressions": 410.0, "eng_rate": 0.018, "roi_score": 27.3, "bucket": "yellow" },
+    { "channel": "Facebook", "service": "facebook", "followers": 612, "posts": 3, "avg_impressions": 88.0, "eng_rate": 0.009, "roi_score": 4.1, "bucket": "red" },
+    { "channel": "Threads", "service": "threads", "followers": 41, "posts": 2, "avg_impressions": 30.0, "eng_rate": 0.0, "roi_score": 0.0, "bucket": "grey" }
+  ],
+  "format_engagement": {
+    "format:teaser": { "posts": 8, "reactions": 64, "impressions": 4200, "eng_rate_pct": 1.52 },
+    "format:carousel": { "posts": 5, "reactions": 90, "impressions": 3100, "eng_rate_pct": 2.90 },
+    "format:promote": { "posts": 6, "reactions": 38, "impressions": 5200, "eng_rate_pct": 0.73 }
+  },
+  "reconciled_reach": [
+    { "channel": "beehiiv", "followers": 1842, "delta": 37, "source": "beehiiv-mcp" },
+    { "channel": "LinkedIn followers", "followers": 4231, "delta": 18, "source": "linkedin-stats" },
+    { "channel": "LinkedIn newsletter", "followers": 612, "delta": 7, "source": "linkedin-stats" },
+    { "channel": "YouTube subs", "followers": 3104, "delta": 11, "source": "yt-analytics" },
+    { "channel": "Buffer-tracked (IG/FB/Threads)", "followers": 1633, "delta": 22, "source": "buffer-stats" }
+  ],
+  "voice_corpus_freshness": {
+    "newsletter_fetched_at": "2026-05-29T08:00:00Z",
+    "youtube_transcript_fetched_at": "2026-05-29T08:01:12Z",
+    "num_newsletter": 14,
+    "num_youtube": 10
+  },
+  "content_attribution": [
+    {
+      "source": {
+        "type": "long_form",
+        "id": "uEposKmbFvY",
+        "title": "How to Scale Without the Slop 📈",
+        "url": "https://www.youtube.com/watch?v=uEposKmbFvY",
+        "published_at": "2026-05-15T20:00:38Z",
+        "duration_seconds": 939
+      },
+      "derivatives": [
+        {
+          "clip_id": "La4Wghg6IX",
+          "type": "short",
+          "title": "The slop tax on every PR",
+          "duration_seconds": 28,
+          "score": 0.81,
+          "derivative_engagement_total": { "reach": 474, "reactions": 3, "comments": 0 },
+          "platforms": {
+            "linkedin_personal": {
+              "engagement": {
+                "join_method": "tag",
+                "reactions": 1,
+                "comments": 0,
+                "reposts": 0,
+                "urn": "urn:li:activity:7462532108851462144"
+              }
+            },
+            "instagram_business": { "engagement": null, "pending": true, "pending_task": "#371" },
+            "facebook_page": { "engagement": null, "pending": true, "pending_task": "#371" },
+            "linkedin_page": { "engagement": null, "pending": true, "pending_task": "#371" },
+            "tiktok_business": { "engagement": null, "pending": true, "pending_task": "#371" }
+          }
+        },
+        {
+          "clip_id": "Zr9Tbq2KmA",
+          "type": "short",
+          "title": "Manage agents like a sprint team",
+          "duration_seconds": 41,
+          "score": 0.74,
+          "derivative_engagement_total": { "reach": 894, "reactions": 9, "comments": 0 },
+          "platforms": {
+            "linkedin_personal": {
+              "engagement": {
+                "join_method": "tag",
+                "reactions": 8,
+                "comments": 0,
+                "reposts": 1,
+                "urn": "urn:li:activity:7462532108851462999"
+              }
+            },
+            "instagram_business": { "engagement": null, "pending": true, "pending_task": "#371" }
+          }
+        }
+      ],
+      "source_engagement": { "views": 122, "likes": 6, "comments": 0, "subs_gained": 0, "estimated_revenue": 0 },
+      "derived_engagement": { "reach": 1368, "reactions": 12, "comments": 0, "subs_gained": 0, "estimated_revenue": 0 },
+      "amplification_ratio": 11.2,
+      "status": "ok"
+    },
+    {
+      "source": {
+        "type": "newsletter",
+        "id": "the-process-layer-most-devs-miss",
+        "title": "The Process Layer Most Devs Miss",
+        "url": "https://newsletter.example.com/p/the-process-layer-most-devs-miss",
+        "published_at": "2026-05-22T13:00:00Z"
+      },
+      "derivatives": [],
+      "source_engagement": { "views": 410, "likes": 0, "comments": 0, "subs_gained": 4, "estimated_revenue": 0 },
+      "derived_engagement": { "reach": 0, "reactions": 0, "comments": 0, "subs_gained": 0, "estimated_revenue": 0 },
+      "amplification_ratio": 0,
+      "status": "no_derivatives_yet"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "fetched_at": "2026-05-29T08:00:00Z",
+  "youtube_fetched_at": "2026-05-29T08:01:12Z",
+  "feed_url": "https://rss.example.com/feeds/test.xml",
+  "num_posts": 5,
+  "posts": [
+    { "title": "Newsletter A", "url": "https://nl.example.com/a", "published_at": "2026-05-20T00:00:00Z", "source_type": "newsletter", "body_text": "..." },
+    { "title": "Newsletter B", "url": "https://nl.example.com/b", "published_at": "2026-05-13T00:00:00Z", "source_type": "newsletter", "body_text": "..." },
+    { "title": "Newsletter C (untyped)", "url": "https://nl.example.com/c", "published_at": "2026-05-06T00:00:00Z", "source_type": "", "body_text": "..." },
+    { "title": "Livestream X", "url": "https://yt.example.com/x", "published_at": "2026-05-22T00:00:00Z", "source_type": "youtube_live", "body_text": "..." },
+    { "title": "Livestream Y", "url": "https://yt.example.com/y", "published_at": "2026-05-15T00:00:00Z", "source_type": "youtube_transcript", "body_text": "..." }
+  ]
+}

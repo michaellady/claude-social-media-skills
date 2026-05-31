@@ -226,8 +226,12 @@ async function showSource(id) {
     const plats = d.platforms || {};
     const platCells = Object.keys(plats).map((p) => {
       const m = plats[p];
-      const val = (m.views ?? m.reactions ?? m.impressions ?? m.engagement);
-      return `<span class="pill pending">${p}: ${val == null ? "—" : fmt(val)} <small>(${m.join_method || (m.pending_task ? "pending" : "?")})</small></span>`;
+      // ca_join_engagement nests the metrics under .engagement (an object) for
+      // joined platforms; a not-yet-joined platform has engagement:null + pending.
+      const eng = (m.engagement && typeof m.engagement === "object") ? m.engagement : {};
+      const val = (eng.views ?? eng.reactions ?? eng.impressions ?? eng.engagement ?? eng.reach);
+      const joinTag = eng.join_method || (m.pending || m.pending_task ? "pending" : "?");
+      return `<span class="pill pending">${p}: ${val == null ? "—" : fmt(val)} <small>(${joinTag})</small></span>`;
     }).join(" ");
     return `<tr><td>${trunc(d.title || d.clip_id || "?", 50)}</td><td>${platCells || "—"}</td></tr>`;
   }).join("");
