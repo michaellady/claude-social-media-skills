@@ -41,7 +41,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
+
+// runeLen counts CHARACTERS (Unicode code points), not bytes. Platform limits
+// are in characters; the EVC voice is full of em-dashes (— = 3 bytes) and emoji
+// (📈 = 4 bytes), so len() over-counts and would falsely reject a post that's
+// actually within the limit.
+func runeLen(s string) int { return utf8.RuneCountInString(s) }
 
 // Platform character limits (hard limits from each platform).
 var platformLimits = map[string]int{
@@ -107,8 +114,8 @@ func main() {
 	if strings.TrimSpace(*text) == "" {
 		fail(64, "missing --text")
 	}
-	if len(*text) > limit {
-		fail(65, fmt.Sprintf("text length %d exceeds %s hard limit %d", len(*text), *service, limit))
+	if n := runeLen(*text); n > limit {
+		fail(65, fmt.Sprintf("text length %d exceeds %s hard limit %d", n, *service, limit))
 	}
 	tagValue, ok := validFormatTags[*formatTag]
 	if !ok {
