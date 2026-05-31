@@ -380,6 +380,7 @@ func liPersonalMatch(clipID string) platformRecord {
 			}
 			return platformRecord{Engagement: map[string]any{
 				"urn":         urn,
+				"impressions": num(pm, "impressions"), // owner-view impressions off the activity feed; feeds derived reach
 				"reactions":   num(pm, "reactions"),
 				"comments":    num(pm, "comments"),
 				"reposts":     num(pm, "reposts"),

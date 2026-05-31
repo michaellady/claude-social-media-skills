@@ -146,6 +146,33 @@ func TestBufferMatch_PendingWhenNoRecentPosts(t *testing.T) {
 	}
 }
 
+// LinkedIn personal: opus clips on LI-personal often get 0 reactions but real
+// owner-view impressions — those MUST flow into the engagement object (else the
+// derived-reach sum, which is views+impressions, drops them). Regression for the
+// liPersonalMatch impressions field.
+func TestLiPersonalMatch_SurfacesImpressions(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CA_LINKEDIN_CACHE_DIR", dir)
+	writeSnap(t, dir, map[string]any{
+		"profile": map[string]any{
+			"recent_posts": []any{
+				map[string]any{
+					"text":       "Tokens currently burn in debugging [opus:10EJC3NIge]",
+					"source_tag": map[string]any{"scheme": "opus", "id": "10EJC3NIge"},
+					"impressions": 73, "reactions": 0, "comments": 0,
+				},
+			},
+		},
+	})
+	rec := liPersonalMatch("10EJC3NIge")
+	if rec.Pending || rec.Engagement == nil {
+		t.Fatalf("expected match, got %+v", rec)
+	}
+	if v, _ := rec.Engagement["impressions"].(float64); v != 73 {
+		t.Errorf("impressions = %v, want 73 (a 0-reaction LI clip still has reach)", rec.Engagement["impressions"])
+	}
+}
+
 // Snapshot present but the clip's tag isn't in it → no_match (NOT pending).
 func TestSnapshotPostsMatch_NoMatchWhenTagAbsent(t *testing.T) {
 	dir := t.TempDir()
