@@ -63,6 +63,23 @@ type output struct {
 	TotalMatches      int                      `json:"total_matches"`
 }
 
+// nonEmptyKeywords splits the comma-separated --keywords flag, trims each, and
+// DROPS empties. Critical: an empty keyword makes strings.Contains(text, "")
+// return true for EVERY post, so a trailing comma ("newsletter,"), a double
+// comma, or an empty --keywords "" would otherwise report a bogus overlap
+// against the entire queue — which the audit/promote consumers read as "this is
+// already queued, skip it."
+func nonEmptyKeywords(flagVal string) []string {
+	parts := strings.Split(flagVal, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func main() {
 	var (
 		keywordsFlag = flag.String("keywords", "", "comma-separated distinctive phrases to match (case-insensitive substring)")
@@ -74,10 +91,7 @@ func main() {
 	if strings.TrimSpace(*keywordsFlag) == "" {
 		fail(64, "missing --keywords (comma-separated)")
 	}
-	keywords := strings.Split(*keywordsFlag, ",")
-	for i := range keywords {
-		keywords[i] = strings.TrimSpace(keywords[i])
-	}
+	keywords := nonEmptyKeywords(*keywordsFlag)
 
 	rawIn, err := io.ReadAll(os.Stdin)
 	if err != nil {
