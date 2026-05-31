@@ -1,17 +1,17 @@
 ---
 name: opus-clips-performance
-description: Use when user wants engagement metrics for clips scheduled via OpusClip — "how did my clips do", "opus clip performance", "clip engagement report", "which clips landed", "per-clip stats", "opus-clips report". Walks post-manifests under `~/dev/claude-social-media-skills/youtube-analytics/data/opus_clips/` and joins each scheduled post against per-platform native analytics. YouTube join is wired (via `_shared/content-attribution`); FB/IG/TikTok/LinkedIn are read by in-browser native-analytics scrape (claude-in-chrome), matched by the `[opus:]` tag — folded in from the retired `clip-results` skill (2026-05-30).
+description: Use when user wants engagement metrics for clips scheduled via OpusClip — "how did my clips do", "opus clip performance", "clip engagement report", "which clips landed", "per-clip stats", "opus-clips report". Thin renderer over the shared `_shared/content-attribution` JOIN engine — calls `content-attribution sources` / `join --source-id <video-id>` to get the per-source record, then renders a per-clip rollup from its `derivatives[]` (each derivative is a clip; `.platforms` holds per-platform engagement). The engine does the YouTube join; FB/IG/TikTok/LinkedIn come back `pending` and are filled in by an in-browser native-analytics scrape overlay (claude-in-chrome), matched by the `[opus:]` tag — folded in from the retired `clip-results` skill (2026-05-30).
 user_invocable: true
 ---
 
 # opus-clips-performance
 
-Per-clip engagement report for OpusClip-scheduled posts. Reads the closed-loop **post-manifests** written by `/opus-clips` (see [`_shared/post-manifest/`](../_shared/post-manifest/README.md)) and joins each `scheduled_posts[]` entry against the matching platform's native analytics, emitting:
+Per-clip engagement report for OpusClip-scheduled posts. A **thin renderer** over the shared [`_shared/content-attribution/`](../_shared/content-attribution/README.md) JOIN engine: it asks the engine for the unified per-source record (`content-attribution join --source-id <video-id>`), whose `derivatives[]` array is exactly the per-clip rollup this report renders (each derivative = one clip; `derivative.platforms` holds the per-platform engagement). This skill emits:
 
-1. A markdown `report-<date>.md` next to the manifest — one section per clip with score, duration, scheduled fan-out, and fetched engagement.
-2. An additive update to the manifest: each `scheduled_posts[]` entry gains an `engagement` block (or `engagement: null` + `pending_task` pointer for platforms not yet wired).
+1. A markdown `report-<date>.md` next to the manifest — one section per clip with score, duration, scheduled fan-out, and engagement, rendered from the engine's `derivatives[]`.
+2. An additive update to the manifest: each `scheduled_posts[]` entry gains an `engagement` block (or `engagement: null` + `pending_task` pointer for platforms the engine returns as `pending`), folding in any browser-scraped engagement this run captured.
 
-Why this exists: `/opus-clips` writes a publication ledger but no engagement data ("What's NOT in the manifest" — see post-manifest README). This skill is the fetcher that fills the gap. `/flywheel` Phase 4.55 will read these reports to credit clip output toward Priority 1 throughput.
+Why this exists: `/opus-clips` writes a publication ledger but no engagement data ("What's NOT in the manifest" — see post-manifest README). The shared JOIN engine does the correlation (`[opus:<clip_id>]` tag / `scheduleId` / ±2h time-window — **there is one correlation implementation now, in the engine, not here**). This skill's remaining job is (a) drive the engine per source, (b) overlay browser-scraped engagement for the platforms the engine can't reach yet, and (c) render + persist. `/flywheel` Phase 4.56 reads the same engine for the cross-project rollup.
 
 ## Usage
 
@@ -23,28 +23,68 @@ Why this exists: `/opus-clips` writes a publication ledger but no engagement dat
 
 ## 🟢 Happy Path
 
-For one fully-fanned-out OpusClip project (23 clips × 6 channels = 138 scheduled posts, the live `P3051823ab0w` shape) once 24 h have elapsed. ~30 sec wall-clock today (only the YouTube join hits disk; other platforms short-circuit).
+For one fully-fanned-out OpusClip project (23 clips × 6 channels = 138 scheduled posts, the live `P3051823ab0w` shape) once 24 h have elapsed. ~30 sec wall-clock today (only the engine's YouTube join hits disk; other platforms short-circuit to `pending` unless the interactive browser-scrape overlay runs).
 
-**Phase 1 — Discover manifests.** Walk `~/dev/claude-social-media-skills/youtube-analytics/data/*/` for JSON files matching the post-manifest schema. The signature shape is `clips[].scheduled_posts[].api_response.data.scheduleId` — use `pm_count_scheduled` as a cheap probe (returns 0 for non-manifests).
+**Phase 0 — Build the JOIN engine if missing.** The engine is a gitignored Go binary (built per-machine). Build it on demand; degrade gracefully if `go` is absent (see Phase 0 below).
 
-**Phase 2 — YouTube join (the only platform wired today).** For each `scheduled_posts[]` whose `label` contains `YOUTUBE`, correlate against `~/dev/claude-social-media-skills/youtube-analytics/data/videos.json`:
-1. **Primary:** scan video descriptions for `[opus:<clip_id>]`. Exact match wins.
-2. **Fallback:** time-window match — YouTube `published_at` within ±2 h of manifest's `scheduled_at_utc`. If multiple candidates, prefer the one whose duration is closest to the clip's `duration_sec`.
-3. Emit `engagement: { source: "youtube", join_method: "tag" | "time", views, likes, comments, subscribers_gained, estimated_revenue, video_id, fetched_at }`.
+**Phase 1 — Discover sources.** Ask the engine: `content-attribution sources` enumerates every source video with ≥1 derivative across all manifests (`{id, title, manifest_path, n_derivatives, n_scheduled_posts}`). If `<project_id>` was passed, resolve it to a single manifest and read its `source_video.id` to pin one source.
 
-**Phase 3 — Other platforms (gated).** For `FACEBOOK_PAGE`, `INSTAGRAM_BUSINESS`, `LINKEDIN` (page + personal), `TIKTOK_BUSINESS`: do **not** fetch. Emit `engagement: null, pending_task: "#370"` (FB/IG), `"#371"` (LinkedIn), `"#373"` (TikTok). See **Out of scope** below for the dependency map.
+**Phase 2 — JOIN (engine does the correlation).** For each source video ID, call `content-attribution join --source-id <video-id>`. The engine returns the unified record (`source`, `derivatives[]`, `source_engagement`, `derived_engagement`, `amplification_ratio`). Each `derivative` is a clip; `derivative.platforms.youtube_shorts.engagement` is the live YouTube join (the engine did the `[opus:]` tag → ±2h time-window correlation — **this skill no longer reimplements it**). The other platform keys come back `{engagement: null, pending: true, pending_task: "#NNN"}`.
 
-**Phase 4 — Render report.** One markdown section per clip, sorted by score desc. Include: clip_id, title, score, duration, scheduled-posts table (label, scheduled_at_utc, engagement summary or `pending #NNN`). Write to `report-<YYYY-MM-DD>.md` next to the manifest.
+**Phase 3 — Overlay browser-scraped engagement (interactive).** For the platforms the engine returns as `pending` (`facebook_page`, `instagram_business`, `linkedin_page`, `linkedin_personal`, `tiktok_business`), read each platform's **native analytics in the user's logged-in browser** via `claude-in-chrome`, match each post to a clip by its `[opus:<clip_id>]` tag, and overlay the result onto that clip's platform record (replacing the engine's `pending` placeholder for this run + the persisted manifest). The engine has no browser path — this overlay is the only home for these metrics today.
 
-**Phase 5 — Persist back to manifest.** Atomic write (tmp + mv, same pattern as `_pm_atomic_write`): add the `engagement` (or `engagement: null` + `pending_task`) field to each `scheduled_posts[]` entry. Additive only — never remove or rename existing fields (schema versioning rule from post-manifest README).
+**Phase 4 — Render report.** One markdown section per clip, sorted by `derivative.score` desc, rendered directly from the engine's `derivatives[]` (+ the Phase 3 overlay). Include: clip_id, title, score, duration, per-platform engagement (live, scraped, or `pending #NNN`). Lead with the engine's `derived_engagement` + `amplification_ratio` as the aggregate. Write to `report-<YYYY-MM-DD>.md` next to the manifest.
+
+**Phase 5 — Persist back to manifest.** Atomic write (tmp + mv, same pattern as `_pm_atomic_write`): add the `engagement` (or `engagement: null` + `pending_task`) field to each `scheduled_posts[]` entry, keyed by `scheduleId`. Additive only — never remove or rename existing fields (schema versioning rule from post-manifest README). The engine is read-only over snapshots; this skill owns the manifest write-back.
 
 ## Phases
 
-### Phase 1 — Discover manifests
+### Phase 0 — Build the JOIN engine if missing
+
+The correlation lives entirely in the shared engine `_shared/content-attribution/`, a gitignored Go binary (built per-machine like `voice-corpus`). Build it on demand — **same guard pattern as `/flywheel` Phase 4.56**:
+
+```bash
+CA_DIR=~/dev/claude-social-media-skills/_shared/content-attribution
+CA_BIN="$CA_DIR/content-attribution"
+# Build the Go binary if it's not on disk (gitignored — built per-machine).
+if [ ! -x "$CA_BIN" ] && [ -f "$CA_DIR/main.go" ]; then
+  ( cd "$CA_DIR" && go build -o content-attribution . ) 2>/dev/null
+fi
+if [ ! -x "$CA_BIN" ]; then
+  CA_AVAILABLE=0
+  CA_SKIP_REASON="_shared/content-attribution/ binary missing and build failed (need Go) — task #381/#383"
+else
+  CA_AVAILABLE=1
+fi
+```
+
+`content-attribution` is a **Go binary** — it runs identically under any shell, so call it directly (no `bash -c`, no sourcing). **Graceful degradation:** if `CA_AVAILABLE=0`, fall back to the legacy in-skill discovery (`pm_count_scheduled` walk below) for a publication-count-only report and tell the user the engine is missing so YouTube engagement and `amplification_ratio` are absent this run. Don't abort.
+
+### Phase 1 — Discover sources
+
+Ask the engine which sources have derivatives:
+
+```bash
+# {id, title, url, manifest_path, n_derivatives, n_scheduled_posts} per source video
+SOURCES=$("$CA_BIN" sources)   # JSON array
+```
+
+If `<project_id>` was passed, resolve it to a single manifest under `opus_clips/` and read `source_video.id` to pin one source ID (the engine's `--source-id`):
+
+```bash
+SRC_ID=$(jq -r '.source_video.id' "$MANIFEST")
+```
+
+For the `--since` filter, drop manifests whose newest `scheduled_at_utc` is older than the cutoff:
+
+```bash
+NEWEST=$(jq -r '[.clips[].scheduled_posts[].scheduled_at_utc] | max' "$MANIFEST")
+```
+
+**Degraded fallback (engine missing).** Discover manifests in-skill, publication-count only:
 
 ```bash
 source ~/dev/claude-social-media-skills/_shared/post-manifest/post_manifest.sh
-
 DATA_ROOT=~/dev/claude-social-media-skills/youtube-analytics/data
 MANIFESTS=()
 for f in "$DATA_ROOT"/*/*.json; do
@@ -53,61 +93,54 @@ for f in "$DATA_ROOT"/*/*.json; do
 done
 ```
 
-If `<project_id>` was passed, resolve it to a single manifest path under `opus_clips/` and skip the walk.
-
-For the `--since` filter, drop manifests whose newest `scheduled_at_utc` is older than the cutoff:
+### Phase 2 — JOIN (the engine does the correlation)
 
 ```bash
-NEWEST=$(jq -r '[.clips[].scheduled_posts[].scheduled_at_utc] | max' "$f")
+# One unified record per source video. derivatives[] IS the per-clip rollup.
+REC=$("$CA_BIN" join --source-id "$SRC_ID")
 ```
 
-### Phase 2 — YouTube join
+The record's shape (see [`_shared/content-attribution/README.md`](../_shared/content-attribution/README.md#output-shape)):
 
-```bash
-VIDEOS=~/dev/claude-social-media-skills/youtube-analytics/data/videos.json
-
-# Build a clip_id -> youtube_video lookup by scanning descriptions for [opus:<clip_id>]
-yt_by_tag() {
-  local clip_id="$1"
-  jq --arg cid "$clip_id" '
-    (if type=="array" then . else (.videos // .items) end)
-    | map(select(.description | test("\\[opus:" + $cid + "\\]"))) | .[0] // empty
-  ' "$VIDEOS"
-}
-
-# Fallback: time-window match within ±2h of scheduled_at_utc, tie-break on closest duration
-yt_by_time() {
-  local scheduled_at="$1" target_dur="$2"
-  jq --arg at "$scheduled_at" --argjson dur "$target_dur" '
-    (if type=="array" then . else (.videos // .items) end)
-    | map(select(.video_type == "short"))
-    | map(. + {
-        delta_sec: ((.published_at | fromdateiso8601) - ($at | fromdateiso8601) | fabs),
-        dur_delta: ((.duration_seconds // 0) - $dur | fabs)
-      })
-    | map(select(.delta_sec <= 7200))
-    | sort_by(.dur_delta, .delta_sec) | .[0] // empty
-  ' "$VIDEOS"
+```jsonc
+{
+  "source": { "id": "uEposKmbFvY", "type": "long_form", "title": "…", "url": "…" },
+  "derivatives": [
+    {
+      "type": "opus_clip", "clip_id": "La4Wghg6IX", "title": "…", "score": 99, "duration_seconds": 28,
+      "platforms": {
+        "youtube_shorts":     { "engagement": { "video_id": "9nOxvAhZyWo", "views": 539, "likes": 2, "comments": 0, "subs_gained": 0, "estimated_revenue": 0.023, "join_method": "tag" } },
+        "facebook_page":      { "engagement": null, "pending": true, "pending_task": "#371" },
+        "instagram_business": { "engagement": null, "pending": true, "pending_task": "#371" },
+        "linkedin_page":      { "engagement": null, "pending": true, "pending_task": "#371" },
+        "linkedin_personal":  { "engagement": null, "pending": true, "pending_task": "#370" },
+        "tiktok_business":    { "engagement": null, "pending": true, "pending_task": "#373" }
+      },
+      "derivative_engagement_total": { "reach": 539, "reactions": 2, "comments": 0 }
+    }
+    // … one derivative per clip
+  ],
+  "source_engagement": { "views": …, "likes": …, "comments": …, "subs_gained": …, "estimated_revenue": … },
+  "derived_engagement": { "reach": …, "reactions": …, "comments": …, "subs_gained": …, "estimated_revenue": … },
+  "amplification_ratio": 42.9
 }
 ```
 
-For each `(clip × YOUTUBE post)`, try tag first, then time. Extract `{view_count, like_count, comment_count, subscribers_gained, estimated_revenue, id}` into an `engagement` block. If neither method matches, emit `engagement: null, pending_reason: "no_youtube_match"`.
+**Read it, don't recompute it.** The engine already did the `[opus:<clip_id>]` tag match (and the ±2h time-window fallback for re-titled Shorts) — there is now ONE correlation implementation, in the engine. Each clip is `REC.derivatives[]`; per-platform engagement is `derivative.platforms.<key>.engagement` (non-null = matched; check `.engagement != null` first, then read `.engagement.*`). `score`/`duration_seconds`/`title`/`clip_id` are on the derivative. Pull the YouTube number with e.g. `jq '.derivatives[] | {clip_id, yt: .platforms.youtube_shorts.engagement}'`.
 
-**Why the tag-first / time-fallback split:** OpusClip's `[opus:<clip_id>]` footer is grep-able from any platform's native search — when present it's a clean exact join. But at manifest-write time we don't yet have the YouTube video ID (Buffer/OpusClip schedule first, YouTube assigns the ID on publish), so the manifest can't carry it. The time-window fallback exists for the case where the user manually re-titled the YouTube short and stripped the description footer in the studio editor.
+> **Pretty-print shortcut.** `content-attribution report --source-id <id>` renders a default markdown view of the same record (add `--format json` for the raw record). Phase 4 below produces the per-clip-table UX this skill's users expect; `report` is the quick ad-hoc path.
 
-### Phase 3 — Other platforms (in-browser native scrape)
+### Phase 3 — Overlay browser-scraped engagement (interactive)
 
-These platforms have **no analytics API** (the old #370/#371/#373 stubs assumed Meta Graph / TikTok
-Creator API + OAuth that never landed). Instead, read each platform's **native analytics in the user's
-logged-in browser** via `claude-in-chrome` — the proven method (folded in from the retired `clip-results`
-skill; first validated on `P3051823ab0w`, 2026-05-30, total ~31.5K reach across 6 platforms). **Interactive
-only** — needs an open, logged-in session; the daily launchd reminder prompts the user to run it, it can't
-go headless.
+The engine returns the non-YouTube platforms as `{engagement: null, pending: true, pending_task: "#371"}` (FB/IG/LinkedIn-page, via Buffer `scheduleId` — the underlying Buffer snapshot doesn't yet carry per-post records), `"#370"` (LinkedIn-personal, gated on the linkedin-stats per-post snapshot), and `"#373"` (TikTok). **These task IDs are emitted by the engine itself** (`_shared/content-attribution/main.go`) — don't invent your own. This phase **overlays real numbers onto those `pending` records** by reading each platform's native analytics — the only path that exists today, since none of these platforms expose the per-post engagement the engine reads from a cached snapshot.
+
+Read each platform's **native analytics in the user's logged-in browser** via `claude-in-chrome` — the proven method (folded in from the retired `clip-results` skill; first validated on `P3051823ab0w`, 2026-05-30, total ~31.5K reach across 6 platforms). **Interactive only** — needs an open, logged-in session; the daily launchd reminder prompts the user to run it, it can't go headless. If the session is non-interactive (e.g. `/flywheel`'s unattended run), skip this phase: the report shows those platforms as `pending` and a later interactive run fills them in.
 
 Load chrome tools first: `ToolSearch select:mcp__claude-in-chrome__tabs_context_mcp,mcp__claude-in-chrome__navigate,mcp__claude-in-chrome__get_page_text,mcp__claude-in-chrome__browser_batch,mcp__claude-in-chrome__computer`.
 **Use `get_page_text`, not screenshots** — it returns full captions (with the `[opus:CLIPID]` tag for exact
-matching) plus the metric columns. Match each post to a clip by its `[opus:]` tag; write the result into
-that `scheduled_posts[].engagement` block (the post-manifest contract `content-attribution` + `/flywheel` read).
+matching) plus the metric columns. Match each post to a clip by its `[opus:]` tag (the SAME tag key the engine
+joins on), overlay the result onto that clip's `derivative.platforms.<key>.engagement` for the report, and
+write it into the matching `scheduled_posts[].engagement` block in Phase 5 (the post-manifest contract that the engine + `/flywheel` read).
 
 | Label prefix | Where (native analytics) | Notes |
 |---|---|---|
@@ -116,41 +149,46 @@ that `scheduled_posts[].engagement` block (the post-manifest contract `content-a
 | `LINKEDIN` (org) | `linkedin.com/company/<ORG_ID>/admin/analytics/updates/` → Content engagement table | Impressions per post; "Show: 20" + paginate. Usually negligible (org page ~tiny). |
 | `LINKEDIN` (personal) | Me → Posts & Activity → `linkedin.com/in/<vanity>/recent-activity/all/` | "N impressions" per post; scroll-load. The personal profile reaches far more than the org page. |
 
-If a platform nav is permission-denied, ask the user before retrying; don't loop. Emit `engagement: null,
-pending_reason: "<platform> not captured"` for any clip a sweep couldn't reach, so a later run can fill it.
+If a platform nav is permission-denied, ask the user before retrying; don't loop. For any clip a sweep
+couldn't reach, leave the engine's `{engagement: null, pending: true, pending_task: "#NNN"}` placeholder
+in place (don't overwrite it) so the report still shows `pending` and a later run can fill it.
 
 ### Phase 4 — Render report
 
+Render directly from the engine's record (`REC` from Phase 2) plus any Phase 3 overlay. Sort clips by `derivative.score` desc; per platform, render `engagement.*` when `engagement != null`, else `pending (<pending_task>)`.
+
 ```
 # OpusClip performance — <project_id>
-Source: <source_video.title> (<source_video.id>)
-Scheduled: <count> posts across <unique_label_count> channels
-Window: <earliest scheduled_at_utc> → <latest>
+Source: <REC.source.title> (<REC.source.id>)
+Clips: <REC.derivatives | length> · Derived reach: <REC.derived_engagement.reach> · Amplification: <REC.amplification_ratio>×
 Generated: <now>
 
 ## Top clips by score
 
 ### [99] La4Wghg6IX — "Your next 50% productivity gain..." (28s)
-| Label                              | Scheduled (UTC)       | Engagement                                  |
-|------------------------------------|-----------------------|---------------------------------------------|
-| YOUTUBE Enterprise Vibe Code       | 2026-05-19T16:00:00Z  | 1,243 views · 87 likes · 12 cm · +4 subs    |
-| FACEBOOK_PAGE Enterprise Vibe Code | 2026-05-19T16:00:00Z  | pending (#370)                              |
-| INSTAGRAM_BUSINESS Enterprise...   | 2026-05-19T16:00:00Z  | pending (#370)                              |
-| LINKEDIN Enterprise Vibe Code      | 2026-05-19T16:00:00Z  | pending (#371)                              |
-| LINKEDIN Mike Lady                 | 2026-05-19T16:00:00Z  | pending (#371) [hasConflict=true]           |
-| TIKTOK_BUSINESS mikelady           | 2026-05-19T16:00:00Z  | pending (#373)                              |
+| Platform            | Engagement                                  |
+|---------------------|---------------------------------------------|
+| youtube_shorts      | 539 views · 2 likes · 0 cm · +0 subs        |
+| facebook_page       | pending (#371)                              |
+| instagram_business  | pending (#371)                              |
+| linkedin_page       | pending (#371)                              |
+| linkedin_personal   | pending (#370)                              |
+| tiktok_business     | pending (#373)                              |
 
-(repeat per clip, descending score)
+(repeat per clip, descending score; replace `pending` rows with scraped numbers when Phase 3 ran)
 
-## Aggregate (YouTube only — other platforms pending)
-Total views: N · Total likes: N · Total comments: N · Subs gained: N · Est. revenue: $N.NN
+## Aggregate (from the engine's derived_engagement)
+Derived reach: <reach> · Reactions: <reactions> · Comments: <comments> · Subs gained: <subs_gained> · Est. revenue: $<estimated_revenue>
+Source: <source_engagement.views> views · Amplification ratio: <amplification_ratio>×
 ```
 
 Write to `~/dev/claude-social-media-skills/youtube-analytics/data/opus_clips/report-<YYYY-MM-DD>-<project_id>.md`.
 
 ### Phase 5 — Persist back to manifest
 
-Use the `_pm_atomic_write` pattern from `post_manifest.sh` (tmp + mv). Update only the `engagement` and optional `pending_task` / `pending_reason` keys on each `scheduled_posts[]` entry. Do not touch any other field.
+Build the patch from the engine's per-platform records (`REC.derivatives[].platforms.<key>`) plus the Phase 3 browser overlay, keyed by `scheduleId`. The engine is read-only over snapshots — this skill owns the manifest write-back. Use the `_pm_atomic_write` pattern from `post_manifest.sh` (tmp + mv). Update only the `engagement` and optional `pending_task` keys on each `scheduled_posts[]` entry. Do not touch any other field.
+
+Map each `scheduled_posts[]` entry to its engine/overlay record: resolve the post's platform via its `label` (same `label → platform` mapping the engine uses: `YOUTUBE→youtube_shorts`, `FACEBOOK_PAGE→facebook_page`, `INSTAGRAM_BUSINESS→instagram_business`, `LINKEDIN Mike Lady→linkedin_personal`, other `LINKEDIN→linkedin_page`, `TIKTOK_BUSINESS→tiktok_business`), then copy that clip's `platforms.<key>` (`.engagement` or `.pending_task`) into the patch keyed by the post's `scheduleId`.
 
 ```bash
 jq --argjson updates "$ENGAGEMENT_PATCH_JSON" '
@@ -164,31 +202,38 @@ jq --argjson updates "$ENGAGEMENT_PATCH_JSON" '
 ' "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
 ```
 
-Key the patch by `scheduleId` (globally unique within a manifest).
+`scheduleId` is globally unique within a manifest; the engine doesn't surface it per-derivative (see "engine mismatches" below), so derive it from the manifest's own `scheduled_posts[].api_response.data.scheduleId` (already open in this phase).
 
 ## Out of scope
 
-- **Fetching FB / IG / LinkedIn / TikTok engagement.** Gated on tasks **#370** (Meta Graph API for FB Pages + IG Business), **#371** (LinkedIn per-post scrape — see `linkedin-stats/SPEC-per-post-scrape.md`), **#373** (TikTok Creator API). When those land, this skill's Phase 3 expands; the manifest already carries the per-platform `scheduleId` / `postId` they'll need.
+- **The correlation logic.** Owned by `_shared/content-attribution/` (the `[opus:<clip_id>]` tag match, the ±2h time-window fallback, `scheduleId` JOIN). This skill calls the engine and never reimplements it — there is one correlation implementation. If a JOIN key is wrong, fix it in the engine, not here.
+- **Snapshot-backed FB / IG / LinkedIn / TikTok engagement.** When the underlying per-post snapshots land, the engine stops returning those platforms as `pending` and the Phase 3 browser overlay becomes redundant. The engine's pending pointers today: **#371** (FB/IG/LinkedIn-page — Buffer per-post snapshot keyed on `scheduleId`), **#370** (LinkedIn-personal per-post snapshot), **#373** (TikTok). These IDs come from the engine; this skill mirrors them.
 - **Mutating the source content.** This is read-side only; no re-renders or re-scheduling. For that, see `/opus-clips`.
-- **Aggregating across projects.** One manifest = one report. Cross-project rollups belong in `/flywheel`.
-- **Recomputing OpusClip's `score`.** That field is from OpusClip's viral-score model at curation time and is preserved verbatim.
-- **Backfilling missing `[opus:<clip_id>]` footers.** If a user edited a post and stripped the tag, this skill falls back to time-matching; it does not try to re-write the post.
+- **Aggregating across projects.** One source video = one report. Cross-project rollups belong in `/flywheel` (which reads the same engine).
+- **Recomputing OpusClip's `score`.** That field is from OpusClip's viral-score model at curation time and is preserved verbatim (the engine passes it through on each derivative).
+- **Backfilling missing `[opus:<clip_id>]` footers.** If a user edited a post and stripped the tag, the engine falls back to time-matching; neither it nor this skill re-writes the post.
 
-## Schema gaps noticed in the post-manifest
+## Relationship to the JOIN engine (could this skill be deprecated?)
 
-While scaffolding this consumer, three gaps surfaced that the manifest schema could close in a future minor revision (additive, non-breaking):
+After this refactor, opus-clips-performance is **a thin renderer over `_shared/content-attribution/`** for everything except one thing: the **interactive browser-scrape overlay** in Phase 3. The engine owns discovery (`sources`), the per-clip skeleton + the YouTube join (`join`), the aggregate (`derived_engagement` + `amplification_ratio`), and even a default markdown view (`report`). What this skill still uniquely provides:
 
-1. **No `source_video.duration_seconds`.** The YouTube time-fallback wants to bias toward clips whose duration is close to the manifest's `duration_sec`; having the source duration would let us reject "the long-form itself" as a false-positive match.
-2. **No `clips[].published_url` placeholder.** Once a platform publishes, the eventual platform URL would be the cleanest join key. Today we re-derive it from the `[opus:<clip_id>]` tag scan. An additive `engagement.published_url` field (which this skill would populate) closes the loop without a schema bump.
-3. **No `schema_version`.** The README acknowledges this. As soon as multiple consumers (`/flywheel` + this skill) read the manifest, divergent expectations become a real risk. Worth adding `"schema_version": "1"` at the top level even before any breaking change, just to give consumers a check-and-warn anchor.
+1. **Phase 3 browser overlay** — fills the FB/IG/LinkedIn/TikTok engagement the engine returns as `pending` (no snapshot exists, no API). This has no home in the engine (which is pure transport over cached snapshots, never a browser driver).
+2. **Manifest write-back** (Phase 5) — the engine is read-only over snapshots; this skill owns persisting `engagement` back into `scheduled_posts[]`.
+3. **The per-clip-table report UX** users expect (vs the engine's source-centric `report` view).
 
-None of these block the current scaffold — they're future-work notes.
+**For the integrator:** once the per-post snapshots land (engine pending tasks #370/#371/#373) so the engine joins all platforms itself, items (1) collapses and this skill becomes a near-pure rendering shim over `content-attribution report` + a manifest write-back — at which point it's a candidate to deprecate/merge into `/flywheel`'s per-source rendering (the open question in CLOSED-LOOP-UNIFICATION-PLAN.md §"Open questions" #3). Until then, keep it: the interactive browser overlay is real, load-bearing work the engine can't do.
+
+## Schema gaps / engine mismatches noticed
+
+- **Engine emits no per-`scheduled_post` `scheduleId` on its derivative platform records.** This skill's Phase 5 write-back keys the manifest patch by `scheduleId`; the engine's `join` output identifies a platform record by its `<key>` (e.g. `linkedin_page`) and the live record's `urn`/`video_id`/`post_id`, not the originating `scheduleId`. For YouTube the `video_id` is enough; for the browser-overlay platforms this skill re-derives the `scheduleId` from the manifest itself (it already has the manifest open) rather than from the engine output. Not a blocker, but a future engine field `derivative.platforms.<key>.schedule_id` would let the write-back key purely off engine output.
+- **`source_video.duration_seconds` absent in the manifest.** The engine's ±2h time-fallback would bias better toward clips near the source duration if it had it; additive, non-breaking, lives in the manifest schema (owned by `/opus-clips`), not here.
+- **No `schema_version`** on manifest or engine output (the engine README acknowledges this for its own output). Both `/flywheel` and this skill now read the engine; an explicit `schema_version` would give consumers a check-and-warn anchor.
 
 ## Related skills
 
-- **`/opus-clips`** — upstream; writes the manifests this skill reads.
-- **`_shared/post-manifest/`** — the shape contract; helper functions (`pm_count_scheduled`, `pm_schedule_ids`, `pm_find_clip`) are sourced here.
-- **`/flywheel`** — downstream; Phase 4.55 will read this skill's reports to credit clip output toward Priority 1 (long-form throughput, since each clip is a derivative of a long-form essay).
-- **`/yt-analytics`** — owns `~/dev/claude-social-media-skills/youtube-analytics/data/videos.json`; refresh it (`go run . fetch-analytics --all`) before running this skill if YouTube data is stale.
-- **`/linkedin-stats`** — when task **#371** lands, its `SPEC-per-post-scrape.md` becomes Phase 3's LinkedIn fetcher.
-- **`/buffer-stats`** — does NOT cover these posts (they bypass Buffer); that's the entire reason post-manifests exist.
+- **`_shared/content-attribution/`** — the JOIN engine this skill now wraps; owns all correlation. See its [README](../_shared/content-attribution/README.md).
+- **`/opus-clips`** — upstream; writes the manifests the engine reads.
+- **`_shared/post-manifest/`** — the manifest shape contract; legacy helper functions (`pm_count_scheduled`, `pm_schedule_ids`, `pm_find_clip`) used in the degraded fallback + Phase 5 write-back.
+- **`/flywheel`** — sibling consumer; Phase 4.56 reads the SAME engine (`content-attribution join`) to credit clip output toward Priority 1. Same build-if-missing guard.
+- **`/yt-analytics`** — owns `~/dev/claude-social-media-skills/youtube-analytics/data/videos.json` (the engine's YouTube source); refresh it (`go run . fetch-analytics --all`) before running if YouTube data is stale.
+- **`/buffer-stats`** — owns the Buffer snapshot the engine reads for FB/IG/LinkedIn-page once #371 lands; does NOT directly cover these posts (they bypass Buffer's normal queue).
