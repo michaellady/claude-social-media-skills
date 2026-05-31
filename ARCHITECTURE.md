@@ -62,8 +62,8 @@ Every compose-and-publish skill has these required phases:
 | [`buffer-stats`](buffer-stats/SKILL.md) | Buffer Insights (cross-channel, all 6 channels) + Buffer Analyze (per-post, 3 channels) + Buffer GraphQL (tagIds via MCP `list_posts`) | Per-(channel, format) engagement + channel ROI bucketing + auto skill recs | Live |
 | [`linkedin-stats`](linkedin-stats/SKILL.md) | linkedin.com/dashboard/ + /analytics/creator/* | Followers + impressions + per-post engagement deltas (Phase 3b lands per-post for LinkedIn personal) | Live |
 | [`yt-analytics`](https://github.com/oven-sh/youtube_analytics) (external Go binary at `~/dev/claude-social-media-skills/youtube-analytics/`) | YouTube Data API + Analytics API | Per-video metrics; reads OpusClip in-text `[opus:<clip_id>]` tag in Short descriptions | Live |
-| [`threads-stats`](threads-stats/SKILL.md) | Meta Graph API (Threads Insights) | Per-post engagement for Threads profiles | **Scaffold-only** (OAuth gated; pending #373-class task) |
-| [`tiktok-stats`](tiktok-stats/SKILL.md) | TikTok Business API | Per-post engagement for TikTok business | **Scaffold-only** (OAuth gated) |
+| [`threads-stats`](threads-stats/SKILL.md) | `threads.com/insights` + `/insights/posts` (claude-in-chrome scrape — NO OAuth) | Per-post engagement (views/likes/replies) for the live `@mikelady` Threads account | Live (interactive only; writes `cache/snapshot-*.json` → engine `#375` resolves). Recipe verified on a live session 2026-05-30 |
+| [`tiktok-stats`](tiktok-stats/SKILL.md) | `tiktok.com/tiktokstudio/content` (TikTok Studio, claude-in-chrome scrape — NO OAuth) | Per-post engagement (views/likes/comments) | Live (interactive only; writes `cache/snapshot-*.json` → engine `#373` resolves). Recipe lifted from the proven opus-clips-performance Phase 3 scrape |
 | [`flywheel`](flywheel/SKILL.md) | Aggregates everything above + beehiiv via `_shared/content-attribution/` JOIN engine | Weekly priorities-keyed report w/ per-source-content ROI (Phase 4.55 — in dev) | Partial — JOIN layer pending #381 |
 
 ### Hygiene + adapt (close-the-loop side)
@@ -97,7 +97,7 @@ The repo touches three distinct Buffer surfaces plus a growing set of platform-n
 | **Buffer Insights** | `publish.buffer.com/insights` | Aggregate per channel (30d window) | All 6 channels including Threads + LinkedIn personal | Only source that surfaces Threads + LinkedIn-personal engagement; no per-post |
 | **Buffer Analyze** | `analyze.buffer.com` | Per-post (impressions, reach) | IG business + FB page + LinkedIn page only | Does NOT cover Threads, LinkedIn personal, or any non-Buffer surface |
 | **Buffer GraphQL** (via MCP `list_posts`) | Buffer Public API | Per-post metadata only (text, channelId, tagIds) | All Buffer-routed posts | No engagement counts — the tagIds JOIN (#371) bridges per-post metadata to per-post engagement |
-| **Platform-native APIs / scrapes** | per-platform | Per-post engagement | YouTube (yt-analytics), LinkedIn personal (linkedin-stats), Threads (threads-stats, scaffold), TikTok (tiktok-stats, scaffold) | Required for everything Buffer Analyze can't see |
+| **Platform-native APIs / scrapes** | per-platform | Per-post engagement | YouTube (yt-analytics), LinkedIn personal (linkedin-stats), Threads (threads-stats — claude-in-chrome scrape), TikTok (tiktok-stats — claude-in-chrome scrape) | Required for everything Buffer Analyze can't see. None use OAuth — all browser-scrape the logged-in session |
 
 A canonical snapshot shape lives at `buffer-stats/cache/snapshot-<date>.json`. Each `channels[i].engagement` block declares `available: true/false` with a `reason` — consumers must check this rather than assume coverage.
 

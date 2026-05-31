@@ -439,8 +439,61 @@ func findByScheduleID(node any, target string) map[string]any {
 	return nil
 }
 
-func tiktokMatch() platformRecord  { return pendingRec(pendingTiktok) }
-func threadsMatch() platformRecord { return pendingRec(pendingThreads) }
+// snapshotPostsMatch reads the newest snapshot in cacheDir and matches
+// [opus:<clipID>] against a TOP-LEVEL recent_posts[] array (by source_tag.id or
+// a raw [opus:] substring in the caption), returning that post's whole
+// engagement object + join_method:"tag". tiktok-stats and threads-stats both
+// write this same shape (top-level recent_posts[], source_tag{scheme,id},
+// caption, nested engagement{}), so they share one matcher. Pending when the
+// snapshot/recent_posts is absent — symmetric with liPersonalMatch.
+func snapshotPostsMatch(cacheDir, clipID, pendingTask string) platformRecord {
+	snap := newestSnapshot(cacheDir)
+	if snap == "" {
+		return pendingRec(pendingTask)
+	}
+	var doc map[string]any
+	if readJSONFile(snap, &doc) != nil {
+		return pendingRec(pendingTask)
+	}
+	posts, _ := doc["recent_posts"].([]any)
+	if len(posts) == 0 {
+		return pendingRec(pendingTask)
+	}
+	tag := "[opus:" + clipID + "]"
+	for _, p := range posts {
+		pm, ok := p.(map[string]any)
+		if !ok {
+			continue
+		}
+		matched := strings.Contains(str(pm, "caption"), tag)
+		if st, ok := pm["source_tag"].(map[string]any); ok {
+			if str(st, "scheme") == "opus" && str(st, "id") == clipID {
+				matched = true
+			}
+		}
+		if matched {
+			eng := map[string]any{}
+			if e, ok := pm["engagement"].(map[string]any); ok {
+				for k, v := range e {
+					eng[k] = v
+				}
+			}
+			eng["join_method"] = "tag"
+			if id := str(pm, "post_id"); id != "" {
+				eng["post_id"] = id
+			}
+			return platformRecord{Engagement: eng}
+		}
+	}
+	return noMatchRec()
+}
+
+func tiktokMatch(clipID string) platformRecord {
+	return snapshotPostsMatch(tiktokCacheDir(), clipID, pendingTiktok)
+}
+func threadsMatch(clipID string) platformRecord {
+	return snapshotPostsMatch(threadsCacheDir(), clipID, pendingThreads)
+}
 
 // platformLookup dispatches to the right matcher, then applies the
 // not-yet-aired override (future schedule + no_match → not_aired).
@@ -454,9 +507,9 @@ func platformLookup(platform, clipID, schedAt string, dur float64, scheduleID st
 	case "facebook_page", "instagram_business", "linkedin_page":
 		rec = bufferMatch(scheduleID)
 	case "tiktok_business":
-		rec = tiktokMatch()
+		rec = tiktokMatch(clipID)
 	case "threads":
-		rec = threadsMatch()
+		rec = threadsMatch(clipID)
 	default:
 		rec = noMatchRec()
 	}

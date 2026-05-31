@@ -1,30 +1,10 @@
 {
-  "comment": "Override any of these in config.local.json (gitignored). The skill reads config.local.json first if present, then falls back to this file.",
+  "comment": "Override any of these in config.local.json (gitignored). The skill reads config.local.json first if present, then falls back to this file. NO OAuth — tiktok-stats browser-scrapes TikTok Studio via claude-in-chrome (same interactive pattern as linkedin-stats).",
   "tiktok_handle": "mikelady",
   "tiktok_profile_url": "https://www.tiktok.com/@mikelady",
-  "api_base": "https://open.tiktokapis.com",
-  "video_list_endpoint": "/v2/video/list/",
-  "user_info_endpoint": "/v2/user/info/",
-  "oauth_scopes": [
-    "user.info.basic",
-    "user.info.stats",
-    "video.list"
-  ],
-  "video_fields": [
-    "id",
-    "create_time",
-    "video_description",
-    "title",
-    "duration",
-    "share_url",
-    "view_count",
-    "like_count",
-    "comment_count",
-    "share_count"
-  ],
-  "window_days": 14,
+  "tiktok_studio_content_url": "https://www.tiktok.com/tiktokstudio/content",
+  "tiktok_studio_home_url": "https://www.tiktok.com/tiktokstudio",
   "max_posts_per_scrape": 50,
   "delta_window_days": 7,
-  "tag_regex": "\\[(opus|lp|gh|bh):([A-Za-z0-9_-]+)\\]",
-  "access_token_env": "TIKTOK_ACCESS_TOKEN"
+  "tag_regex": "\\[(opus|lp|gh|bh):([A-Za-z0-9_-]+)\\]"
 }

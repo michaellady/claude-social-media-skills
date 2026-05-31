@@ -1,0 +1,11 @@
+{
+  "comment": "Override any of these in config.local.json (gitignored). The skill reads config.local.json first if present, then falls back to this file. NO OAuth — threads-stats browser-scrapes Threads Insights via claude-in-chrome (same interactive pattern as linkedin-stats). URLs + DOM VERIFIED against a live authenticated @mikelady session on 2026-05-30. Target the LIVE @mikelady account; @enterprisevibecode is DEAD/paused (audits/threads-evc-dead-channel.md, #588) — do NOT add it.",
+  "profile_handle": "mikelady",
+  "profile_url": "https://www.threads.com/@mikelady",
+  "insights_url": "https://www.threads.com/insights",
+  "posts_insights_url": "https://www.threads.com/insights/posts?days=30",
+  "max_posts_per_scrape": 50,
+  "delta_window_days": 7,
+  "stale_days": 7,
+  "tag_regex": "\\[(opus|lp|gh|bh):([A-Za-z0-9_-]+)\\]"
+}

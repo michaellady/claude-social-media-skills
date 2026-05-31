@@ -44,8 +44,8 @@ The JOIN engine reads from these (NEVER writes):
 | `~/dev/claude-social-media-skills/linkedin-stats/cache/snapshot-*.json` | LinkedIn newsletter + company + personal per-post (`profile.recent_posts[]` post-#370 Phase 3b) | live (per-post gated on #370 Phase 3b production run) |
 | `~/dev/claude-social-media-skills/youtube-analytics/data/opus_clips/*.json` | Post-manifests (publication ledger) | live |
 | `~/dev/claude-social-media-skills/youtube-analytics/data/<scheduler>/*.json` | Post-manifests from other schedulers (future) | future |
-| `~/dev/claude-social-media-skills/tiktok-stats/cache/snapshot-*.json` | TikTok per-post engagement | **pending #373** — handled gracefully if missing |
-| `~/dev/claude-social-media-skills/threads-stats/cache/snapshot-*.json` | Threads per-post engagement | **pending #375** — handled gracefully if missing |
+| `~/dev/claude-social-media-skills/tiktok-stats/cache/snapshot-*.json` | TikTok per-post engagement (top-level `recent_posts[]` + `source_tag`) | live — written by `tiktok-stats` (claude-in-chrome scrape); `tiktokMatch` resolves `#373`. Handled gracefully if missing |
+| `~/dev/claude-social-media-skills/threads-stats/cache/snapshot-*.json` | Threads per-post engagement (top-level `recent_posts[]` + `source_tag`) | live — written by `threads-stats` (claude-in-chrome scrape); `threadsMatch` resolves `#375`. Handled gracefully if missing |
 
 Always reads the **newest** snapshot per platform (`snapshot-*.json` sorted lexicographically — ISO-8601 dates sort correctly).
 

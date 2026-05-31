@@ -176,6 +176,14 @@ Scrape LinkedIn Creator analytics (`/dashboard/`, `/analytics/creator/content`, 
 /linkedin-stats --since 2026-04-19
 ```
 
+#### `/tiktok-stats` · `/threads-stats`
+Browser-scrape per-post engagement from **TikTok Studio** (`tiktok.com/tiktokstudio/content`) and **Threads Insights** (`threads.com/insights`) in your logged-in Chrome via claude-in-chrome — **no OAuth**, same interactive pattern as `/linkedin-stats`. Each writes `cache/snapshot-*.json` (top-level `recent_posts[]` tagged with `[opus:]`/`[scheme:id]`), which `_shared/content-attribution` reads to resolve the TikTok (`#373`) and Threads (`#375`) platforms in the amplification JOIN + dashboard. Interactive only (needs your logged-in session); skipped on unattended `/flywheel` runs.
+
+```
+/tiktok-stats
+/threads-stats
+```
+
 #### `/flywheel`
 Cross-platform weekly rollup keyed to your 5 growth priorities. Combines `buffer-stats` + `linkedin-stats` + YouTube + beehiiv into one report. Includes per-channel ROI scoring to surface deprioritization candidates. Writes a **frozen JSON snapshot** (`~/dev/flywheel-snapshots/<date>.json`, `schema_version:"1"`) the dashboard reads, and runs **Phase 5.5 (Compound)** — grading last week's cross-surface hypotheses and writing next week's into the [`insights/`](insights/) ledger.
 
@@ -237,7 +245,7 @@ Pure-transport (deterministic, no judgment) per [PRIMITIVE-TEST.md](PRIMITIVE-TE
    ```bash
    for skill in promote-newsletter tease-newsletter carousel-newsletter \
                 promote-github crosspost-newsletter long-form-pulse \
-                buffer-stats linkedin-stats flywheel \
+                buffer-stats linkedin-stats tiktok-stats threads-stats flywheel \
                 audit-buffer-queue tune-posting-schedule; do
      ln -s /path/to/claude-social-media-skills/$skill ~/.claude/skills/$skill
    done

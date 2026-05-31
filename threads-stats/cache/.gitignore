@@ -1,0 +1,4 @@
+# Snapshots stay local + private — never commit scraped engagement data.
+snapshot-*.json
+*.json
+!.gitignore
