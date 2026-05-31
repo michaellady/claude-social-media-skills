@@ -148,6 +148,13 @@ Doesn't go through Buffer (publishes directly to platform native editors); close
 /crosspost-newsletter latest
 ```
 
+#### `/long-form-pulse`
+Schedules a short, voice-matched Buffer **companion announcement** for an already-published LinkedIn pulse article so its engagement is closed-loop attributable — the pulse itself is published natively (off-Buffer) by `/crosspost-newsletter`, leaving that surface unattributed. Tags every post `format:long-form-pulse` and carries an in-text `[lp:<pulse_slug>]` tag. (One-time setup: create the `format:long-form-pulse` tag in Buffer's UI and add its Tag ID to `_shared/buffer-post-prep/tag-ids.local.json`.)
+
+```
+/long-form-pulse https://www.linkedin.com/pulse/my-article
+```
+
 ### 📊 Measure (closed-loop input)
 
 #### `/buffer-stats`
@@ -229,7 +236,7 @@ Pure-transport (deterministic, no judgment) per [PRIMITIVE-TEST.md](PRIMITIVE-TE
 6. **Symlink each skill directory into `~/.claude/skills/`:**
    ```bash
    for skill in promote-newsletter tease-newsletter carousel-newsletter \
-                promote-github crosspost-newsletter \
+                promote-github crosspost-newsletter long-form-pulse \
                 buffer-stats linkedin-stats flywheel \
                 audit-buffer-queue tune-posting-schedule; do
      ln -s /path/to/claude-social-media-skills/$skill ~/.claude/skills/$skill

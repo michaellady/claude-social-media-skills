@@ -84,7 +84,7 @@ These are the only valid `format:<name>` tag values as of 2026-04-27. The compos
 | `format:carousel` | carousel-newsletter | 10-slide illustrated swipe post |
 | `format:link-share` | promote-github | Single GitHub contribution as a post |
 | `format:batch-summary` | promote-github | Multiple contributions unified by a theme sentence |
-| `format:long-form-pulse` | (future-reserved) | Reserved for a future skill that schedules a Buffer companion post for a published LinkedIn pulse article. `crosspost-newsletter` publishes pulse articles directly to LinkedIn, NOT via Buffer; pulse-post engagement is attributed via `linkedin-stats` instead of `buffer-stats` |
+| `format:long-form-pulse` | long-form-pulse | Short Buffer companion announcement post for an already-published LinkedIn pulse article. The pulse itself is published natively to LinkedIn by `crosspost-newsletter` (not via Buffer); this companion post makes the announcement's engagement closed-loop attributable via `buffer-stats`. Carries an in-text `[lp:<pulse_slug>]` tag for defense in depth |
 
 If you add a new compose skill, define a new format tag and update this table + `buffer-stats` Phase 5's expected tag list.
 
