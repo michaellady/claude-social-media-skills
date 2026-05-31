@@ -98,6 +98,18 @@ For scheduling, two paths:
 - **Via OpusClip's native posting** (`opusclip post schedule`) — fan-out to OpusClip's connected accounts. Beta pricing, may diverge from web UX. Subject to OpusClip's per-day cap interpretation.
 - **Via Buffer** (this user's preferred path) — download the mp4s from each clip's `uriForExport`, schedule via `/promote-newsletter` or `/carousel-newsletter` flows. Uses the user's existing slot math (5/day across 6 channels at 09:00 / 12:00 / 15:00 / 18:00 / 21:00 PT).
 
+### 🔴 YouTube needs a SEPARATE short title — never reuse the caption (confirmed 2026-05-31)
+
+`opusclip post schedule` takes `--title` AND `--description` as separate fields. On **every platform except YouTube**, the `--title` value is used as the **caption/body** (long text is fine — 2,200+ chars). On **YouTube, `--title` becomes the video TITLE, which YouTube hard-caps at 100 characters** — a longer value fails the whole post with `"The video title is invalid. Please check the title and try again."` (caption-length hooks are 190–250 chars, so they *always* blow the cap).
+
+This is silent and platform-specific: the identical text posts fine to FB/IG/LinkedIn/TikTok and **only** YouTube fails. A 2026-05-31 batch lost 25/25 YouTube posts this way.
+
+**Rule when fanning a clip out via native posting:**
+- **YouTube account** → `--title "<curated clip title>"` (the short `.title` from the manifest, ≤100 chars; e.g. `Build, don't just LeetCode`) **+** `--description "<full caption: hook + CTA + hashtags + [opus:CLIP]>"`.
+- **All other accounts** → `--title "<full caption>"` as before (it's the body there; no separate title field).
+
+Validate before every YouTube schedule call: `[ ${#YT_TITLE} -le 100 ]`. The curated titles already satisfy this — the bug was passing the *caption* as `--title` for the YouTube account too.
+
 ## Newsletter CTA composition (Phase 5.5)
 
 Every clip description = `<hook>` + `<CTA>` + `<hashtags>` + `[opus:<clip_id>]`. The CTA is **hybrid by platform** — direct UTM link where links are clickable, comment-to-DM where they aren't:
