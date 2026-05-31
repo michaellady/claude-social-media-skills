@@ -234,7 +234,15 @@ Pure-transport (deterministic, no judgment) per [PRIMITIVE-TEST.md](PRIMITIVE-TE
 
 1. **Install [Claude Code](https://claude.ai/code)**
 2. **Connect a [Buffer MCP server](https://publish.buffer.com/settings/api)** with your Personal Key from the Buffer API settings page (the "Personal Keys" tab — NOT "App Clients" which is for OAuth apps)
-3. **Install [gstack](https://github.com/nichochar/gstack) browse** (required for `/crosspost-newsletter`, `/buffer-stats`, `/linkedin-stats`, `/audit-buffer-queue`, `/tune-posting-schedule`)
+3. **Install [gstack](https://github.com/garrytan/gstack) browse** (required for `/crosspost-newsletter`, `/buffer-stats`, `/linkedin-stats`, `/audit-buffer-queue`, `/tune-posting-schedule`). These skills call the `browse` binary directly via [`_shared/gstack_auth.sh`](_shared/gstack_auth.sh), so you only need the **browser** component — build it, do **not** run gstack's `./setup` (which would register all 23 gstack skills into `~/.claude/skills/`):
+   ```bash
+   # Clone outside ~/.claude/skills/ so only `browse` becomes a discoverable skill, not gstack's full suite.
+   git clone --depth 1 https://github.com/garrytan/gstack.git ~/.local/share/gstack
+   cd ~/.local/share/gstack && bun install && bun run build   # compiles browse/dist/browse
+   # Expose only browse/ at the path the skills expect (gstack_auth.sh hardcodes this):
+   mkdir -p ~/.claude/skills/gstack
+   ln -s ~/.local/share/gstack/browse ~/.claude/skills/gstack/browse
+   ```
 4. **For carousel + promote-github image generation:** run `gcloud auth application-default login` once. Default project: `gen-lang-client-0527845499` (override via `GOOGLE_CLOUD_PROJECT` env var).
 5. **Build the Go helpers** (or just `make build-shared` from the repo root, which builds them all):
    ```bash

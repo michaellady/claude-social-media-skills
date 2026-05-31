@@ -263,6 +263,10 @@ Closes the #1 closed-loop measurement gap: scrape `linkedin.com/in/<handle>/rece
 
 Triggered as part of the default `/linkedin-stats` run (additive — Phase 3 still emits the aggregate follower count). Skipped when only `newsletter` is requested.
 
+> **⚠️ 2026-05-31 — two field-confirmed facts that change how to scrape this:**
+> 1. **`browse js` does NOT run top-level `await`.** The async scroll-loop in the big snippet below silently no-ops — you get only the **~5 cards LinkedIn renders on initial load**, never the full `MAX_POSTS`. Confirmed live: the `await sleep()` loop returned 0 results. **Do the extraction synchronously** (no `await`); if you need more than the initial ~5 cards, issue separate `browse` scroll calls between syntactic `js` extractions rather than one async blob. For most weekly runs the initial 5 most-recent posts are sufficient.
+> 2. **Impressions are ON the activity-feed cards for your OWN posts** — no Phase 3c per-post navigation needed. When logged in as the post author, each card's `innerText` contains `"<N> impressions"` (e.g. `51 impressions`). Grab it directly: `full.match(/([\d,]+)\s+impressions?/i)`. This is far cheaper than the opt-in `--with-impressions` per-post navigation (Phase 3c), which is only needed for posts you don't own. **And:** a card with **no** `.social-details-social-counts` element = genuinely 0 reactions/comments (LinkedIn omits the social bar when engagement is zero) — don't treat a missing bar as a selector failure; treat it as a real 0 and still capture impressions. (This is exactly the uEpos `[opus:]` clip case: 0 reactions but 51/73/44/11/27 impressions — real reach, resolves derivative #370.)
+
 ```bash
 PROFILE_HANDLE=$(jq -r .profile_handle "$CONFIG_FILE")
 MAX_POSTS=$(jq -r '.profile.max_posts_per_scrape // 20' "$CONFIG_FILE")

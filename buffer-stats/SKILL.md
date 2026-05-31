@@ -213,6 +213,26 @@ Cross-reference each row against `mcp__buffer__list_channels` output by display 
 
 The default range at `publish.buffer.com/insights` is "Last 7 days" but the per-channel rows respect whatever the picker is set to. For the weekly snapshot, leave it at "Last 7 days". For a 30-day reconciliation (when comparing against the user's manual eyeball of Insights), click "Last 30 days" first.
 
+> **⚠️ 2026-05-31 — the per-channel breakdown is now a "Performance" TABLE, not text rows. The `rowRegex` above returns `[]`.** Buffer moved the breakdown into a `<table>` (header `Channel | Posts | Reactions | Comments | Eng. Rate`) lower on the page, between the `Performance` heading and the `Metrics` heading. Each cell carries `value\nUp/Down\npct%`. Use the table extractor below; keep the `rowRegex` as a fallback in case Buffer reverts.
+>
+> ```bash
+> $B js "
+> const tbl=[...document.querySelectorAll('table')].find(t=>/Channel/i.test((t.innerText||'').slice(0,40)));
+> const rows=[...(tbl?tbl.querySelectorAll('tr'):[])].map(r=>{
+>   const cells=[...r.querySelectorAll('td,th')].map(c=>c.innerText.trim());
+>   if(cells.length<4) return null;
+>   const name=cells[0].split('\n')[0];
+>   const num=c=>{const m=c.match(/-?[\d,.]+/);return m?+m[0].replace(/,/g,''):null;};
+>   return {display_name:name, posts:num(cells[1]), reactions:num(cells[2]), comments:num(cells[3]), eng_rate:num(cells[4])};
+> }).filter(r=>r&&r.posts!==null);
+> rows
+> "
+> ```
+>
+> **Disambiguating duplicate display names.** The table shows Buffer's `name` field, so all three EVC channels read `enterprisevibecode` and both personal channels read `mikelady`. Resolve by: (a) `facebook/page` is the only `Enterprise Vibe Code` (capitalized); (b) cross-reference the 3 Analyze channelIds (FB/LI-page/IG appear at `analyze.buffer.com` home as `a[href*=/overview/]`) against post counts to pin LI-page vs IG vs Threads-EVC; (c) for the two `mikelady` rows, the one with comments > 0 is `linkedin/profile` (the engagement leader), the comment-less one is `threads/profile`. Confirm IG by matching its Analyze "Posts" count to the table row.
+>
+> **⚠️ The Insights table UNDERCOUNTS Facebook reactions** (reports FB `Reactions` as `0`). Buffer Analyze's FB-specific overview is authoritative — on 2026-05-31 it showed **65 reactions + 20 new fans** where Insights said 0. **Always read Facebook engagement from Analyze, not the Insights table.** Don't bucket FB as a dead channel off the Insights `0` — check Analyze first.
+
 #### Phase 2b — analyze.buffer.com (per-channel deep dive)
 
 **Buffer Analyze lives at `https://analyze.buffer.com`** (separate subdomain from `publish.buffer.com`). The dashboard is client-rendered React; selectors below are confirmed as of 2026-04-20.
