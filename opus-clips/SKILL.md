@@ -264,6 +264,8 @@ Two non-negotiables when composing the description:
 1. **End with `[opus:<clip_id>]` on its own line** — grep-able across any platform's native search; survives manifest loss.
 2. **Persist the verbatim API response** in the manifest (not just the scheduleId) — preserves `hasConflict` and any future fields OpusClip adds.
 
+**This applies to manual/paced/one-off scheduling too — not only full `/opus-clips` runs.** A 2026-05-31 batch scheduled "manually via paced CLI" wrote bare `{label, scheduled_at_utc}` entries with no scheduleId, leaving every post dark to the JOIN (`content-attribution` reads `scheduled_posts[].api_response.data.scheduleId`). If you ever schedule outside `pm_append_post`, **backfill afterward**: `GET api.opus.pro/api/publish-schedules?q=findByProjectAndClip&projectId=<P>&clipId=<C>` (needs a real `User-Agent` header or it 403s) returns the live `scheduleId` per platform — write it into each entry's `api_response.data.scheduleId`. Note this only works while a post is still **pending**; once it fires, OpusClip drops it from that endpoint, so the post then attributes by `[opus:<clip_id>]` tag alone. Capture at schedule time to avoid the gap.
+
 See [PATTERNS.md § Closed-loop post manifest](../PATTERNS.md) for the broader rationale and how this composes with the Buffer `format:` system in `/flywheel`.
 
 ## Workflow integration
