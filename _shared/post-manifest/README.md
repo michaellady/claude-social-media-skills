@@ -122,6 +122,31 @@ pm_conflicts "$MANIFEST"                        # entries where api_response.dat
 
 The helpers are intentionally thin jq wrappers — they encode the **shape contract**, nothing more. They don't talk to any scheduler; the scheduling skill calls its own scheduler and passes the response.
 
+## Tooling: `pm-tool` (lint + backfill)
+
+The bash helpers above are the **write** side. `pm-tool/` (Go) is the **read/reconcile** side — it makes the "always capture closed-loop ids" rule enforceable:
+
+```bash
+( cd _shared/post-manifest/pm-tool && go build -o pm-tool . )   # gitignored
+
+pm-tool lint --root youtube-analytics/data/opus_clips
+#   exit 0  → every scheduled_posts[] entry has api_response.data.scheduleId
+#             (stale/fired-without-id gaps are reported but don't fail)
+#   exit 65 → RECOVERABLE gaps: pending posts missing a scheduleId — a live
+#             capture failure. The 2026-05-31 dark batch would have tripped this.
+
+pm-tool backfill --manifest <path> [--dry-run]
+#   For each pending (future) entry missing a scheduleId, GET OpusClip's
+#   findByProjectAndClip (User-Agent header required, pending-only) and write the
+#   live scheduleId into api_response.data.scheduleId. Atomic tmp+mv. Fired posts
+#   are skipped — once an OpusClip post fires it leaves that endpoint, so its id
+#   is unrecoverable and it attributes by [opus:] tag alone. Capture at schedule
+#   time (pm_append_post) to avoid the gap in the first place.
+```
+
+`/flywheel` runs `pm-tool lint` as a weekly coverage health line. See
+[PATTERNS.md → Closed-loop post manifest](../../PATTERNS.md#pattern-closed-loop-post-manifest-for-non-buffer-scheduling).
+
 ## Consumers
 
 - **`opus-clips`** — primary user. Schedules OpusClip projects → manifest per project at `~/dev/claude-social-media-skills/youtube-analytics/data/opus_clips/<project_id>.json`.

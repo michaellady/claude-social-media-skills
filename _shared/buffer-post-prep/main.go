@@ -50,7 +50,10 @@ import (
 // actually within the limit.
 func runeLen(s string) int { return utf8.RuneCountInString(s) }
 
-// Platform character limits (hard limits from each platform).
+// Platform character limits — Buffer POLICY caps (sometimes deliberately tighter
+// than the platform's native ceiling, e.g. facebook=500). The native ceilings
+// live in _shared/publish-constraints/constraints.json (the single source of
+// truth); constraints_consistency_test.go guards that none of these exceed it.
 var platformLimits = map[string]int{
 	"twitter":   280,
 	"bluesky":   300,

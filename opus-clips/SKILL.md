@@ -108,7 +108,26 @@ This is silent and platform-specific: the identical text posts fine to FB/IG/Lin
 - **YouTube account** → `--title "<curated clip title>"` (the short `.title` from the manifest, ≤100 chars; e.g. `Build, don't just LeetCode`) **+** `--description "<full caption: hook + CTA + hashtags + [opus:CLIP]>"`.
 - **All other accounts** → `--title "<full caption>"` as before (it's the body there; no separate title field).
 
-Validate before every YouTube schedule call: `[ ${#YT_TITLE} -le 100 ]`. The curated titles already satisfy this — the bug was passing the *caption* as `--title` for the YouTube account too.
+### Phase 5.7 — Pre-publish constraint gate (run before EVERY native schedule)
+
+**Do not hand-check title lengths.** A prompt rule (`[ ${#YT_TITLE} -le 100 ]`) already existed on 2026-05-31 and was skipped during a paced manual run — that is exactly how 25/25 YouTube posts shipped broken. A prompt instruction is advisory; a binary in the path is a hard gate. Validate the batch through `_shared/publish-constraints` and **read its exit code** — the native-path twin of `buffer-post-prep`.
+
+Build once (gitignored, per-machine): `( cd _shared/publish-constraints && go build -o publish-constraints . )`.
+
+Assemble one cell per `(clip × account)` you are about to schedule, carrying the **exact** `title`/`description` args the `opusclip post schedule` call will use, then validate the whole batch in one invocation:
+
+```bash
+# PLANNED = JSON array: [{ "clip_id":"…", "label":"YOUTUBE Enterprise Vibe Code", "title":"…", "description":"…" }, …]
+printf '%s' "$PLANNED" | _shared/publish-constraints/publish-constraints validate
+GATE=$?
+# 0  → every cell valid; proceed to the schedule loop.
+# 65 → ≥1 invalid; each stdout verdict = {clip_id, platform, field, reason, fix_hint}.
+#      Do NOT fire `opusclip post schedule` for a failing cell. Fire the valid ones,
+#      surface the failures grouped by clip, regenerate the offending field
+#      (e.g. a ≤100-char YouTube title from the curated `.title`) and re-run the gate.
+```
+
+The title/description split is the SPEC (YouTube `--title` = short curated title + `--description` = full caption; all other accounts `--title` = full caption). The cap table and label→platform mapping live in the binary, **not** here — a new platform or connected account is one data edit, never a new hand-check. See [PATTERNS.md → Pre-publish constraint gate](../PATTERNS.md#pattern-pre-publish-constraint-gate-per-platform-per-field).
 
 ## Newsletter CTA composition (Phase 5.5)
 

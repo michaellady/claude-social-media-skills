@@ -459,6 +459,20 @@ done
 
 `PM_TOTAL_SCHEDULED` and `PM_CONFLICT_COUNT` feed the report's appendix; `PM_SOURCES[]` is the input for Phase 4.56.
 
+**Closed-loop-id coverage health (added 2026-05-31).** A manifest entry with no captured `scheduleId` is dark to the Phase 4.56 JOIN — the standing "always capture closed-loop ids" rule. Run the lint so coverage gaps surface every week instead of silently undercounting derivative reach:
+
+```bash
+PMTOOL=~/dev/claude-social-media-skills/_shared/post-manifest/pm-tool/pm-tool
+[ -x "$PMTOOL" ] || ( cd "$(dirname "$PMTOOL")" && go build -o pm-tool . ) 2>/dev/null
+PM_IDLINT=$("$PMTOOL" lint --root ~/dev/claude-social-media-skills/youtube-analytics/data/opus_clips 2>&1)
+PM_IDLINT_RC=$?
+# exit 65 = RECOVERABLE gaps (pending posts missing a scheduleId) → surface as a
+#           🟡 health line AND a fix nudge: `pm-tool backfill --manifest <p>`.
+# exit 0  = no recoverable gaps (stale/fired gaps are reported but don't fail).
+```
+
+Render one line in the report's appendix: `Closed-loop IDs: <ok|N recoverable gaps> (M stale, fired-without-id)`. A non-zero `PM_IDLINT_RC` is a 🟡 — the data is recoverable with `pm-tool backfill` while the posts are still pending.
+
 ### Phase 4.56 — Per-source-content closed-loop JOIN
 
 For each source-content ID discovered in Phase 4.55, call `ca_join_engagement` (from `_shared/content-attribution/`, built by task #381) to produce a unified per-source record covering every derivative across every platform. The JOIN engine is responsible for the actual `[scheme:id]` / `scheduleId` / time-window correlation logic — **flywheel does not implement it here**, it only orchestrates and aggregates.

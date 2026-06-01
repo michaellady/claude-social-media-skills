@@ -1,0 +1,40 @@
+{
+  "youtube_shorts": {
+    "post_text_field": "description",
+    "title_source": "separate",
+    "fields": {
+      "title": { "max_runes": 100, "required": true },
+      "description": { "max_runes": 5000 }
+    }
+  },
+  "facebook_page": {
+    "post_text_field": "title",
+    "title_source": "post_text",
+    "fields": { "title": { "max_runes": 2200, "required": true } }
+  },
+  "instagram_business": {
+    "post_text_field": "title",
+    "title_source": "post_text",
+    "fields": { "title": { "max_runes": 2200, "required": true } }
+  },
+  "tiktok_business": {
+    "post_text_field": "title",
+    "title_source": "post_text",
+    "fields": { "title": { "max_runes": 2200, "required": true } }
+  },
+  "linkedin_personal": {
+    "post_text_field": "title",
+    "title_source": "post_text",
+    "fields": { "title": { "max_runes": 3000, "required": true } }
+  },
+  "linkedin_page": {
+    "post_text_field": "title",
+    "title_source": "post_text",
+    "fields": { "title": { "max_runes": 3000, "required": true } }
+  },
+  "threads": {
+    "post_text_field": "title",
+    "title_source": "post_text",
+    "fields": { "title": { "max_runes": 500, "required": true } }
+  }
+}

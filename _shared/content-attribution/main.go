@@ -241,6 +241,10 @@ func noMatchRec() platformRecord {
 	return platformRecord{Engagement: nil, Reason: "no_match"}
 }
 
+// labelToPlatform maps an OpusClip schedule label to a canonical platform key.
+// COPY of the canonical version in _shared/publish-constraints/constraints.go;
+// both are pinned to publish-constraints/testdata/label-platform.golden.json by
+// a test in each module (golden_test.go). Change one → change the golden + both.
 func labelToPlatform(label string) string {
 	switch {
 	case strings.HasPrefix(label, "YOUTUBE"):

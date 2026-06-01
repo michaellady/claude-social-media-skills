@@ -344,6 +344,24 @@ Voice doesn't vary by skill. Caching once amortizes the fetch cost across all sk
 
 Voice judgment is fuzzy ("does this sound like the author?") and hard to enforce mechanically — the reviewer would have a high false-positive rate. The composer is responsible; user review catches drift. If voice drift keeps surfacing across multiple runs, escalate to a v2 that passes the corpus to the reviewer with a "tone matches author voice" rule.
 
+## Pattern: Pre-publish constraint gate (per-platform, per-field)
+
+The native-path twin of [ALWAYS go through buffer-post-prep](#hard-rule-always-go-through-buffer-post-prep). The Buffer path is validated by `buffer-post-prep` before `mcp__buffer__create_post`; the **non-Buffer** path (OpusClip native scheduling, future direct-publish) had no equivalent gate, and on 2026-05-31 a 25-clip batch passed the long caption as the OpusClip `--title` for every platform — it posted fine on FB/IG/LinkedIn/TikTok (where `--title` is the caption) and failed silently on YouTube only (where `--title` is the **video title**, hard-capped at 100 chars), losing 25/25 YouTube posts.
+
+**The bug class:** one piece of post-text fanned to N platforms, where each platform maps a CLI flag to a *different field* (title vs caption) with a *different cap*, and nothing validates `(unit × platform × field)` before the irreversible schedule call.
+
+**The gate:** before any native schedule/publish, assemble one cell per `(unit × platform)` carrying the exact `title`/`description` args, pipe the batch through [`_shared/publish-constraints`](_shared/publish-constraints/README.md) `validate`, and **read the exit code** (0 = all valid; 65 = ≥1 invalid, one JSON verdict per failing cell). Withhold failing cells; fire the valid ones.
+
+```bash
+printf '%s' "$PLANNED" | _shared/publish-constraints/publish-constraints validate   # exit 65 → don't fire those cells
+```
+
+### Cognition (skill prompt) vs Transport (binary)
+
+The binary owns the **data + check**: the per-platform-per-field cap table, which field the post-text maps to (`title_source: separate` for YouTube), and the canonical `labelToPlatform` mapping — all Bitter-Lesson-stable facts, in `constraints.json`, fails closed on an unknown label. What stays in the skill is the **cognition**: what to do with a FAIL (regenerate a ≤100-char YouTube title from the curated `.title` — judgment), and composing the title/description split per platform. A new connected account or a changed cap is one data edit, never a hand-check (`[ ${#YT_TITLE} -le 100 ]` already existed as prose on 2026-05-31 and was skipped — a prompt rule is advisory; a binary in the path is a hard gate).
+
+The cap table itself is **not** repeated here — it lives in the binary README. PATTERNS.md says "go through the gate and why"; data/validation facts live with the helper (same split as buffer-post-prep).
+
 ## Pattern: Closed-loop post manifest (for non-Buffer scheduling)
 
 The repo's primary closed-loop mechanism is **Buffer's `format:<name>` tag system** (see ARCHITECTURE.md). That works because Buffer is the publishing layer for every Buffer-routed compose skill. When Buffer **isn't** the publisher — OpusClip's native API, LinkedIn pulse API, direct platform publishing — the `format:` tag never gets applied and `buffer-stats` has nothing to attribute against.
@@ -362,6 +380,15 @@ The two paths are **additive**, not competing. `/flywheel` is the joining point 
 ### Why a free-form text tag *in addition to* the manifest
 
 The manifest is machine-readable but lives on the user's disk. The in-text tag (`[opus:La4Wghg6IX]`, `[lp:slug]`, `[gh:repo/123]`, etc.) travels with the post itself — so the source-content link survives even if the manifest is lost or unavailable. Defense in depth, not redundancy.
+
+### Closed-loop-id coverage is lintable
+
+Every `scheduled_posts[]` entry MUST carry `api_response.data.scheduleId` (the exact path the JOIN reads). A bare `{label, scheduled_at_utc}` entry is dark to attribution — a 2026-05-31 OpusClip batch wrote 25 such entries and nobody noticed until the JOIN went silent. This rule is enforced, not hoped for:
+
+- **`_shared/post-manifest/pm-tool lint --root <dir>`** — exits 65 on any **recoverable** gap (a *pending* post missing a scheduleId = a live capture failure). Already-fired bare entries are reported as stale (unrecoverable; they attribute by `[opus:]` tag) but don't fail the lint. `/flywheel` runs it as a weekly coverage health line.
+- **`pm-tool backfill --manifest <p>`** — recovers pending ids from the scheduler's API (OpusClip `findByProjectAndClip`; needs a `User-Agent` header, pending-only). The real fix is capturing at schedule time via `pm_append_post` — backfill is recovery, not the happy path.
+
+This is the standing "always capture closed-loop ids" rule (memory `feedback_always_capture_closed_loop_ids`), made mechanical.
 
 ### Why this isn't a binary
 
