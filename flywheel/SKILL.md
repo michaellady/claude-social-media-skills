@@ -617,7 +617,7 @@ When two sources disagree on the same channel (e.g. linkedin-stats says LinkedIn
 
 ### Phase 4.6 — Channel ROI score
 
-For each Buffer-connected channel, compute a `channel_roi_score` to surface deprioritization candidates. The score is a per-post engagement-weighted measure adjusted for queue cost:
+For each Buffer-connected channel, compute a `channel_roi_score` to guide **how finite premium resources get allocated** — NOT whether to keep a channel. The score is a per-post engagement-weighted measure adjusted for queue cost:
 
 ```
 channel_roi_score = (avg_impressions_per_post * eng_rate * 100) / (sent_count_in_window + 1)
@@ -625,11 +625,13 @@ channel_roi_score = (avg_impressions_per_post * eng_rate * 100) / (sent_count_in
 
 Higher = more reach + engagement per post relative to how often we publish there.
 
-Then categorize (thresholds from the targets block — `$ROI_HIGH`, `$ROI_MID`, `$ROI_BELOW`):
-- `channel_roi_score >= $ROI_HIGH` → 🟢 **High ROI** — keep current cadence, consider increasing.
-- `$ROI_MID <= score < $ROI_HIGH` → 🟡 **Mid ROI** — current cadence is fine.
-- `score < $ROI_MID AND followers < $ROI_BELOW` → 🔴 **Below threshold** — recommend dropping from fan-out (the `min_followers_to_promote` config in promote-* skills should already handle this; surface as a reminder).
-- `score < $ROI_MID AND followers >= $ROI_BELOW` → ⚪ **Diminishing returns** — recommend reducing fan-out volume on this channel; consider routing the same content through `tease-newsletter` instead of `promote-newsletter`.
+**🔴 Policy (2026-06-19): ROI never recommends DROPPING a channel.** We fan out to every channel — one more is ~zero marginal cost, and showing up everywhere widens the surface area for AI search / LLMs to find + cite the content. Engagement-ROI is a *poor predictor of downstream conversion*: Instagram was written off 5/31 as "over-saturated, low ROI" and by 6/19 was the breakout that drove +30 beehiiv subs (71% IG-attributed). ROI is for **allocation** of finite/premium resources only: which channel gets the limited images (Buffer dedups image URLs → each image used once) and which gets the strongest snippet / most effort. See memory `feedback_promote_channel_priority_data_driven`.
+
+Then categorize (thresholds from the targets block — `$ROI_HIGH`, `$ROI_MID`, `$ROI_BELOW`) for **resource allocation**:
+- `channel_roi_score >= $ROI_HIGH` → 🟢 **High ROI** — give it premium content first (images, strongest snippet, primary focus).
+- `$ROI_MID <= score < $ROI_HIGH` → 🟡 **Mid ROI** — standard allocation.
+- `score < $ROI_MID AND followers < $ROI_BELOW` → 🔴 **Low ROI / tiny audience** — still posts (text), just last in line for premium images/effort. Do NOT recommend dropping.
+- `score < $ROI_MID AND followers >= $ROI_BELOW` → ⚪ **Diminishing returns** — still posts; deprioritize premium images. A genuinely *broken* channel (auth dead, posts erroring) is a separate fix-it flag, not an engagement-ROI drop.
 
 Render as part of the report:
 ```markdown
@@ -640,10 +642,10 @@ Render as part of the report:
 | LinkedIn personal | 2,104 | 8 | 230 | 287 | 🟢 High |
 | Instagram (EVC) | 512 | 5 | 859 | 158 | 🟢 High |
 | Facebook (EVC) | — | 12 | 730 | 47 | 🟡 Mid |
-| LinkedIn page (EVC) | 28 | 8 | 23 | 0.4 | 🔴 Below threshold (recommend skip) |
+| LinkedIn page (EVC) | 28 | 8 | 23 | 0.4 | 🔴 Low ROI (still posts; last for premium images) |
 ```
 
-Use this signal to inform Priority 3 ("cross-post the newsletter to LinkedIn weekly") — if LinkedIn personal is High ROI but LinkedIn page (EVC) is Below threshold, the priority should specifically target LinkedIn personal.
+Use this signal to allocate **premium resources** (images, the strongest snippet) toward the 🟢 channels — e.g. if LinkedIn personal is High ROI but LinkedIn page (EVC) is Low ROI, give the images/best copy to LinkedIn personal. **Every channel still receives the text post** — never drop one for low engagement (AI-search omnipresence > per-post engagement-ROI).
 
 ### Phase 5 — Consulting pipeline
 
