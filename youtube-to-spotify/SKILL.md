@@ -6,39 +6,41 @@ user_invocable: true
 
 # youtube-to-spotify
 
-Republish a YouTube video essay as a **Spotify for Creators** podcast episode. The **MP3** you publish is what Spotify's RSS feed syndicates out to Apple Podcasts, Overcast, and every other podcast app; the **MP4** rides along as Spotify's native in-app video. The skill downloads the source, transcodes both artifacts to Spotify's spec, generates voice-grounded show notes with the newsletter CTA, drives the upload UI with `gstack browse` (handing off only for the OS file picker and the final Publish click), and logs the episode in the post-manifest for closed-loop attribution.
+Republish a YouTube video essay as a **Spotify for Creators** podcast episode. You upload **one MP4** — Spotify shows it as native in-app video AND automatically extracts the audio, which its RSS feed syndicates out to Apple Podcasts, Overcast, and every other podcast app (those apps get audio-only). So no separate audio file is needed. The skill downloads the source, transcodes one Spotify-spec MP4, generates voice-grounded show notes with the newsletter CTA, drives the upload UI with `gstack browse` (handing off only for the OS file picker and the final Publish click), and logs the episode in the post-manifest for closed-loop attribution.
 
 ## Why this is a browser-driven skill (not an API call)
 
 **Spotify for Creators has no public episode-upload API.** The Distribution API that launched Jan 2026 only works *through* third-party hosting partners (Acast, Audioboom, Libsyn, Omny, Podigee) — not direct, and not for shows hosted on Spotify itself. New episodes must go through the `creators.spotify.com` web UI: **New Episode → upload file → Details (title/description) → Publish/Schedule**. So this skill drives that UI the same way `/crosspost-newsletter` drives LinkedIn/Substack — proven `gstack browse` patterns, with handoffs where the browser hands control to a native OS dialog.
 
+**Why one MP4 (not MP4 + MP3).** Per [Spotify's docs](https://support.spotify.com/us/creators/article/publishing-videos/), uploading a *video* episode makes Spotify auto-extract the audio and deliver it over your RSS feed to all other apps — the video is Spotify-exclusive, everyone else gets audio-only, all from the single upload. A separate MP3 is only a **fallback** (see `Edge: video-upload-rejected`).
+
 ## Usage
 
 ```
 /youtube-to-spotify <youtube-url>            # full run
-/youtube-to-spotify <youtube-url> --dry-run  # stop after producing the audio/video files; no upload
+/youtube-to-spotify <youtube-url> --dry-run  # stop after producing the MP4; no upload
 ```
 
 Accepts a full watch URL, a `youtu.be`/`shorts`/`embed` URL, or a bare video ID.
 
 ## 🟢 Happy Path
 
-A single video essay → Spotify episode (audio + video) → syndicated to all podcast platforms. ~8–15 min wall-clock, most of it download + transcode.
+A single video essay → one MP4 → Spotify episode (in-app video + auto-extracted audio) → syndicated to all podcast platforms. ~8–15 min wall-clock, most of it download + transcode.
 
 **Phase 1 — Resolve + ownership + idempotency (~1 min).** Resolve the URL to a video ID, confirm it's the user's own channel, and check the manifest so you never double-post.
 
-**Phase 2 — Download + transcode (~3–8 min).** `youtube-to-spotify.sh fetch <url>` produces `episode-spotify.mp4` (H.264/AAC) and `episode.mp3` (the RSS file) under `/tmp/yt2sp/<id>/`. `--dry-run` stops here.
+**Phase 2 — Download + transcode (~3–8 min).** `youtube-to-spotify.sh fetch <url>` produces one `episode-spotify.mp4` (H.264/AAC ≥192k) under `/tmp/yt2sp/<id>/`. `--dry-run` stops here.
 
 **Phase 3 — Episode metadata (~2 min).** Title from the YouTube title; 2–4 paragraph show notes summarized from the transcript, grounded in the user's voice corpus, ending with the newsletter CTA link and the `[sp:<slug>]` tag. Gate on adversarial review.
 
-**Phase 4 — Upload via gstack browse.** Auth-check Spotify, open New Episode, hand off for the native file picker to select the MP3, fill title + description (React setter), attach the MP4, hand off for the final Publish/Schedule click, capture the published episode URL.
+**Phase 4 — Upload via gstack browse.** Auth-check Spotify, open New Episode, hand off for the native file picker to select the MP4, fill title + description (React setter), hand off for the final Publish/Schedule click, capture the published episode URL.
 
 **Phase 5 — Record in the post-manifest.** Write the episode + captured Spotify URL to `youtube-analytics/data/spotify_episodes/<id>.json` with the `[sp:]` scheme so `/flywheel` and future fetchers can attribute it.
 
 ## Prerequisites
 
 - **yt-dlp** — `pipx install yt-dlp` (isolated venv; PEP 668 blocks system pip on macOS). Fallback `brew install yt-dlp`.
-- **ffmpeg** — `brew install ffmpeg` (yt-dlp muxing + the MP3 extract + the H.264/AAC transcode).
+- **ffmpeg** — `brew install ffmpeg` (yt-dlp muxing + the H.264/AAC transcode; also the optional `--with-audio` MP3 fallback).
 - **youtube-transcript-api** — `pipx install youtube-transcript-api` (already a repo prereq via `youtube-analytics/scripts/generate-transcript.sh`; reused for show notes).
 - **jq** — for the manifest helpers and field-set JSON encoding.
 - **gstack browse** — verify the binary: `B="${B:-$HOME/.claude/skills/gstack/browse/dist/browse}"; [ -x "$B" ] && echo READY || echo NEEDS_SETUP`. Run **headed** so the file-picker and publish handoffs are visible: `$B connect` then `$B status` (expect `Mode: headed`). Don't use launched mode — handoff opens `about:blank` and can drop cookies (`/crosspost-newsletter` `Edge: launched-mode-invisible`).
@@ -87,12 +89,11 @@ If neither confirms ownership, use **AskUserQuestion** once to confirm before pr
 youtube-to-spotify/youtube-to-spotify.sh fetch "<url>"
 # → VIDEO_ID=…  WORKDIR=/tmp/yt2sp/<id>
 #   MP4=/tmp/yt2sp/<id>/episode-spotify.mp4 (h264 aac)
-#   MP3=/tmp/yt2sp/<id>/episode.mp3 (none mp3)
 ```
 
-The script downloads the best ≤1080p stream, **skips the transcode if the download is already H.264/AAC** (saves minutes on long essays — `Edge: long-video`), otherwise transcodes to H.264 high / AAC 192k with `+faststart`, and extracts the MP3 (libmp3lame 192k/44.1k) from the local file (no second network pull). Verify codecs anytime with `youtube-to-spotify.sh probe <file>`.
+The script downloads the best ≤1080p stream and, **skipping the transcode if the download is already H.264/AAC** (saves minutes on long essays — `Edge: long-video`), otherwise transcodes to H.264 high / AAC 192k with `+faststart`. **It does not extract a separate MP3** — Spotify derives the syndicated audio from the MP4's AAC track. Verify codecs anytime with `youtube-to-spotify.sh probe <file>`. (The `--with-audio` flag additionally writes `episode.mp3` — only needed for the `Edge: video-upload-rejected` fallback.)
 
-**`--dry-run` stops here.** Confirm both files exist and `probe` shows `h264 aac` for the MP4 and `… mp3` for the MP3, then report paths and stop.
+**`--dry-run` stops here.** Confirm `episode-spotify.mp4` exists and `probe` shows `h264 aac`, then report the path and stop.
 
 ### Phase 3 — Episode metadata
 
@@ -142,16 +143,16 @@ $B click @e<NewEpisode>
 $B snapshot -i        # find the upload control + (later) the title/description fields
 ```
 
-**4c — Audio file → native picker (HANDOFF).** Spotify's upload triggers the browser's native OS file dialog, which JS cannot populate. First *try* the in-page input (works only if it's a settable `<input type=file>`, the way `/crosspost-newsletter` uploads images):
+**4c — Upload the MP4 → native picker (HANDOFF).** This single video upload IS the episode — Spotify auto-extracts the audio for RSS. The upload triggers the browser's native OS file dialog, which JS cannot populate. First *try* the in-page input (works only if it's a settable `<input type=file>`, the way `/crosspost-newsletter` uploads images):
 
 ```bash
-$B upload "<file-input-selector>" /tmp/yt2sp/<id>/episode.mp3
+$B upload "<file-input-selector>" /tmp/yt2sp/<id>/episode-spotify.mp4
 ```
 
 If Spotify routes to a true OS dialog, hand off (`Edge: native-file-picker`):
 
 ```bash
-$B handoff "Switch to the Spotify tab, click Upload, and choose /tmp/yt2sp/<id>/episode.mp3 in the file picker. Tell me when the upload bar completes. (The about:blank tab can be ignored.)"
+$B handoff "Switch to the Spotify tab, click Upload, and choose /tmp/yt2sp/<id>/episode-spotify.mp4 in the file picker. Tell me when the upload bar completes. (The about:blank tab can be ignored.)"
 $B resume
 ```
 
@@ -165,17 +166,11 @@ youtube-to-spotify/youtube-to-spotify.sh setfield "<description-textarea-selecto
 
 If the description box is `contenteditable` (not a `<textarea>`), fall back to the clipboard-paste pattern used for LinkedIn/Substack bodies in `/crosspost-newsletter` (dispatch a `ClipboardEvent('paste', {clipboardData})`).
 
-**4e — Attach the MP4 (Spotify native video).** Locate the "Add video"/video-upload control on the episode draft, then repeat 4c's logic for the video file:
-
-```bash
-$B upload "<video-input-selector>" /tmp/yt2sp/<id>/episode-spotify.mp4   # or handoff for the OS picker
-```
-
-**4f — Publish (HANDOFF — keep the human in the loop).** Screenshot the filled draft and let the user do the final click:
+**4e — Publish (HANDOFF — keep the human in the loop).** Screenshot the filled draft and let the user do the final click:
 
 ```bash
 $B screenshot /tmp/yt2sp/<id>/draft.png
-$B handoff "Review the episode (title, description, audio + video attached) and click Publish — or set a schedule and click Schedule. Tell me when it's live."
+$B handoff "Review the episode (title, description, video uploaded) and click Publish — or set a schedule and click Schedule. Tell me when it's live."
 $B resume
 EPISODE_URL=$($B url | head -1)   # capture the published-episode permalink
 ```
@@ -207,7 +202,7 @@ Spotify publishing never touches Buffer, so `buffer-stats`' `format:<name>` syst
 ## Verification (dry-run ladder — no publish needed)
 
 1. **Resolve:** `youtube-to-spotify.sh resolve` on a full URL, a `youtu.be` URL, and a bare ID all print the same video ID.
-2. **Download:** `/youtube-to-spotify <url> --dry-run` → `episode.mp3` and `episode-spotify.mp4` exist; `youtube-to-spotify.sh probe` shows `h264 aac` (MP4) and an `mp3` audio stream (MP3), 16:9.
+2. **Download:** `/youtube-to-spotify <url> --dry-run` → `episode-spotify.mp4` exists; `youtube-to-spotify.sh probe` shows `h264 aac`, 16:9. (`fetch --with-audio` additionally yields `episode.mp3`.)
 3. **Metadata:** transcript fetch returns text (or the documented exit 4/5); show notes are 2–4 paragraphs; adversarial review returns `all_pass`; the CTA link + `[sp:<id>]` tag are present.
 4. **Auth:** `_shared/gstack_auth.sh spotify.com https://creators.spotify.com/; echo $?` → `0` when logged in.
 5. **Manifest / idempotency:** after a publish, `pm_count_scheduled "$MANIFEST"` ≥ 1 and `pm_find_clip --clip-id <id>` shows the episode URL in `api_response`. Re-run the skill → the idempotency gate reports "already published" and does not re-download or re-post.
@@ -220,6 +215,7 @@ Spotify publishing never touches Buffer, so `buffer-stats`' `format:<name>` syst
 | `Edge: captions-disabled` | `generate-transcript.sh` exits 4 or 5 |
 | `Edge: gstack-not-logged-in` | `gstack_auth.sh` exits 1 |
 | `Edge: native-file-picker` | `$B upload` can't set the file; an OS dialog appears |
+| `Edge: video-upload-rejected` | Spotify rejects the MP4 (size/length/codec) |
 | `Edge: long-video` | multi-hour essay; slow transcode / large files |
 | `Edge: react-field-revert` | title/description reverts after you fill it |
 | `Edge: already-published` | manifest already has a Spotify URL for this video |
@@ -234,7 +230,15 @@ yt-dlp fails on private/members-only/age-gated videos. The `fetch` subcommand re
 `gstack_auth.sh` exit 1. Interactive → `$B handoff` for in-window login, then `$B resume` and re-check. Autonomous → stop with `auth_failed`; don't attempt a programmatic login. (PATTERNS.md → "When to handoff vs proceed".)
 
 ### `Edge: native-file-picker`
-`$B upload "<selector>" <file>` only works when the target is an in-page `<input type=file>`. If Spotify opens a true OS file dialog, that dialog is outside the page DOM and neither JS nor `$B upload` can drive it — hand off and have the user pick the exact path you print. Always *try* `$B upload` first (some Spotify upload widgets do expose a settable input); fall back to handoff only when it fails.
+`$B upload "<selector>" <file>` only works when the target is an in-page `<input type=file>`. If Spotify opens a true OS file dialog, that dialog is outside the page DOM and neither JS nor `$B upload` can drive it — hand off and have the user pick the exact path you print (`/tmp/yt2sp/<id>/episode-spotify.mp4`). Always *try* `$B upload` first (some Spotify upload widgets do expose a settable input); fall back to handoff only when it fails.
+
+### `Edge: video-upload-rejected`
+Spotify rejects the MP4 — too large, too long (max 12 h), or an unsupported codec. The MP4 is the primary path because one upload covers both Spotify video and RSS audio, but if it won't take, **don't lose the syndication**: produce the audio fallback and publish an audio-only episode (the video can be added later from the episode's three-dot menu → Upload video):
+
+```bash
+youtube-to-spotify/youtube-to-spotify.sh fetch "<url>" --with-audio   # writes episode.mp3
+# then upload /tmp/yt2sp/<id>/episode.mp3 at Phase 4c instead of the MP4
+```
 
 ### `Edge: long-video`
 Multi-hour essays produce large files and slow transcodes. Warn on duration (`yt-dlp --print "%(duration)s"`); the `fetch` subcommand already **skips the transcode when the download is already H.264/AAC**, which is the big win. Spotify's video max is 12 h; if Spotify rejects the upload on size/length, split into parts rather than re-encoding blindly.

@@ -3,9 +3,12 @@
 #
 # Owns the deterministic, non-interactive mechanics only:
 #   - resolve a YouTube URL/ID to a bare video ID
-#   - download the video (yt-dlp) and produce two Spotify-compliant artifacts:
-#       episode-spotify.mp4  (H.264 / AAC, ≤1080p, +faststart)  — the native video
-#       episode.mp3          (libmp3lame 192k 44.1k)            — the RSS-syndicated audio
+#   - download the video (yt-dlp) and produce the Spotify-compliant artifact:
+#       episode-spotify.mp4  (H.264 / AAC ≥192k, ≤1080p, +faststart)  — the upload
+#     A single MP4 upload IS the episode: Spotify auto-extracts the audio and
+#     syndicates it via RSS to every other podcast app, so a separate MP3 is not
+#     needed. The `--with-audio` flag additionally produces episode.mp3 as a
+#     fallback only (for the rare case Spotify rejects the video — ship audio-only).
 #   - probe an artifact's codecs
 #   - set a React-controlled form field via gstack browse (proven native-setter pattern)
 #
@@ -15,12 +18,12 @@
 #
 # Usage:
 #   youtube-to-spotify.sh resolve  <url-or-id>
-#   youtube-to-spotify.sh fetch    <url-or-id>          # download + transcode + probe
+#   youtube-to-spotify.sh fetch    <url-or-id> [--with-audio]   # download + transcode + probe
 #   youtube-to-spotify.sh probe    <media-file>
 #   youtube-to-spotify.sh setfield <css-selector> <value>   # React-safe value set via gstack
 #
-# Spotify for Creators reqs encoded here: video MP4 H.264(avc1)/AAC 16:9 ≤1080p,
-# audio MP3. https://support.spotify.com/us/creators/article/publishing-videos/
+# Spotify for Creators reqs encoded here: video MP4 H.264(avc1)/AAC ≥192k 16:9
+# ≤1080p. https://support.spotify.com/us/creators/article/publishing-videos/
 set -euo pipefail
 
 B="${B:-$HOME/.claude/skills/gstack/browse/dist/browse}"
@@ -67,9 +70,16 @@ cmd_probe() {
 }
 
 cmd_fetch() {
-  [ $# -ge 1 ] || die "usage: fetch <url-or-id>"
+  [ $# -ge 1 ] || die "usage: fetch <url-or-id> [--with-audio]"
   need yt-dlp; need ffmpeg; need ffprobe
-  local url="$1"
+  local url="" with_audio=""
+  for a in "$@"; do
+    case "$a" in
+      --with-audio) with_audio="1" ;;
+      *) [ -z "$url" ] && url="$a" || die "unexpected arg: $a" ;;
+    esac
+  done
+  [ -n "$url" ] || die "usage: fetch <url-or-id> [--with-audio]"
   local id; id=$(resolve_id "$url")
   # If we were handed a bare ID, build a canonical watch URL for yt-dlp.
   case "$url" in http*) : ;; *) url="https://www.youtube.com/watch?v=$id" ;; esac
@@ -108,15 +118,19 @@ cmd_fetch() {
       ;;
   esac
 
-  # Audio: the RSS-syndicated file. Extract from the local MP4 (no second pull).
-  echo "→ extracting MP3 audio" >&2
-  ffmpeg -y -i "$raw" -vn -c:a libmp3lame -b:a 192k -ar 44100 "$mp3" >&2 || die "ffmpeg mp3 extract failed"
-
   # Machine-readable summary on stdout for the skill to parse/verify.
   echo "VIDEO_ID=$id"
   echo "WORKDIR=$wd"
   echo "MP4=$mp4 ($(probe_codecs "$mp4"))"
-  echo "MP3=$mp3 ($(probe_codecs "$mp3"))"
+
+  # Audio is NOT needed by default — Spotify extracts it from the MP4 for RSS.
+  # Only produce episode.mp3 as a fallback when explicitly asked (--with-audio),
+  # for the rare case Spotify rejects the video and we ship audio-only instead.
+  if [ -n "$with_audio" ]; then
+    echo "→ extracting MP3 audio (fallback)" >&2
+    ffmpeg -y -i "$raw" -vn -c:a libmp3lame -b:a 192k -ar 44100 "$mp3" >&2 || die "ffmpeg mp3 extract failed"
+    echo "MP3=$mp3 ($(probe_codecs "$mp3"))"
+  fi
 }
 
 # Set a React-controlled <input>/<textarea> value safely, then verify.
