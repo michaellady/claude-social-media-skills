@@ -243,6 +243,15 @@ The default range at `publish.buffer.com/insights` is "Last 7 days" but the per-
 B=~/.claude/skills/gstack/browse/dist/browse
 if [ ! -x "$B" ]; then echo "gstack browse not installed"; exit 1; fi
 
+# 🔧 Two gstack gotchas that silently blocked the 2026-06-19 refresh — handle FIRST:
+# 1. WEDGED session: if any `$B` page command returns "No active page" despite a
+#    running server, run `_shared/gstack-recover/gstack-recover --probe-url <url>`
+#    (go build it if absent) — it hard-restarts the bun server + Chrome-for-Testing.
+# 2. Cookie import needs the DOT-PREFIXED domain: `$B cookie-import-browser chrome
+#    --domain .buffer.com` (bare `buffer.com` imports 0). `--domain` reads Chrome's
+#    store directly = NO interactive picker. `_shared/gstack_auth.sh buffer.com <url>`
+#    does both (recover + dot-prefixed import) and exits 0 when logged in.
+
 ANALYZE_URL=$(jq -r .analyze_base_url "$CONFIG_FILE")
 $B goto "$ANALYZE_URL"
 sleep 3

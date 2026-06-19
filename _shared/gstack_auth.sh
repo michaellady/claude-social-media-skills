@@ -30,6 +30,15 @@ if [ ! -x "$B" ]; then
   exit 2
 fi
 
+# Self-heal a wedged gstack session BEFORE anything else. The bun server can keep
+# running but lose its Chrome pipe, so every page command returns "No active page"
+# and can't recover itself (confirmed 2026-06-19). gstack-recover hard-restarts it.
+RECOVER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gstack-recover"
+if [ ! -x "$RECOVER_DIR/gstack-recover" ] && command -v go >/dev/null 2>&1; then
+  ( cd "$RECOVER_DIR" && go build -o gstack-recover . ) >/dev/null 2>&1 || true
+fi
+[ -x "$RECOVER_DIR/gstack-recover" ] && B="$B" "$RECOVER_DIR/gstack-recover" --probe-url "$URL" >&2 || true
+
 # Reddit needs a UA spoof set proactively (otherwise 403 on first nav)
 if [[ "$DOMAIN" == "reddit.com" ]]; then
   "$B" useragent "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" >/dev/null 2>&1
@@ -53,26 +62,20 @@ if is_logged_in; then
   exit 0
 fi
 
-# Try cookie import once
-"$B" cookie-import-browser chrome "$DOMAIN" >/dev/null 2>&1 &
-PICKER_PID=$!
-
-# Cookie picker is interactive — write picker URL to stderr so caller can prompt user
-echo "Cookie picker opened at http://127.0.0.1:11297/cookie-picker — select $DOMAIN, then close" >&2
-echo "Waiting up to 60s for picker to close..." >&2
-
-# Wait for picker process to end (user closes the picker tab)
-for i in $(seq 1 60); do
-  if ! kill -0 "$PICKER_PID" 2>/dev/null; then
-    break
-  fi
-  sleep 1
+# Direct, NON-INTERACTIVE cookie import from Chrome's store. Use the DOT-PREFIXED
+# domain: Buffer/LinkedIn store their session cookie under ".buffer.com" /
+# ".linkedin.com" (cross-subdomain), so the bare domain imports 0 — the silent
+# auth wall hit on 2026-06-19. `--domain` reads the cookie DB directly (no picker,
+# no handoff), so we try the dot-prefixed, bare, and www forms and sum the count.
+imported=0
+for d in ".$DOMAIN" "$DOMAIN" "www.$DOMAIN"; do
+  # Each step `|| true` so a no-match grep can't trip set -e/pipefail (some domain
+  # variants print no "Imported N" line at all).
+  out=$("$B" cookie-import-browser chrome --domain "$d" 2>&1 || true)
+  n=$(printf '%s' "$out" | grep -oE 'Imported [0-9]+' | grep -oE '[0-9]+' | head -1 || true)
+  imported=$((imported + ${n:-0}))
 done
-
-# Reap the picker process so we don't leave a zombie if it exited normally.
-# `wait` returns the picker's exit code but we don't use it — the cookie picker
-# always exits 0 on close.
-wait "$PICKER_PID" 2>/dev/null || true
+echo "gstack_auth: imported $imported cookies for $DOMAIN (dot-prefixed direct read)" >&2
 
 # Re-check auth
 if is_logged_in; then
