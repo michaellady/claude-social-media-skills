@@ -1,0 +1,11 @@
+{
+  "_comment": "Per-user config for /youtube-to-spotify. Edit before first run.",
+  "channel_id": "",
+  "channel_handle": "@enterprisevibecode",
+  "newsletter_url": "https://www.enterprisevibecode.com/",
+  "utm": {
+    "source": "spotify",
+    "medium": "podcast"
+  },
+  "spotify_creators_url": "https://creators.spotify.com/"
+}

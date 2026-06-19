@@ -75,6 +75,7 @@ Every scheduled post's description **must** include a footer tag of the form `[<
 | `lp` | LinkedIn pulse slug | `[lp:scaling-without-slop-essay]` |
 | `gh` | GitHub source (PR or commit SHA prefix) | `[gh:bun/30412]` or `[gh:abc1234]` |
 | `bh` | Beehiiv post slug | `[bh:fix-forward-solutions]` |
+| `sp` | Spotify for Creators episode slug (source YouTube video id) | `[sp:uEposKmbFvY]` |
 
 **Why a free-form text tag in addition to the manifest?** The manifest is machine-readable but lives on the user's disk. The in-text tag travels with the post itself — so a future fetcher (or the user, or even a 3rd party) can grep platform-native search and recover the source-content link without the manifest. Defense in depth.
 
@@ -150,6 +151,7 @@ pm-tool backfill --manifest <path> [--dry-run]
 ## Consumers
 
 - **`opus-clips`** — primary user. Schedules OpusClip projects → manifest per project at `~/dev/claude-social-media-skills/youtube-analytics/data/opus_clips/<project_id>.json`.
+- **`youtube-to-spotify`** — republishes a YouTube essay as a Spotify for Creators episode (no upload API → driven via gstack browse) → manifest per video at `~/dev/claude-social-media-skills/youtube-analytics/data/spotify_episodes/<video_id>.json`, `[sp:]` in-text tag, `api_response.episode_url` = the captured Spotify permalink.
 - **`flywheel`** — future input: read manifests from any scheduler directory under `~/dev/claude-social-media-skills/youtube-analytics/data/` to count posts toward Priority 1 throughput + measure derivative-format reach.
 - **`crosspost-newsletter`** — could write a manifest per article to record LinkedIn pulse / Medium / Substack publish IDs for cross-surface correlation (not wired today; left as future work).
 - **Future** `/opus-clips-performance` (or similar) — would walk the manifest's `scheduled_posts[].api_response.data.scheduleId`s and poll each platform's native analytics API to fill in per-post engagement metrics.
