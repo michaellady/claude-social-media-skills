@@ -1,0 +1,9 @@
+{
+  "comment": "Override any of these in config.local.json (gitignored). The skill reads config.local.json first if present, then falls back to this file. NO OAuth / NO API — instagram-follower-identification browser-scrapes the follower modal via claude-in-chrome (same interactive pattern as tiktok-stats). All blocking is performed manually by the user; this skill only observes and diffs.",
+  "main_handle": "mikelady",
+  "main_profile_url": "https://www.instagram.com/mikelady/",
+  "main_followers_url": "https://www.instagram.com/mikelady/followers/",
+  "alt_handle": "",
+  "max_followers_to_scrape": 5000,
+  "scroll_settle_ms": 1200
+}
