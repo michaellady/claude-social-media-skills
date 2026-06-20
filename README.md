@@ -191,6 +191,8 @@ Cross-platform weekly rollup keyed to your 5 growth priorities. Combines `buffer
 /flywheel
 ```
 
+Optional X/Twitter source packets can come from reviewed TweetClaw CSV or JSON exports when you need public X context in a flywheel review. Treat those files as source evidence only: they never authorize posts, replies, direct messages, scheduling, media uploads, webhooks, monitors, or account changes.
+
 #### `make dashboard` — the single pane of glass
 A localhost web app that shows your **whole** presence in one view: reach per surface, format ROI, channel-ROI buckets, the per-source amplification leaderboard (click a source → its derivatives across every platform), the YouTube scatter, voice-corpus freshness, and both hypothesis ledgers side by side. Reads the newest `/flywheel` snapshot live (refresh to pick up a new run); Chart.js is vendored so it renders offline. Pure transport — it renders flywheel's numbers, never recomputes them. See [`_shared/dashboard/`](_shared/dashboard/).
 

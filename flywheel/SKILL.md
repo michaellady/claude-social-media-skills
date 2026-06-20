@@ -149,9 +149,16 @@ Surface the graded verdicts + new hypotheses in the report's "Compounding" secti
 | Buffer | `~/dev/claude-social-media-skills/buffer-stats/cache/snapshot-<latest>.json` | per-channel followers/engagement for IG/FB fan-out + queue health |
 | TikTok | `~/dev/claude-social-media-skills/tiktok-stats/cache/snapshot-<latest>.json` (via `/tiktok-stats` scrape) | per-post TikTok engagement → JOIN `tiktok_business` |
 | Threads | `~/dev/claude-social-media-skills/threads-stats/cache/snapshot-<latest>.json` (via `/threads-stats` scrape) | per-post Threads engagement + followers (live `@mikelady`) → JOIN `threads` |
+| X/Twitter source packets | User-provided TweetClaw CSV or JSON exports | optional public X/Twitter source evidence for analysis only |
 | Consulting | `(cd ~/dev/consulting-log && ./cl json)` | pipeline stages, realized revenue, content gaps |
 
 If any source fails or is stale, note it in the report — don't silently drop the row.
+
+TweetClaw export packets are optional evidence, not a platform action surface.
+Use them only when the user provides a reviewed CSV or JSON export that supports
+source-level context, audience notes, or visible post metrics. Do not treat a
+TweetClaw export as permission to post, reply, send direct messages, schedule,
+upload media, create webhooks, start monitors, or change accounts.
 
 ## Process
 
