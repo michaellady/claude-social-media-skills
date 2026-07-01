@@ -11,6 +11,7 @@ flowchart LR
     subgraph SOURCES["📥 Sources"]
         BH[beehiiv RSS]
         GH[GitHub API]
+        HT[Hermes Tweet]
         BUF_API[Buffer MCP]
         LI[LinkedIn /dashboard/]
         BUF_WEB[publish.buffer.com]
@@ -50,6 +51,7 @@ flowchart LR
 
     BH --> COMPOSE
     GH --> PG
+    HT --> COMPOSE
     VC -. voice grounding .-> TN
     VC -. voice grounding .-> CN
     VC -. voice grounding .-> PG
@@ -99,6 +101,16 @@ flowchart LR
 **The loop:** Compose with format tag → adversarial review → user publish → Buffer fans out → Measure attributes engagement back to format → Recommendations feed next compose run.
 
 ## Skills
+
+### Research input (read side)
+
+#### `/hermes-tweet-research`
+Collect X/Twitter social signals with [Hermes Tweet](https://github.com/Xquik-dev/hermes-tweet) before drafting Buffer posts. Produces a compact research packet with current posts, handles, links, and angle guidance for the compose skills. Read-only by default; publishing still goes through the existing compose, review, and Buffer path.
+
+```
+/hermes-tweet-research "open source launch"
+/hermes-tweet-research https://github.com/user/repo
+```
 
 ### ✍️ Compose & publish (write side)
 
