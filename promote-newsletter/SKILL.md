@@ -72,6 +72,12 @@ done
 
 Drop any non-200 URL from the image pool. Note the drop count in Phase 2 so the user sees how many images were filtered.
 
+**Instagram aspect-ratio guard (added 2026-07-19).** Instagram only accepts feed images with width/height between **4:5 (0.8) and 1.91:1**. beehiiv header/hero images are typically ~3:1 (e.g. 2172×724) and get rejected at publish time — on the 2026-06-19 "I turned 35" run, **all 5 IG posts errored** with "Instagram doesn't support the aspect ratio of this media" and sat in `status:error` for a month, so IG (the #1 beehiiv-conversion channel) got zero promote posts for that launch. Before assigning an image to an **Instagram cell**, check its dimensions (`sips -g pixelWidth -g pixelHeight` on a downloaded copy, or the dimensions Buffer echoes back in the asset metadata) and:
+
+- ratio within [0.8, 1.91] → OK to assign to IG.
+- ratio outside the range → do NOT assign it to the IG cell. Either (a) pad it to 1.91:1 on a solid background (`ffmpeg`/`sips`) and host the padded copy, or (b) give the IG cell a different in-range image from the pool, or (c) skip IG for that snippet per the existing out-of-images rule. Non-IG cells (LinkedIn/FB/Threads) can still use the wide image freely.
+- After scheduling, run a `list_posts status:[error]` readback — an errored IG post is silent (Buffer doesn't surface it) and starves the top conversion channel.
+
 **If "latest" or no URL:**
 Refresh the voice-corpus cache and list the recent articles with titles and dates. Ask the user which one to promote, then proceed with that article's URL.
 

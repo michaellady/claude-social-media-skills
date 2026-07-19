@@ -94,6 +94,14 @@ if [ ! -x "$B" ]; then echo "gstack browse not installed"; exit 1; fi
 #    --domain .linkedin.com` (bare `linkedin.com` imports 0). `--domain` reads Chrome's
 #    store directly = NO interactive picker. `_shared/gstack_auth.sh linkedin.com <url>`
 #    does both (recover + dot-prefixed import) and exits 0 when logged in.
+#    ⚠ 2026-07-19: `.linkedin.com` ALONE IS NOT ENOUGH — LinkedIn splits session
+#    cookies across `.linkedin.com` (21 cookies) and `.www.linkedin.com` (7 more);
+#    with only the first import you still bounce to /login. Import BOTH domains:
+#      $B cookie-import-browser chrome --domain .linkedin.com
+#      $B cookie-import-browser chrome --domain .www.linkedin.com
+#    (Confirmed live: the second import flipped login-wall → authenticated.)
+# 3. Cron PATH: browse spawns `bun` — export PATH="$HOME/.bun/bin:$PATH" first
+#    (same fix as buffer-stats; symptom: 'Executable not found in $PATH: "bun"').
 
 $B goto "https://www.linkedin.com/feed/"
 $B snapshot -i > /tmp/ln-login-check.txt

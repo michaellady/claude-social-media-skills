@@ -18,7 +18,11 @@ Why this exists: Buffer is the fan-out layer for IG/LinkedIn/Facebook/Threads, b
 `/buffer-stats --compare YYYY-MM-DD` — diff against a specific historical snapshot instead of the newest
 `/buffer-stats operational` — skip the Analyze scrape; MCP-only fast path
 
-> **Cron / autonomous runs are operational-only by design.** The engagement scrape (Phases 2a/2b) needs the `gstack browse` binary AND an interactive cookie-import picker — neither is available in an unattended context. Three consecutive weekly cron runs degraded for this reason (2026-05-10 cookie expiry, 2026-05-17 cookie picker, 2026-05-24 `gstack browse` binary absent). When invoked from a cron/weekly-review job, **go straight to the `operational` fast path** and label engagement as DEGRADED rather than attempting (and reporting failure on) a scrape that structurally cannot run. Fresh engagement only arrives from an interactive `/buffer-stats` run. If a cron needs engagement, build a non-interactive cookie-refresh path first.
+> **Cron / autonomous runs CAN do the full engagement scrape (updated 2026-07-19).** The earlier "operational-only by design" rule is obsolete — three consecutive cron degradations (2026-05-10 cookie expiry, 2026-05-17 cookie picker, 2026-05-24 binary absent) all traced to two fixable causes, and the 2026-07-19 weekly cron completed the FULL Insights + Analyze scrape unattended. The two prerequisites:
+> 1. **PATH**: the browse binary spawns `bun`, which isn't on a cron shell's PATH — `export PATH="$HOME/.bun/bin:$PATH"` before any `$B` call (symptom: `Executable not found in $PATH: "bun"` from `startServer`).
+> 2. **Cookies**: `$B cookie-import-browser chrome --domain .buffer.com` (dot-prefixed) reads Chrome's cookie store directly — NO interactive picker. Works as long as the user's Chrome profile is logged in to Buffer.
+>
+> Attempt the full scrape first even when unattended; fall back to the `operational` fast path (and label engagement DEGRADED) only if the cookie import itself fails (i.e. Chrome's own session is dead).
 
 ## 🟢 Happy Path (read first; everything below is edge-case detail)
 
