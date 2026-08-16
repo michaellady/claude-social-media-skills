@@ -24,6 +24,11 @@ Why this exists: Buffer is the fan-out layer for IG/LinkedIn/Facebook/Threads, b
 >
 > Attempt the full scrape first even when unattended; fall back to the `operational` fast path (and label engagement DEGRADED) only if the cookie import itself fails (i.e. Chrome's own session is dead).
 
+> **⚠️ 2026-08-16 — three state changes from the weekly run:**
+> 1. **Channel set is now 4, not 6.** LinkedIn personal (`mikelady`) and Threads personal (`mikelady`) are DISCONNECTED from Buffer (org `limits.channels = 4`). All "6 channels" references below are historical; the Insights per-channel table now renders 4 rows (LI page, FB page, Threads EVC, IG business — plus 2 locked startPage channels to exclude). The posts-only ROI fallback path now applies only to Threads EVC. LinkedIn-personal numbers must come from `/linkedin-stats`, not Buffer.
+> 2. **The Buffer MCP token lacks `insights:read` scope** — `list_posts`/`get_post` with `includeMetrics: true` returns 403 ("Insufficient scope. Granted: posts:read, posts:write, ideas:read, ideas:write, account:read, account:write"). Per-post metrics must come from the Insights/Analyze scrape until the token is re-issued with `insights:read`.
+> 3. **Insights date-picker drift:** the default landed on a 30-day range ("Jul 18 - Aug 16"), and the presets read `7 days / 30 days / Month to date / Last month / Custom` (no "Last …" prefix). Click the `7 days` button explicitly before extracting the weekly window; the Summary line ("Aug 10 - 16, 2026 · Compared to Aug 3 - 9, 2026") confirms the active range.
+
 ## 🟢 Happy Path (read first; everything below is edge-case detail)
 
 For a weekly Buffer stats run when nothing goes wrong. ~2-4 min wall-clock. Each step links to a labeled edge case (`Edge: <name>`) you only need to read if that step fails.
