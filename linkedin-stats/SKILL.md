@@ -102,6 +102,13 @@ if [ ! -x "$B" ]; then echo "gstack browse not installed"; exit 1; fi
 #    (Confirmed live: the second import flipped login-wall → authenticated.)
 # 3. Cron PATH: browse spawns `bun` — export PATH="$HOME/.bun/bin:$PATH" first
 #    (same fix as buffer-stats; symptom: 'Executable not found in $PATH: "bun"').
+# 4. CROSS-ORIGIN JS GUARD (2026-08-23, weekly review): when the same browse session
+#    scraped ANOTHER domain first (weekly order: buffer-stats → linkedin-stats),
+#    every `$B js` on linkedin.com fails with "JS execution blocked: current page
+#    (www.linkedin.com) does not match any cookie-imported domain. Imported cookies
+#    for: .buffer.com". This is NOT a login failure and needs no recovery/handoff —
+#    the guard just requires the CURRENT domain in the imported set. Run the two
+#    item-2 imports and continue; navigation (`$B goto`) is unaffected either way.
 
 $B goto "https://www.linkedin.com/feed/"
 $B snapshot -i > /tmp/ln-login-check.txt
