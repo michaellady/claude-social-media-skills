@@ -33,7 +33,7 @@ if [[ ! -x "$bin" ]]; then
 fi
 
 # All registered reviewers per main.go. Keep in sync if more are added.
-all_reviewers=(claude codex agent agy)
+all_reviewers=(claude muse codex agy composer-2.5 grok-build kimi glm agent)
 
 # If args given, smoke just those. Otherwise smoke each individually + N-way.
 if [[ $# -gt 0 ]]; then
