@@ -17,7 +17,7 @@ package main
 import (
 	"os"
 
-	"github.com/michaellady/claude-social-media-skills/_shared/adversarial-review/internal/fanout"
+	"github.com/michaellady/mike-skills/converge/internal/fanout"
 )
 
 func main() { os.Exit(fanout.Run(os.Args[1:])) }

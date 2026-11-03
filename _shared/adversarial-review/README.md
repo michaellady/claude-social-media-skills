@@ -1,8 +1,9 @@
 # adversarial-review (vendored)
 
 Multi-reviewer adversarial-review transport: dispatches the same prompt to
-every selected reviewer CLI in parallel (default `claude,codex,agy`; `agent`
-for Cursor is opt-in), parses each reviewer's JSON verdict, and emits a merged
+every selected reviewer CLI in parallel (default
+`claude,muse,codex,agy,composer-2.5,grok-build,kimi,glm,gpt-oss`; bare `agent`
+is opt-in), parses each reviewer's JSON verdict, and emits a merged
 canonical response.
 
 The standalone `adversarial-review` skill was **folded into `converge` as its
@@ -15,6 +16,18 @@ works end-to-end without a separate `mike-skills` checkout. Invoking this
 vendored binary is equivalent to running `converge audit`.
 
 ## Layout
+
+Muse uses your existing Muse Code subscription login, with no separate API
+key. The verified model defaults on 2026-11-03 are Fable, Muse Wonder 1.0,
+GPT-6.1 Sol, Gemini 4 Argon High, Composer 2.5, Grok 4.7 Extra High,
+Kimi K3 Max, GLM 5.2 Max, and GPT-OSS 120B. Wonder Full returned an access
+error on the tested account; it is not selected. Explicit provider model
+options and `CONVERGE_*_MODEL` overrides remain available.
+
+The vendored build retains upstream's Go module namespace so its internal
+fanout and ledger imports compile unchanged. The local provider replacement
+keeps it self-contained. Sync includes run persistence, ledger, platform
+process cleanup, and Muse sources/tests, not only the original fanout file.
 
 ```
 _shared/adversarial-review/
@@ -33,6 +46,8 @@ _shared/adversarial-review/
     codex/codex.go                 # codex exec provider
     agent/agent.go                 # Cursor agent CLI provider (opt-in)
     agy/agy.go                     # agy CLI provider (default; replaced gemini)
+    muse/                          # Muse Code subscription provider + tests
+  internal/ledger/                 # audit history dependency from upstream
 ```
 
 ## Build
@@ -52,7 +67,7 @@ printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review
 
 Flags:
 
-- `--reviewers <csv>` — which reviewers to dispatch (default `claude,codex,agy`; `agent` is opt-in)
+- `--reviewers <csv>` — which reviewers to dispatch (nine by default; bare `agent` is opt-in)
 - `--prompt-file PATH` — read prompt from file instead of stdin
 - `--timeout SECONDS` — per-reviewer timeout (default 300)
 - `--quiet` — suppress provider heartbeat lines on stderr
@@ -60,9 +75,9 @@ Flags:
 To add the opt-in `agent` reviewer (needs Cursor quota):
 
 ```bash
-# Add Cursor agent to the default trio
+# Select a smaller panel including Muse and the opt-in Cursor auto model
 printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review \
-  --reviewers claude,codex,agy,agent
+  --reviewers claude,muse,codex,agy,agent
 
 # Or scope down to a specific subset
 printf '%s' "$ASSEMBLED_PROMPT" | _shared/adversarial-review/adversarial-review \

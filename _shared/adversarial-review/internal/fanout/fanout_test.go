@@ -32,21 +32,83 @@ func TestParseResponse_NoJSON(t *testing.T) {
 	}
 }
 
-// TestParseResponse_OffSchemaNoVerdicts is the regression for the false-green bug: a reviewer
-// that returns valid JSON in the flat critique shape ({"verdict":...,"issues":[...]}) — instead of
-// the audit schema with a verdicts[] array — must be rejected as a parse failure. Otherwise it
-// unmarshals to zero verdicts and merge() silently reports all_pass, dropping the reviewer's
-// findings. (Observed live: codex returned needs_revision with 3 critical issues, yet the run
-// reported all_pass.)
+// TestParseResponse_OffSchemaNoVerdicts: a response with NO recognizable verdict — neither a
+// verdicts[] array nor a flat "verdict" word that normalizes to PASS/FAIL — is a genuine parse
+// failure, kept loud so the reviewer is NOT silently recorded as a zero-verdict all_pass (the
+// original false-green bug). A flat verdict that DOES carry a pass/fail word is instead recovered —
+// see TestParseResponse_FlatVerdictRecovered.
 func TestParseResponse_OffSchemaNoVerdicts(t *testing.T) {
 	cases := []string{
-		`{"verdict":"needs_revision","summary":"bad","issues":[{"id":"R1","severity":"critical","title":"x"}]}`,
 		`{"summary":"all_pass"}`,
 		`{"summary":"all_pass","verdicts":[]}`,
+		`{"verdict":"???","issues":[]}`, // verdict present but not normalizable → still parse_error
 	}
 	for _, in := range cases {
 		if _, err := parseResponse(in); err == nil {
 			t.Fatalf("expected a parse error for off-schema/zero-verdict response: %s", in)
+		}
+	}
+}
+
+// TestParseResponse_FlatVerdictRecovered: reviewers (agy/composer-2.5/grok-build, and any custom
+// single-draft prompt) routinely emit the FLAT critique shape — {"verdict":..., and one of
+// "findings"/"issues"/"blocking":[...]} — instead of the wrapped {summary,verdicts:[...]} contract.
+// parseResponse now recovers that as ONE unnamed-draft verdict rather than dropping the reviewer as
+// parse_error, while still extracting the real PASS/FAIL so the merge gate sees a needs_revision/fail
+// as a FAIL (no false green — the verdict is honored, not silently passed).
+func TestParseResponse_FlatVerdictRecovered(t *testing.T) {
+	cases := []struct {
+		in      string
+		verdict string
+		issue   string // substring expected in the recovered verdict's issues, or "" to skip
+	}{
+		{`{"verdict":"pass","findings":[]}`, "PASS", ""},
+		{`{"verdict":"needs_revision","summary":"bad","issues":[{"severity":"critical","message":"x"}]}`, "FAIL", "x"},
+		{`{"verdict":"fail","blocking":[{"message":"boom"}]}`, "FAIL", "boom"},
+		{`{"verdict":"approve"}`, "PASS", ""},
+	}
+	for _, c := range cases {
+		r, err := parseResponse(c.in)
+		if err != nil {
+			t.Fatalf("parseResponse(%s) unexpected error: %v", c.in, err)
+		}
+		if len(r.Verdicts) != 1 {
+			t.Fatalf("parseResponse(%s): want 1 verdict, got %d", c.in, len(r.Verdicts))
+		}
+		v := r.Verdicts[0]
+		if v.Verdict != c.verdict {
+			t.Errorf("parseResponse(%s): verdict = %q, want %q", c.in, v.Verdict, c.verdict)
+		}
+		if v.DraftID != "" {
+			t.Errorf("parseResponse(%s): DraftID = %q, want empty (unnamed draft)", c.in, v.DraftID)
+		}
+		if c.issue != "" {
+			found := false
+			for _, is := range v.Issues {
+				if strings.Contains(is, c.issue) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("parseResponse(%s): issues %v missing %q", c.in, v.Issues, c.issue)
+			}
+		}
+	}
+}
+
+// TestNormalizeVerdict covers the free-form verdict-word → PASS/FAIL mapping, incl. fail-ish
+// precedence (needs_revision is FAIL, not a stray pass match) and the unknown → "" case.
+func TestNormalizeVerdict(t *testing.T) {
+	cases := map[string]string{
+		"PASS": "PASS", "pass": "PASS", "Approve": "PASS", "LGTM": "PASS",
+		"FAIL": "FAIL", "fail": "FAIL", "needs_revision": "FAIL", "needs revision": "FAIL",
+		"reject": "FAIL", "blocking": "FAIL",
+		"": "", "maybe": "", "???": "",
+	}
+	for in, want := range cases {
+		if got := normalizeVerdict(in); got != want {
+			t.Errorf("normalizeVerdict(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
@@ -228,9 +290,9 @@ func TestSelectReviewers_Default(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Default = claude + codex + agy + composer-2.5 + grok-build; the bare
-	// `agent` provider stays opt-in.
-	want := []string{"claude", "codex", "agy", "composer-2.5", "grok-build"}
+	// Default = the six frontier-family reviewers + the three open-weights
+	// families (kimi, glm, gpt-oss); the bare `agent` provider stays opt-in.
+	want := []string{"claude", "muse", "codex", "agy", "composer-2.5", "grok-build", "kimi", "glm", "gpt-oss"}
 	if len(got) != len(want) {
 		t.Fatalf("default should be %v, got %d items", want, len(got))
 	}
@@ -252,7 +314,7 @@ func TestSelectReviewers_CursorModels(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Both route through the Cursor `agent` CLI, pinned to distinct models.
-	want := map[string]string{"composer-2.5": "composer-2.5", "grok-build": "grok-build-0.1"}
+	want := map[string]string{"composer-2.5": "composer-2.5", "grok-build": "grok-4.7-xhigh"}
 	if len(got) != len(want) {
 		t.Fatalf("want %d reviewers, got %d", len(want), len(got))
 	}
@@ -347,6 +409,78 @@ type errString string
 
 func (e errString) Error() string { return string(e) }
 
+func TestParseIssue(t *testing.T) {
+	cases := []struct {
+		name       string
+		issue      string
+		wantSev    string
+		wantTitle  string
+		wantLoc    string
+		wantRaised string
+	}{
+		{
+			name:       "full shape em-dash and loc",
+			issue:      "[claude+codex+grok-build] HIGH: drops needs-review items — silently maps to PASS (internal/x.go:114)",
+			wantSev:    "HIGH",
+			wantTitle:  "drops needs-review items",
+			wantLoc:    "internal/x.go:114",
+			wantRaised: "claude+codex+grok-build",
+		},
+		{
+			name:       "title ends at first paren when no em-dash",
+			issue:      "[codex] MEDIUM: lossy mapping (internal/y.go:7)",
+			wantSev:    "MEDIUM",
+			wantTitle:  "lossy mapping",
+			wantLoc:    "internal/y.go:7",
+			wantRaised: "codex",
+		},
+		{
+			name:       "no loc",
+			issue:      "[claude] LOW: minor nit — cosmetic",
+			wantSev:    "LOW",
+			wantTitle:  "minor nit",
+			wantLoc:    "",
+			wantRaised: "claude",
+		},
+		{
+			name:       "off-shape issue still recorded with empty sev/raised_by",
+			issue:      "freeform note without the bracket/severity shape",
+			wantSev:    "",
+			wantTitle:  "freeform note without the bracket/severity shape",
+			wantLoc:    "",
+			wantRaised: "",
+		},
+		{
+			name:       "critical with loc but no em-dash or paren in title",
+			issue:      "[grok-build] CRITICAL: nil deref (pkg/a.go:42)",
+			wantSev:    "CRITICAL",
+			wantTitle:  "nil deref",
+			wantLoc:    "pkg/a.go:42",
+			wantRaised: "grok-build",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseIssue(tc.issue)
+			if got.Severity != tc.wantSev {
+				t.Errorf("severity = %q, want %q", got.Severity, tc.wantSev)
+			}
+			if got.Title != tc.wantTitle {
+				t.Errorf("title = %q, want %q", got.Title, tc.wantTitle)
+			}
+			if got.Loc != tc.wantLoc {
+				t.Errorf("loc = %q, want %q", got.Loc, tc.wantLoc)
+			}
+			if got.RaisedBy != tc.wantRaised {
+				t.Errorf("raised_by = %q, want %q", got.RaisedBy, tc.wantRaised)
+			}
+			if got.FindingID == "" || len(got.FindingID) != 16 {
+				t.Errorf("finding_id should be 16 hex chars, got %q", got.FindingID)
+			}
+		})
+	}
+}
+
 func TestIssueOverlaps(t *testing.T) {
 	cases := []struct {
 		a, b string
@@ -362,5 +496,53 @@ func TestIssueOverlaps(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("issueOverlaps(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
 		}
+	}
+}
+
+// The 2026-07-17 mislabels: agy/claude returned long NARRATIVES with the verdict in a fenced
+// ```json block near the end; the old first-{-to-last-} span swallowed prose braces and
+// bucketed real PASSes as parse_error. These pin the candidate-based parse.
+func TestParseResponse_narrativeWithTrailingFencedVerdict(t *testing.T) {
+	body := "I traced each concern to ground truth.\n\n" +
+		"| Concern | Finding |\n|---|---|\n| tenant | `{ws.ID}` scoping clean |\n\n" +
+		"The guard `if cause instanceof ApiError && cause.status === 404 { return null }` holds.\n\n" +
+		"```json\n{\n  \"verdict\": \"pass\",\n  \"summary\": \"clean\",\n  \"findings\": [\n    {\"severity\": \"low\", \"file\": \"a.go\", \"description\": \"nit\"}\n  ]\n}\n```\n"
+	r, err := parseResponse(body)
+	if err != nil {
+		t.Fatalf("narrative+fenced verdict must parse, got: %v", err)
+	}
+	if len(r.Verdicts) != 1 || r.Verdicts[0].Verdict != "PASS" {
+		t.Fatalf("want one PASS verdict, got %+v", r.Verdicts)
+	}
+}
+
+func TestParseResponse_narrativeWithMultipleFencedBlocks(t *testing.T) {
+	// An earlier diff/code fence must not shadow the LAST (verdict) fence.
+	body := "Applied the patch:\n```diff\n+ if x { y() }\n```\nRan the suite — green.\n" +
+		"```json\n{\"verdict\":\"fail\",\"findings\":[\"real defect: {broken} handling\"]}\n```\nDone."
+	r, err := parseResponse(body)
+	if err != nil {
+		t.Fatalf("multi-fence narrative must parse, got: %v", err)
+	}
+	if len(r.Verdicts) != 1 || r.Verdicts[0].Verdict != "FAIL" {
+		t.Fatalf("want one FAIL verdict, got %+v", r.Verdicts)
+	}
+}
+
+func TestParseResponse_unfencedTrailingJSON(t *testing.T) {
+	body := "Summary of the review (no fence, prose braces like {this} earlier).\n\n" +
+		`{"verdict":"pass","findings":[]}`
+	r, err := parseResponse(body)
+	if err != nil {
+		t.Fatalf("unfenced trailing JSON must parse via the decoder walk, got: %v", err)
+	}
+	if len(r.Verdicts) != 1 || r.Verdicts[0].Verdict != "PASS" {
+		t.Fatalf("want one PASS verdict, got %+v", r.Verdicts)
+	}
+}
+
+func TestParseResponse_pureProseStillFailsLoud(t *testing.T) {
+	if _, err := parseResponse("I could not complete the review at all."); err == nil {
+		t.Fatal("prose with no verdict must stay a loud parse error (the false-green guard)")
 	}
 }

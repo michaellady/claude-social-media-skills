@@ -41,12 +41,22 @@ esac
 pairs=(
   "$upstream/converge/go/internal/fanout/fanout.go::$dir/internal/fanout/fanout.go"
   "$upstream/converge/go/internal/fanout/fanout_test.go::$dir/internal/fanout/fanout_test.go"
+  "$upstream/converge/go/internal/fanout/runs.go::$dir/internal/fanout/runs.go"
+  "$upstream/converge/go/internal/fanout/runs_test.go::$dir/internal/fanout/runs_test.go"
+  "$upstream/converge/go/internal/ledger/ledger.go::$dir/internal/ledger/ledger.go"
+  "$upstream/converge/go/internal/ledger/ledger_test.go::$dir/internal/ledger/ledger_test.go"
   "$upstream/llm-provider/go.mod::$dir/internal/llm-provider/go.mod"
   "$upstream/llm-provider/provider/provider.go::$dir/internal/llm-provider/provider/provider.go"
   "$upstream/llm-provider/claude/claude.go::$dir/internal/llm-provider/claude/claude.go"
   "$upstream/llm-provider/codex/codex.go::$dir/internal/llm-provider/codex/codex.go"
+  "$upstream/llm-provider/codex/harden_unix.go::$dir/internal/llm-provider/codex/harden_unix.go"
+  "$upstream/llm-provider/codex/harden_other.go::$dir/internal/llm-provider/codex/harden_other.go"
   "$upstream/llm-provider/agent/agent.go::$dir/internal/llm-provider/agent/agent.go"
   "$upstream/llm-provider/agy/agy.go::$dir/internal/llm-provider/agy/agy.go"
+  "$upstream/llm-provider/muse/muse.go::$dir/internal/llm-provider/muse/muse.go"
+  "$upstream/llm-provider/muse/muse_test.go::$dir/internal/llm-provider/muse/muse_test.go"
+  "$upstream/llm-provider/muse/harden_unix.go::$dir/internal/llm-provider/muse/harden_unix.go"
+  "$upstream/llm-provider/muse/harden_other.go::$dir/internal/llm-provider/muse/harden_other.go"
 )
 
 drift=0
