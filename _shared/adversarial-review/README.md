@@ -19,10 +19,16 @@ vendored binary is equivalent to running `converge audit`.
 
 Muse uses your existing Muse Code subscription login, with no separate API
 key. The verified model defaults on 2026-11-03 are Fable, Muse Wonder 1.0,
-GPT-6.1 Sol, Gemini 4 Argon High, Composer 2.5, Grok 4.7 Extra High,
+GPT-6 Astra Max, Gemini 4 Argon High, Composer 2.5, Grok 4.7 Extra High,
 Kimi K3 Max, GLM 5.2 Max, and GPT-OSS 120B. Wonder Full returned an access
 error on the tested account; it is not selected. Explicit provider model
 options and `CONVERGE_*_MODEL` overrides remain available.
+
+All reviews use the most advanced verified model in each family by default.
+Claude Fable 5.1 and Muse Wonder use maximum reasoning; Codex uses GPT-6 Astra
+with maximum reasoning. The optional generic Cursor `agent` reviewer uses
+`claude-fable-5-1-thinking-max` instead of Auto. An explicit user request can
+still override model or effort.
 
 The vendored build retains upstream's Go module namespace so its internal
 fanout and ledger imports compile unchanged. The local provider replacement
