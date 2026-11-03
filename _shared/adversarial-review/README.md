@@ -2,7 +2,7 @@
 
 Multi-reviewer adversarial-review transport: dispatches the same prompt to
 every selected reviewer CLI in parallel (default
-`claude,muse,codex,agy,composer-2.5,grok-build,kimi,glm,gpt-oss`; bare `agent`
+`claude,muse,codex,agy,composer-2.5,grok-build,kimi,glm`; bare `agent`
 is opt-in), parses each reviewer's JSON verdict, and emits a merged
 canonical response.
 
@@ -20,7 +20,7 @@ vendored binary is equivalent to running `converge audit`.
 Muse uses your existing Muse Code subscription login, with no separate API
 key. The verified model defaults on 2026-11-03 are Fable, Muse Wonder 1.0,
 GPT-6 Astra Max, Gemini 4 Argon High, Composer 2.5, Grok 4.7 Extra High,
-Kimi K3 Max, GLM 5.2 Max, and GPT-OSS 120B. Wonder Full returned an access
+Kimi K3 Max, and GLM 5.2 Max. Wonder Full returned an access
 error on the tested account; it is not selected. Explicit provider model
 options and `CONVERGE_*_MODEL` overrides remain available.
 
