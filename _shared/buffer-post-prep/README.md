@@ -68,6 +68,17 @@ Run the binary against any channel and check that the emitted JSON includes `"ta
 ./buffer-post-prep --channel-id <id> --service threads --text "test" --format-tag teaser | jq .tagIds
 ```
 
+## Substack Notes
+
+Use `--service substack` for a connected Buffer Substack channel. Text-only
+Notes require no assets or platform metadata. Images remain optional and use
+the same asset shape as other channels. The helper preserves `addToQueue`,
+automatic scheduling, and format-tag IDs.
+
+Notes allow 10,000 UTF-16 code units, with links counted in full. This matches
+[Buffer's character-limit contract](https://developers.buffer.com/guides/character-limits.html).
+The helper rejects over-limit Notes locally, including emoji surrogate pairs.
+
 ## Graceful degradation
 
 If `tag-ids.local.json` is missing, malformed, or the format key isn't in it, the binary **still emits the post args** — just without `tagIds`. It warns on stderr so the caller can surface it. This means closed-loop attribution silently degrades instead of blocking publication. `audit-buffer-queue` will catch the resulting untagged posts at the next weekly review.
