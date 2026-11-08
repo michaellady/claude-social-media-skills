@@ -41,6 +41,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -64,6 +65,16 @@ var platformLimits = map[string]int{
 	"instagram": 2200,
 	"tiktok":    2200,
 	"linkedin":  3000,
+	"substack":  10000,
+}
+
+// Buffer counts Substack Notes in UTF-16 units, including full URLs.
+// https://developers.buffer.com/guides/character-limits.html
+func postTextLen(service, text string) int {
+	if service == "substack" {
+		return len(utf16.Encode([]rune(text)))
+	}
+	return runeLen(text)
 }
 
 // Valid format tag values (matches _shared/format_tags.json keys exactly).
@@ -117,7 +128,7 @@ func main() {
 	if strings.TrimSpace(*text) == "" {
 		fail(64, "missing --text")
 	}
-	if n := runeLen(*text); n > limit {
+	if n := postTextLen(*service, *text); n > limit {
 		fail(65, fmt.Sprintf("text length %d exceeds %s hard limit %d", n, *service, limit))
 	}
 	tagValue, ok := validFormatTags[*formatTag]
