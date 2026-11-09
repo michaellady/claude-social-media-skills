@@ -73,15 +73,59 @@ Every compose-and-publish skill has these required phases:
 | [`audit-buffer-queue`](audit-buffer-queue/SKILL.md) | Inspects the queue for bunching, theme over-saturation, untagged posts, dead channels, below-threshold channels. Recommends 1-click cancel/reschedule/tag actions. |
 | `buffer-stats` Phase 5b | Auto-generates skill-config recommendations from this week's format-performance data. User reviews → accepts → triggers SKILL.md edits → commits. |
 
+## Surfaces and consistency
+
+Every EVC social surface, who produces it, and the shared rules it must follow. The rules live in one place each (linked below); this table says which apply where, so a change to a shared asset can be checked against every surface that uses it.
+
+| Surface | Producer | Transport | CTA | Visual system | Alignment gate | `buffer-post-prep` + format tag | `get_post` readback | `generated/` hosting |
+|---|---|---|---|---|---|---|---|---|
+| Verbatim-quote posts (IG, LinkedIn, FB, Threads, …) | `promote-newsletter` | Buffer | ✅ | — (article images) | ✅ | ✅ `format:verbatim-quote` | ✅ | when an adapted image is hosted |
+| Teaser posts | `tease-newsletter` | Buffer | ✅ | — (article images) | ✅ | ✅ `format:teaser` | ✅ | when an adapted image is hosted |
+| 10-slide carousels | `carousel-newsletter` | Buffer | ✅ | ✅ | ✅ (slide/caption fit is reviewed in its adversarial + image gates) | tag only `format:carousel` (multi-image bypass, see [PATTERNS.md § Per-skill format tag](PATTERNS.md#pattern-per-skill-format-tag)) | ✅ | ✅ `generated/<YYYY-MM-DD>-<slug>/` |
+| LinkedIn pulse companion post | `long-form-pulse` | Buffer | ✅ | — | — (text) | ✅ `format:long-form-pulse` | ✅ | — |
+| Full-article syndication (LinkedIn pulse, Substack, Medium, HN, Reddit) | `crosspost-newsletter` | native editors | ✅ (LinkedIn accompanying post) | — | — | — (post-manifest instead) | public-URL verification | — |
+| Short clips (all clip platforms) | `opus-clips`; `longform-pipeline` | OpusClip native | hybrid by platform: UTM link, or comment-to-DM on the `newsletter` trigger word (see [`opus-clips` § Newsletter CTA composition](opus-clips/SKILL.md#newsletter-cta-composition-phase-55)) | — (video) | — | — (post-manifest + `[opus:<clip_id>]` instead) | — | — |
+| Longform full video (YouTube) | `longform-pipeline` | OpusClip native | UTM link in description (same hybrid rule) | — | — | — (post-manifest) | — | — |
+| Longform image posts (quote card, carousel, still, frame carousel) | `longform-pipeline` | Buffer | ✅ | ✅ | ✅ | ✅ `format:carousel` / `format:verbatim-quote` | ✅ | ✅ `generated/<YYYY-MM-DD>-longform-<slug>/` |
+| GitHub contribution posts | `promote-github` | Buffer | — (not a newsletter promo) | — | — | ✅ `format:link-share` / `format:batch-summary` | ✅ | — |
+
+All scheduling surfaces (Buffer and OpusClip) are checked together before a compose skill adds to the queue: [PATTERNS.md § Combined schedule check (Buffer + OpusClip)](PATTERNS.md#pattern-combined-schedule-check-buffer--opusclip).
+
+### The shared rules
+
+- **Canonical CTA.** Every Buffer post that promotes the newsletter ends with the string built only by `_shared/cta.sh "<title>"`, with the title of the **latest** beehiiv newsletter issue (the Comment-to-DM automation sends the latest post, so the CTA names it). Never hand-edit the string. See [PATTERNS.md § Comment-newsletter CTA](PATTERNS.md#pattern-comment-newsletter-cta--dm-trigger).
+- **EVC visual system.** The `carousel-newsletter/templates/` HTML templates (`01-hook` … `05-cta`, `shared.css`, `render.sh`, always 1080×1350), illustrations from `carousel-newsletter/templates/gen_illustration.py` with its `BRAND_PROMPT` and the EVC banner style reference (`~/Pictures/evc_banner2.png`). No parallel template set or brand prompt.
+- **Image-caption alignment gate.** Every image-bearing cell passes [PATTERNS.md § Newsletter image-caption alignment](PATTERNS.md#pattern-newsletter-image-caption-alignment) before user review and before any create.
+- **`buffer-post-prep` with format tags.** Every Buffer post goes through `_shared/buffer-post-prep` (or, for multi-image posts it cannot shape, carries the format `tagIds` directly) with a value from `_shared/format_tags.json`. See [PATTERNS.md § Buffer create_post](PATTERNS.md#pattern-buffer-create_post-with-channel-filter--caps).
+- **Readback.** After each create, `mcp__buffer__get_post` on the returned ID and compare caption, channel, asset URLs, tag IDs and scheduled time to what was approved. An HTTP 200 is not success.
+- **Hosting.** Image assets Buffer fetches are committed under `generated/` and referenced by raw URLs pinned to the commit SHA (`https://raw.githubusercontent.com/<owner>/<repo>/<commit-sha>/generated/<dir>/<file>`), not `main`, so a later commit cannot change bytes already scheduled. Before creating the post, fetch each hosted URL and check its sha256 against the reviewed local file; a mismatch voids the visual approval. (`carousel-newsletter`'s Phase 6 example still shows a `main` URL; pin it to the SHA when following it.)
+
+### `generated/` asset paths
+
+| Producer | Directory |
+|---|---|
+| `carousel-newsletter` | `generated/<YYYY-MM-DD>-<slug>/` |
+| `longform-pipeline` image posts | `generated/<YYYY-MM-DD>-longform-<slug>/` (one subdirectory per static, e.g. `s1-quote/`) |
+
+Both sit side by side in this repo's `generated/` so `audit-buffer-queue` (which flags untagged `-longform-` assets) and `buffer-stats` can find every hosted EVC image in one place.
+
+### External consumer: `longform-pipeline`
+
+The separate repo `/Users/mikelady/dev/longform-pipeline` (skill: `plugins/longform-pipeline/skills/longform-publish/SKILL.md`) consumes these shared assets from this repo: the carousel templates, `gen_illustration.py`, `_shared/cta.sh`, `_shared/buffer-post-prep`, `_shared/format_tags.json`, `_shared/adversarial-review` and the alignment gate. **Changes here must keep that consumer working.** In particular, treat these as a contract and change them only together with a matching change in `longform-pipeline`:
+
+- the templates' file names and placeholder names (`{{ILLUS_IMG}}`, `{{KICKER}}`, `{{HEADLINE_1}}`, `{{HEADLINE_ACCENT}}`, `{{QUOTE}}`, `{{ATTRIBUTION}}`, `{{STAT_NUMBER}}`, `{{ACCENT_WORD}}`, `{{PAGE_CURRENT}}`/`{{PAGE_TOTAL}}` and the rest as they appear in each template);
+- the `cta.sh` output format (`Comment "newsletter" to get my latest post, "<title>"`, no trailing newline or punctuation) and its usage/exit codes;
+- the `gen_illustration.py` CLI (positional `scene` and `output`, plus `--aspect`, `--force`, `--retry-on-429`, `--backoff-s`).
+
 ## The format tag values
 
 These are the only valid `format:<name>` tag values as of 2026-04-27. The compose skills tag posts with these; `buffer-stats` Phase 5 groups posts by these for engagement attribution.
 
 | Tag | Produced by | What it represents |
 |---|---|---|
-| `format:verbatim-quote` | promote-newsletter | Direct excerpts from a newsletter article |
+| `format:verbatim-quote` | promote-newsletter; longform-pipeline (quote-card image posts) | Direct excerpts from a newsletter article |
 | `format:teaser` | tease-newsletter | Original copy summarizing without spoiling |
-| `format:carousel` | carousel-newsletter | 10-slide illustrated swipe post |
+| `format:carousel` | carousel-newsletter; longform-pipeline (multi-image posts) | 10-slide illustrated swipe post |
 | `format:link-share` | promote-github | Single GitHub contribution as a post |
 | `format:batch-summary` | promote-github | Multiple contributions unified by a theme sentence |
 | `format:long-form-pulse` | long-form-pulse | Short Buffer companion announcement post for an already-published LinkedIn pulse article. The pulse itself is published natively to LinkedIn by `crosspost-newsletter` (not via Buffer); this companion post makes the announcement's engagement closed-loop attributable via `buffer-stats`. Carries an in-text `[lp:<pulse_slug>]` tag for defense in depth |

@@ -25,6 +25,7 @@ For a beehiiv newsletter promotion when nothing goes wrong. ~5-10 min wall-clock
 - Select 3-5 strongest snippets from the body — concrete insights, stats, or provocative claims that stand alone.
 - Call `mcp__buffer__get_account` for the org ID, then `mcp__buffer__list_posts` (`status: ["scheduled", "needs_approval", "draft"]`, `first: 100`) to fetch the upcoming queue.
 - Substring-match each snippet (distinctive 4-8 word phrase) and the article title against queued post text. Annotate each snippet `✅ new` or `⚠️ queued Nx (earliest YYYY-MM-DD)`.
+- Run the [combined schedule check](../PATTERNS.md#pattern-combined-schedule-check-buffer--opusclip) for the same window and show per-day counts per platform (Buffer + OpusClip clips) next to the queue.
 - Map each snippet and image to its source section. Present relevant image candidates with each snippet; a hero is a candidate only when it illustrates that excerpt.
 
 **Phase 3 — User snippet selection.** Single question: which snippets to approve (default: all `✅ new`) and which image to attach to each. Wait for input. Every approved snippet fans out to every eligible Buffer channel.
@@ -119,6 +120,7 @@ Users often kick off `/promote-newsletter` when earlier promotion runs (crosspos
    - `✅ new` — zero matching queued posts
    - `⚠️ queued Nx (earliest YYYY-MM-DD)` — N matching posts; show the soonest `dueAt`
    Mention the dup count in the Phase 3 question as well so the user's snippet selection is informed. Default recommendation: prefer `✅ new` snippets unless the user wants deliberate repetition.
+6. Run the [combined schedule check](../PATTERNS.md#pattern-combined-schedule-check-buffer--opusclip) for the same window: list OpusClip-scheduled clip posts and show per-day counts per platform beside the Buffer queue. If the OpusClip MCP is unreachable, warn and continue.
 
 ### Phase 3 — User Snippet Selection
 

@@ -41,7 +41,7 @@ For a beehiiv newsletter carousel when nothing goes wrong. ~10-15 min wall-clock
 
 **Phase 7 — Host publicly (30 sec).** `mkdir -p generated/<YYYY-MM-DD>-<slug>/`, copy PNGs in, commit + push. Raw URLs: `https://raw.githubusercontent.com/<owner>/<repo>/main/generated/<YYYY-MM-DD>-<slug>/slide-NN.png`.
 
-**Phase 8 — Post to Buffer (1 min). 🔒 HARD GATE: adversarial review must be `all_pass` before this phase.** `list_channels` filtered to `isDisconnected=false AND isLocked=false`. Per-channel `mcp__buffer__create_post` with all 10 raw PNG URLs in `assets.images`, caption = `"<strongest quote>"` + `_shared/cta.sh "<Article Title>"` output (no trailing punctuation), `mode: "addToQueue"`, `schedulingType: "automatic"`, `tagIds: [<carousel Tag ID from _shared/buffer-post-prep/tag-ids.local.json>]`. Instagram metadata: `{ instagram: { type: "post", shouldShareToFeed: true } }` — Instagram auto-renders ≥2 images as a carousel. Facebook + Threads use their respective `type: "post"` metadata. LinkedIn needs no metadata.
+**Phase 8 — Post to Buffer (1 min). 🔒 HARD GATE: adversarial review must be `all_pass` before this phase.** First run the [combined schedule check](../PATTERNS.md#pattern-combined-schedule-check-buffer--opusclip) (Buffer queue + OpusClip-scheduled clips, per-day counts per platform) and flag any channel/day the carousel would pile onto. `list_channels` filtered to `isDisconnected=false AND isLocked=false`. Per-channel `mcp__buffer__create_post` with all 10 raw PNG URLs in `assets.images`, caption = `"<strongest quote>"` + `_shared/cta.sh "<Article Title>"` output (no trailing punctuation), `mode: "addToQueue"`, `schedulingType: "automatic"`, `tagIds: [<carousel Tag ID from _shared/buffer-post-prep/tag-ids.local.json>]`. Instagram metadata: `{ instagram: { type: "post", shouldShareToFeed: true } }` — Instagram auto-renders ≥2 images as a carousel. Facebook + Threads use their respective `type: "post"` metadata. LinkedIn needs no metadata.
 
 **Phase 9 — Summary.** Table: Platform | Channel | Status | Buffer queue URL. Confirm slide 10 accent word is literally `newsletter`.
 
@@ -229,6 +229,8 @@ Raw URL: `https://raw.githubusercontent.com/<owner>/<repo>/main/generated/<YYYY-
 **🔒 HARD GATE — adversarial review must have returned `summary == "all_pass"` for ALL slides before this phase.**
 
 If the prior `_shared/adversarial-review/adversarial-review` run returned `some_fail` for any slide draft, you MUST NOT call `mcp__buffer__create_post`. Iterate fixes per the [round cap](../PATTERNS.md#round-cap-5-iterations-max) (5 rounds max), then surface deadlocks to the user. Both copy AND illustration scene prompts go through review; both must PASS before the carousel ships.
+
+Before creating posts, run the [combined schedule check](../PATTERNS.md#pattern-combined-schedule-check-buffer--opusclip): pull the Buffer queue and OpusClip-scheduled clip posts for the same window, show per-day counts per platform, and flag any channel/day the carousel would pile onto (warn and continue if the OpusClip MCP is unreachable).
 
 Reuse patterns from `../promote-newsletter/SKILL.md`. Filter `list_channels` to `isDisconnected=false AND isLocked=false`. Per-channel:
 

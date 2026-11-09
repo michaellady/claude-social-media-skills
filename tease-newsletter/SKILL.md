@@ -33,7 +33,7 @@ For a beehiiv newsletter teaser run when nothing goes wrong. ~10-15 min wall-clo
 
 **Phase 1 — Content + voice (1-2 min).** If URL provided, `WebFetch` the beehiiv post (title, subtitle, body, image URLs). If "latest", fetch the beehiiv RSS feed from `reference_beehiiv_feed.md` and ask the user which article. Run `_shared/voice-corpus/voice-corpus` to pull the voice corpus JSON (auto-refreshes if cache > 7 days). Hold the corpus for Phase 4.
 
-**Phase 2 — Outline angles (1-2 min).** Read the article. Identify the single punchline (withheld), 3-5 angles, the emotional/intellectual payoff (withheld), and concrete nouns/numbers/metaphors worth name-dropping. Check the Buffer queue for existing posts about this article and annotate each angle with `✅ new` or `⚠️ overlaps`. Present the outline to the user.
+**Phase 2 — Outline angles (1-2 min).** Read the article. Identify the single punchline (withheld), 3-5 angles, the emotional/intellectual payoff (withheld), and concrete nouns/numbers/metaphors worth name-dropping. Check the Buffer queue for existing posts about this article and annotate each angle with `✅ new` or `⚠️ overlaps`. Run the [combined schedule check](../PATTERNS.md#pattern-combined-schedule-check-buffer--opusclip) and show per-day counts per platform (Buffer + OpusClip clips). Present the outline to the user.
 
 **Phase 3 — User picks ONE angle (1 min).** Single AskUserQuestion (single-select, not multi-select): pick one angle, image distribution, and tease style (curiosity-gap / provocation / personal-story). Wait for the pick. **One angle for all channels — length-adapt only, never angle-vary.**
 
@@ -82,7 +82,7 @@ Angles available:
   D) <angle> — could tease as "..."
 ```
 
-Also: **check the Buffer queue for existing posts from this article** (same procedure as `promote-newsletter` Phase 2). Annotate each angle with `✅ new` or `⚠️ overlaps existing queued post about <subject>` so the user can avoid duplicate angles.
+Also: **check the Buffer queue for existing posts from this article** (same procedure as `promote-newsletter` Phase 2). Annotate each angle with `✅ new` or `⚠️ overlaps existing queued post about <subject>` so the user can avoid duplicate angles. Then run the [combined schedule check](../PATTERNS.md#pattern-combined-schedule-check-buffer--opusclip) for the same window, so the outline also shows per-day counts per platform including OpusClip-scheduled clips (warn and continue if the OpusClip MCP is unreachable).
 
 ### Phase 3 — User Picks ONE Angle (then we adapt to length)
 

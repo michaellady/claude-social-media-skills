@@ -178,6 +178,36 @@ echo "$LIST_POSTS_JSON" | _shared/buffer-queue-check/buffer-queue-check \
 
 ---
 
+## Pattern: Combined schedule check (Buffer + OpusClip)
+
+The Buffer queue is not the whole schedule. OpusClip clip posts (from `opus-clips` and from the separate `longform-pipeline` repo) are scheduled natively through OpusClip and never appear in `mcp__buffer__list_posts`. A newsletter promo can therefore land on top of a clip on the same channel and day without any Buffer-only check noticing. Every skill that inspects the Buffer queue before scheduling (or audits it) also lists OpusClip's schedule for the same window and shows the combined load.
+
+### Transport (MCP calls)
+
+1. Take the window from the Buffer queue you already pulled: `startAt` = now, `endAt` = the latest queued `dueAt` (at least now + 14 days). Both ISO 8601 UTC.
+2. Call `opusclip_list_scheduled_posts` with `startAt` and `endAt` (the date-window mode; no `projectId`). Keep posts whose status is `scheduled`. Read-only: never call `opusclip_unschedule_publish` or `opusclip_schedule_publish` from this check.
+3. If the OpusClip MCP is not connected or the call errors, warn at the top of the output — *"OpusClip schedule check skipped — unable to reach OpusClip MCP. Clip posts may overlap."* — and continue with the Buffer-only view, exactly as the Buffer check degrades today.
+
+### Cognition (skill prompt)
+
+- Normalise both sources to one platform key (`linkedin`, `instagram`, `facebook`, `threads`, `tiktok`, `youtube`, …): Buffer `channelService`; OpusClip `platform` (`YOUTUBE`, `TIKTOK_BUSINESS`, `INSTAGRAM_BUSINESS`, `FACEBOOK_PAGE`, `LINKEDIN`, `THREADS`, `TWITTER`; lower-case it and drop the `_BUSINESS` / `_PAGE` suffix). The OpusClip day comes from `publish_at` (UTC ISO 8601); each post also carries `schedule_id`, `project_id`, `clip_id` and `status` (field names confirmed against a live listing on 2026-11-08).
+- Render one table of per-day counts per platform, local time, Buffer and OpusClip side by side, so the user sees the combined load next to the Buffer queue:
+
+  ```
+  | Day        | Platform  | Buffer | OpusClip | Total |
+  |------------|-----------|-------:|---------:|------:|
+  | 2026-11-10 | linkedin  |      2 |        1 |     3 |
+  | 2026-11-10 | instagram |      1 |        2 |     3 |
+  ```
+
+- OpusClip posts are video clips, so they count toward load and bunching, not toward the text/theme overlap match in the [Buffer queue overlap check](#pattern-buffer-queue--recently-sent-overlap-check).
+- Compose skills: when a proposed post would add to a day/platform that already carries an OpusClip clip, say so and prefer a different day for that channel (Buffer `addToQueue` picks the slot, so the remedy is a custom `dueAt` or skipping the cell; the user decides).
+- `audit-buffer-queue`: feed the OpusClip posts into the bunching (< 3 h gap) and over-saturation views alongside Buffer posts, labelled `opusclip`; they are reported, not cancelled, by that skill (unscheduling a clip is the user's call in OpusClip).
+
+Used by: `promote-newsletter`, `tease-newsletter`, `carousel-newsletter`, `audit-buffer-queue`.
+
+---
+
 ## Pattern: Format tag values (link to ARCHITECTURE.md)
 
 The 6 valid `format:<name>` tag values are the [authoritative table in ARCHITECTURE.md](ARCHITECTURE.md#the-format-tag-values). The constants are also in [`_shared/format_tags.json`](./_shared/format_tags.json) for programmatic access.
