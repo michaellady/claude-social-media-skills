@@ -86,15 +86,16 @@ func (*Provider) Run(ctx context.Context, opts provider.Options) error {
 		return provider.NewError(provider.ExitBadArgs, "cannot read prompt: %v", err)
 	}
 
-	args := []string{"--print", "--output-format", "text", "--trust", "--mode", "ask", "--sandbox", "enabled"}
+	args := []string{"--print", "--output-format", "text", "--trust"}
 	model := opts.Model
 	if model == "" {
 		model = os.Getenv("CONVERGE_AGENT_MODEL")
 	}
 	if model == "" {
-		// Reviews prefer the strongest verified model over automatic routing.
-		// Named family reviewers still pass their own explicit model.
-		model = "claude-fable-5-1-thinking-max"
+		// Cursor free plans reject any "named model" and require explicit
+		// --model auto. Paid plans accept named models too. "auto" is the
+		// safest default — works on both.
+		model = "auto"
 	}
 	args = append(args, "--model", model)
 	if opts.ResumeID != "" {

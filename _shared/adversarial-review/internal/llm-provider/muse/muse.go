@@ -85,45 +85,30 @@ func (*Provider) Run(ctx context.Context, opts provider.Options) error {
 		opts.ThreadOut = fmt.Sprintf("/tmp/converge-thread-%d.txt", os.Getpid())
 	}
 	// Model selection: explicit opts.Model > $CONVERGE_MUSE_MODEL > the CLI's
-	// verified subscription model. Wonder Full is not available on every plan.
+	// own default. Deliberately no baked-in default — model ids are
+	// probe-before-wire values, and the CLI default is the live one.
 	model := opts.Model
 	if model == "" {
 		model = os.Getenv("CONVERGE_MUSE_MODEL")
 	}
-	if model == "" {
-		model = "muse-wonder-1.0"
-	}
 	// Effort maps 1:1 onto the CLI's --reasoning-effort
-	// (none|minimal|low|medium|high|xhigh|max|ultra). Max is the highest
-	// verified effort for the subscription model selected above.
+	// (none|minimal|low|medium|high|xhigh|ultra); xhigh matches the
+	// codex/claude providers' default rigor.
 	if opts.Effort == "" {
-		opts.Effort = "max"
+		opts.Effort = "xhigh"
 	}
 	effort := opts.Effort
 
 	// Fresh session id per run, passed explicitly so the captured id is known
 	// upfront (the event stream echoes it back as stream.id).
 	sessionID := uuidV4()
-	// The complete review input is in PromptFile. Loading the caller's project
-	// can stall Muse before its first event and leaks unrelated project context.
-	// A fresh, untrusted workspace avoids discovery and keeps reviews isolated.
-	workspace, err := os.MkdirTemp("", "converge-muse-workspace-")
-	if err != nil {
-		return provider.NewError(provider.ExitBadArgs, "create review workspace: %v", err)
-	}
-	defer os.RemoveAll(workspace)
 	args := []string{
 		"exec",
 		"--json",
-		"--workspace", workspace,
 		"--prompt-file", opts.PromptFile,
 		"--session-id", sessionID,
 		"--reasoning-effort", effort,
-		"--provider", "meta",
-		"--disable-write",
-		"--disable-shell",
-		"--disable-web-tools",
-		"--no-foreign-personal-context",
+		"--disable-approval",
 	}
 	if model != "" {
 		args = append(args, "--model", model)
@@ -134,14 +119,6 @@ func (*Provider) Run(ctx context.Context, opts provider.Options) error {
 
 	cmd := exec.CommandContext(cctx, "muse", args...)
 	cmd.Stdin = nil
-	// This reviewer uses the user's Muse Code subscription. The CLI gives
-	// META_API_KEY priority over account login; exclude that override only in
-	// this child, without reading or changing the caller's credential value.
-	for _, entry := range os.Environ() {
-		if !strings.HasPrefix(entry, "META_API_KEY=") {
-			cmd.Env = append(cmd.Env, entry)
-		}
-	}
 	// Kill muse's whole process group (not just the direct pid) on
 	// cancellation, and bound cmd.Wait() so a straggler holding the stdout
 	// pipe can't wedge the fan-out past the merge.

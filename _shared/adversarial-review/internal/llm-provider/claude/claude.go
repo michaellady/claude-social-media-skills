@@ -82,7 +82,7 @@ func (*Provider) Run(ctx context.Context, opts provider.Options) error {
 	}
 	effort := opts.Effort
 	if effort == "" {
-		effort = "max"
+		effort = "xhigh"
 	}
 
 	prompt, err := os.ReadFile(opts.PromptFile)
