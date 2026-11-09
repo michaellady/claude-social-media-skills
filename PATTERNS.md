@@ -188,6 +188,41 @@ When adding a new compose skill, define a new format tag and update both files (
 
 ---
 
+## Pattern: Newsletter image-caption alignment
+
+Apply this gate to newsletter excerpt and teaser promotions before user review and before any Buffer create or image edit. Image availability, branding, and valid dimensions do not establish relevance.
+
+1. Locate the excerpt's source heading and exact source passage. For a teaser spanning sections, name the supporting sections and passages. Map article images to their source sections as they are extracted.
+2. Select an image from that section, or one that directly depicts the caption's specific point. Record why it fits. A general article cover is not an automatic match. Relevance takes priority over distributing the image pool, avoiding repeated URLs, and aspect-ratio convenience.
+3. Inspect the actual final image beside the full platform caption, including any trim and CTA. Use an image-capable independent reviewer for this visual check; a filename, alt text, URL, or a text-only review is not visual evidence. Supply the source passage and final asset to that reviewer. Text-only adversarial reviewers receive the visual review record alongside the copy.
+4. Block an image-bearing cell if the asset cannot be inspected, the pairing fails, or the visual review record is missing. Use text-only where supported, with an explicit reason. For an image-required channel, prepare a relevant compatible adaptation and inspect it, or hold that cell. Never substitute a different section's photo merely to fill a slot. Follow the applicable image-editing workflow for adaptations.
+5. Show the actual image preview beside the full caption in the user review. Any later caption or asset change invalidates that cell's pairing approval; repeat its affected checks before creating or editing the post.
+
+Keep these fields in each promotion manifest cell, outside the Buffer API args:
+
+```json
+{
+  "source_section": "Chase for the long run",
+  "source_excerpt": "Everyone is on a budget now, not only of tokens, but of attention.",
+  "image_source_section": "Chase for the long run",
+  "image_rationale": "The robot leaves fragmented screens behind for a continuous walk.",
+  "image_preview_path": "/absolute/path/to/final-image.png",
+  "visual_review": {
+    "reviewer": "independent image-capable reviewer",
+    "image_url": "https://example.com/final-image.png",
+    "caption": "Exact final platform caption, including CTA",
+    "verdict": "PASS",
+    "evidence": "Inspected the rendered image: screens recede behind the walking robot."
+  }
+}
+```
+
+For text-only cells, retain the source section/passage and use null image fields with `media_status: "text_only"` and a reason; do not invent a visual PASS. For held cells use `media_status: "held"` and exclude them from scheduling. A visual PASS must bind the exact caption and image URL in that cell.
+
+A local-only inspection is provisional until upload. Bind it to the final hosted URL only after verifying that the hosted bytes match the reviewed local asset (for example, by digest), or have the reviewer inspect the actual hosted image. If the host transforms the asset, review that final version. Text-review deadlock acceptance does not supply missing visual evidence.
+
+After saving, read each returned post ID with `get_post` and compare caption, channel, asset URL, tag IDs, and scheduled time to the approved manifest/creation receipt. Check actual returned dimensions for image-required platforms. If the saved asset differs, inspect it and repeat review; do not report success from an HTTP 200 alone.
+
 ## Pattern: Buffer create_post with channel filter + caps
 
 Every promote-* skill that calls `mcp__buffer__create_post` should pre-filter channels and validate args via `_shared/buffer-post-prep`. The transport layer enforces:
@@ -227,7 +262,7 @@ The Buffer API has four failure modes the caller must handle deterministically. 
 |---|---|---|
 | **Char-limit rejection** | `error.message` contains `"posts cannot exceed"` or `"Invalid post"` paired with a length-shaped phrase | The helper's pre-validation should have caught this; if it slipped through, the caller has a content bug. Log + skip the post (do NOT silently truncate — that's an editorial change). Surface to the user with the offending channel + length. |
 | **Timeout (10000ms exceeded)** | `error.message` contains `"timed out"` or `"timeout of"` | **The post likely DID land** — Buffer's API timeout is on the response side, not the action. Wait 5 sec, retry the SAME payload exactly once. If retry returns `"posted that one recently"` / `"duplicate"` error, treat as success (the original timed-out call went through). If retry returns a fresh post ID, that's the canonical post (the timeout was real and the post didn't land the first time). Confirmed 2026-05-03 on a FB batch-2 short post — timed out, retry confirmed already-sent. |
-| **Image-fetch failure** | `error.message` contains `"Failed to fetch image dimensions"` or `"Not Found"` paired with image context | The image URL was 200 at HEAD-check time but Buffer's image-dimensions fetcher couldn't reach it (often a `media.beehiiv.com/cdn-cgi/image/...` URL that returns 307→403 on Buffer's IP range — confirmed 2026-05-17 on a Magic-section image of the Fix-Forward newsletter). Retry the SAME post with the next unused image from the pool; if the pool is exhausted and the channel is Instagram (which requires an image), skip the cell and surface the skip — don't fall back to text-only on IG (Buffer rejects) or reuse an already-assigned URL (Buffer dedups). |
+| **Image-fetch failure** | `error.message` contains `"Failed to fetch image dimensions"` or `"Not Found"` paired with image context | Preserve the caption and use only a relevant replacement that passes the newsletter image-caption alignment gate. A different image invalidates that cell's previous visual approval. If no relevant compatible asset is available, use reviewed text-only where supported or hold the image-required cell and report it. Do not retry with the next unrelated image in a pool. |
 | **Rate limit (HTTP 429)** | `error.code == 429` or `error.message` contains `"rate limit"` | Stop immediately. Do NOT retry in a loop. Save remaining posts to `remaining-posts.md` in the project dir with full payload (channel ID, text, tags, mode, metadata) so a later session can resume. Report to user which posts succeeded and which are queued for retry. |
 
 Variant selection for batched posts hitting different platform limits: when a single batch produces both a long-form (LinkedIn, 3000 chars) and short-form (Threads, 500 chars) version of the same content, pass each variant + channel through the helper individually. Don't hand-pick variants — the helper's `platformLimits` map is authoritative; a draft that's 700 chars routed to a 500-char channel will fail and surface the mismatch immediately.

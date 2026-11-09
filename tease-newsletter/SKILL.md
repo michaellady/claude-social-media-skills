@@ -37,7 +37,7 @@ For a beehiiv newsletter teaser run when nothing goes wrong. ~10-15 min wall-clo
 
 **Phase 3 — User picks ONE angle (1 min).** Single AskUserQuestion (single-select, not multi-select): pick one angle, image distribution, and tease style (curiosity-gap / provocation / personal-story). Wait for the pick. **One angle for all channels — length-adapt only, never angle-vary.**
 
-**Phase 4 — Compose teasers (3-5 min).** Prepend the voice corpus inline in working context as the author's recent newsletters. Write the chosen angle at the longest applicable length (LinkedIn/Instagram). Derive shorter platform versions by length-trimming the same message — same hook, same setup, same withheld punchline. Per-platform budget = hard limit − CTA length − 7 margin (table in Phase 4). End every post with the exact CTA: `Comment "newsletter" to get my latest post, "<Article Title>"`. No emoji unless requested. No contiguous 7-word run from the source article. Default hero-image priority: LinkedIn (page) → LinkedIn (personal) → Instagram → Facebook → Threads. Skip Instagram if no image; skip TikTok/YouTube.
+**Phase 4 — Compose teasers (3-5 min).** Prepend the voice corpus inline in working context as the author's recent newsletters. Write the chosen angle at the longest applicable length (LinkedIn/Instagram). Derive shorter platform versions by length-trimming the same message — same hook, same setup, same withheld punchline. Per-platform budget = hard limit − CTA length − 7 margin (table in Phase 4). End every post with the exact CTA: `Comment "newsletter" to get my latest post, "<Article Title>"`. No emoji unless requested. No contiguous 7-word run from the source article. Apply the [newsletter image-caption alignment gate](../PATTERNS.md#pattern-newsletter-image-caption-alignment), including source passages and independent visual review of each final pairing. Hold Instagram if no relevant compatible image is ready; skip TikTok/YouTube.
 
 **Adversarial review (REQUIRED).** Run `_shared/adversarial-review/adversarial-review` per Phase 4's spec (source article prepended with `Publication: Enterprise Vibe Code`). Must return `all_pass` before scheduling.
 
@@ -93,7 +93,7 @@ Concretely:
 1. **Present** the 3–5 angles from Phase 2 to the user with a one-line preview tease for each. Use AskUserQuestion (single-select, NOT multi-select) so the UI forces a single pick.
 2. **Wait** for the user to select exactly one angle.
 3. **Also ask** in the same prompt:
-   - Which image attaches where (default: hero image on the highest-priority channel — see priority order below)
+   - Which relevant image attaches where, with the supporting source section and why it fits the chosen angle
    - Tease style preference: **curiosity-gap** ("Here's what I learned about X — and why it surprised me"), **provocation** ("Most people get X wrong. Here's why."), or **personal-story** ("I bought a $200 paperweight last week.")
 4. **In Phase 4**, write that one chosen angle as the canonical message at the longest applicable length (LinkedIn/Instagram). Then for shorter platforms, derive a length-trimmed version of the SAME message — same hook, same setup, same withheld punchline — just compressed. Don't introduce new content, new angles, or new framings in the shorter versions.
 
@@ -151,12 +151,12 @@ The drafts you produce MUST sound like a continuation of this voice. Match:
 - **Threads / Twitter / Bluesky:** 1–3 short lines. Lead with the hook, don't bury it. Pattern: `<curiosity statement>. <stake / why-care>. <implicit promise of payoff>.`
 - **Facebook:** 2–4 lines. Conversational. Allow a personal frame ("Spent $200 on a paperweight this week...").
 - **LinkedIn:** 3–6 short paragraphs (each 1–3 lines). Open with a hook, set up the topic, hint at the takeaway, withhold the conclusion. End with the CTA.
-- **Instagram:** Long-form is welcome (caption can be 3–8 short paragraphs). The hero image carries the visual; the caption tells the story up to but not past the punchline.
+- **Instagram:** Long-form is welcome (caption can be 3–8 short paragraphs). Use a relevant platform-compatible image; the caption tells the story up to but not past the punchline.
 
 **Media attachment:**
-Same Buffer dedupe rules as `promote-newsletter` — each unique image URL can only be used on one post in the queue. Ask the user how to distribute available images across the channels.
+Follow the [newsletter image-caption alignment gate](../PATTERNS.md#pattern-newsletter-image-caption-alignment). Preserve supporting source sections/passages, image rationale, actual previews, and the independent visual review record in the manifest for each cell. Review the final image beside the full teaser; a hero or another section's image is not automatically a match.
 
-**Default hero-image priority order** (when the user doesn't specify): LinkedIn (page) → LinkedIn (personal) → Instagram → Facebook → Threads. The hero is the article's strongest visual; it goes to the highest-priority channel with image capacity. Instagram is forced into the list because it requires an image — if no image is available for IG, skip the IG post entirely.
+Relevance takes priority over image distribution or unique URLs. A relevant asset may be reused across channels. If Buffer reports a duplicate, inspect the existing post rather than evading the guard or selecting unrelated media. Use documented text-only where supported if no relevant asset is ready; prepare and inspect an appropriate adaptation or hold an image-required cell. Include the actual preview and final caption in user review, and verify the saved pairing by returned post ID after scheduling.
 
 Skip Instagram if no image is available for it. Skip TikTok / YouTube channels (video required).
 
@@ -168,6 +168,7 @@ Apply the **[Adversarial Review pattern](../PATTERNS.md#pattern-adversarial-revi
 - **SOURCE_CONTENT:** the full beehiiv article body, verbatim. **Prepend a `Publication: Enterprise Vibe Code` line** above the title so reviewers know the publication name is in scope (strict reviewers like `agy` treat the article body as a whitelist; without this prepend they may flag the publication name as fabrication).
 - **SKILL_NAME:** `tease-newsletter`
 - **ARTIFACT_NAME:** "teaser"
+- **PAIRING_EVIDENCE:** source-section passages and current independent visual review records for the exact final captions and hosted image URLs. Reviewers without image access check the records; they must not claim to have inspected the images themselves.
 - **RULES_LIST:**
   - Teasers are ORIGINAL copy that summarize without spoiling the punchline.
   - BANNED: any contiguous run of 7+ words copied from the source verbatim. Run a sliding window check.
@@ -178,6 +179,7 @@ Apply the **[Adversarial Review pattern](../PATTERNS.md#pattern-adversarial-revi
   - REQUIRED: every post ends with the canonical CTA (use `_shared/cta.sh "<Article Title>"`).
   - REQUIRED: same core message across all channels — only length adapted, not angle.
   - REQUIRED: total post char count within platform budget (e.g. Threads = 500 - CTA - 7 margin).
+  - REQUIRED: each image-bearing cell passes the shared alignment gate. Missing, failed, or stale visual evidence blocks that cell regardless of the text-only review result.
 - **ISSUE_GUIDANCE:** "For verbatim drift, quote the 7+ word run that matches source. For fabrication, quote the claim and explain what the source actually says. For punchline spoilage, quote the line that gives away the takeaway. For unverifiable claims, quote the third-party assertion."
 
 The first time this skill ran on "Tokens From Our Past" (2026-04-26), the user caught a fabrication ("Every leader I respect keeps a token from a past reskilling on their desk") manually. This phase prevents that next time.
@@ -194,7 +196,10 @@ Post (412/3000 chars):
 
 Comment "newsletter" to get my latest post, "<Article Title>"
 ---
-Image: <URL or "text-only">
+Source section: <supporting heading>
+Image: <actual rendered preview beside this caption, or "text-only" with reason>
+Why it fits: <specific connection to the caption>
+Visual review: <reviewer and current verdict, or text_only>
 ```
 
 Repeat per channel. Highlight any line that the user might consider "too close to a verbatim quote" or "too revealing of the punchline" — let them edit before scheduling.

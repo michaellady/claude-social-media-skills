@@ -25,15 +25,15 @@ For a beehiiv newsletter promotion when nothing goes wrong. ~5-10 min wall-clock
 - Select 3-5 strongest snippets from the body — concrete insights, stats, or provocative claims that stand alone.
 - Call `mcp__buffer__get_account` for the org ID, then `mcp__buffer__list_posts` (`status: ["scheduled", "needs_approval", "draft"]`, `first: 100`) to fetch the upcoming queue.
 - Substring-match each snippet (distinctive 4-8 word phrase) and the article title against queued post text. Annotate each snippet `✅ new` or `⚠️ queued Nx (earliest YYYY-MM-DD)`.
-- Present the numbered snippet list + image pool to the user, hero image flagged as the default attachment.
+- Map each snippet and image to its source section. Present relevant image candidates with each snippet; a hero is a candidate only when it illustrates that excerpt.
 
 **Phase 3 — User snippet selection.** Single question: which snippets to approve (default: all `✅ new`) and which image to attach to each. Wait for input. Every approved snippet fans out to every eligible Buffer channel.
 
-**Phase 4 — Compose (snippet × channel matrix).** Build a JSON manifest with one cell per (snippet × channel) — never a bash array, since snippet bodies are multi-line. For each cell: trim the verbatim excerpt to fit the channel's char budget (use `…` for truncation, never paraphrase) and append the canonical CTA `Comment "newsletter" to get my latest post, "<Article Title>"` separated by a blank line. Distribute the image pool with priority Instagram → LinkedIn → Facebook → Threads, never reusing a URL (Buffer dedups). Skip TikTok / YouTube channels (video-only).
+**Phase 4 — Compose (snippet × channel matrix).** Build a JSON manifest with one cell per (snippet × channel), preserving source section, exact passage, image rationale, preview, and visual review fields from the [newsletter image-caption alignment gate](../PATTERNS.md#pattern-newsletter-image-caption-alignment). Trim verbatim copy to fit and append the canonical CTA. Select relevant media before handling platform dimensions; never fill cells from unrelated sections. Skip TikTok / YouTube channels (video-only).
 
-**Phase 5 — Adversarial review.** Run `_shared/adversarial-review/adversarial-review` on the full batch with `SOURCE_LABEL: "SOURCE ARTICLE"`, the full beehiiv body, and the verbatim-excerpt + CTA rules. Must return `all_pass` before Phase 6.
+**Phase 5 — Adversarial review.** First obtain an independent image-capable review of every final image/caption pairing under the shared alignment gate. Then run `_shared/adversarial-review/adversarial-review` on the full batch with the source article, source-section mappings, visual review records, and verbatim-excerpt + CTA rules. Missing, failed, or stale visual evidence blocks the affected image cell even if text reviewers return `all_pass`.
 
-**Phase 6 — User review.** Render the matrix as a single table (one row per cell: snippet, channel, chars/limit, image, body preview), followed by each unique body once. Ask "Ready to schedule all N posts to Buffer?". User can approve all, edit by row #, drop a snippet, skip a channel, or cancel.
+**Phase 6 — User review.** Render the matrix with source section, image rationale, and pairing verdict. Show each actual image beside its full final caption; a URL or image name alone is insufficient. Ask "Ready to schedule all N posts to Buffer?". User can approve all, edit by row #, drop a snippet, skip a channel, or cancel.
 
 **Phase 7 — Schedule.** For each approved cell, build args via `_shared/buffer-post-prep/buffer-post-prep` (attaches `format-tag = verbatim_quote`) and call `mcp__buffer__create_post`. Report per-channel success.
 
@@ -55,7 +55,8 @@ jq -r '.posts[] | select(.url | contains("<slug>")) | .body_text' \
 ```
 List EVERY image URL that appears in the article — hero, inline images,
 graphs/charts, screenshots. For each one tell me: (a) full URL, (b) what
-it depicts (one short phrase), (c) approximately where it appears. Do not
+it depicts (one short phrase), (c) its exact source heading or introduction.
+Do not
 summarize the article. Just enumerate the image URLs.
 ```
 
@@ -75,7 +76,7 @@ Drop any non-200 URL from the image pool. Note the drop count in Phase 2 so the 
 **Instagram aspect-ratio guard (added 2026-07-19).** Instagram only accepts feed images with width/height between **4:5 (0.8) and 1.91:1**. beehiiv header/hero images are typically ~3:1 (e.g. 2172×724) and get rejected at publish time — on the 2026-06-19 "I turned 35" run, **all 5 IG posts errored** with "Instagram doesn't support the aspect ratio of this media" and sat in `status:error` for a month, so IG (the #1 beehiiv-conversion channel) got zero promote posts for that launch. Before assigning an image to an **Instagram cell**, check its dimensions (`sips -g pixelWidth -g pixelHeight` on a downloaded copy, or the dimensions Buffer echoes back in the asset metadata) and:
 
 - ratio within [0.8, 1.91] → OK to assign to IG.
-- ratio outside the range → do NOT assign it to the IG cell. Either (a) pad it to 1.91:1 on a solid background (`ffmpeg`/`sips`) and host the padded copy, or (b) give the IG cell a different in-range image from the pool, or (c) skip IG for that snippet per the existing out-of-images rule. Non-IG cells (LinkedIn/FB/Threads) can still use the wide image freely.
+- ratio outside the range → adapt the relevant source image using the applicable image-editing workflow, then inspect the final version beside the caption. Another in-range image is acceptable only if it directly illustrates the same point and passes review. Otherwise hold that IG cell and report why. Non-IG cells may use the original wide image where supported.
 - After scheduling, run a `list_posts status:[error]` readback — an errored IG post is silent (Buffer doesn't surface it) and starves the top conversion channel.
 
 **If "latest" or no URL:**
@@ -97,7 +98,7 @@ Present each snippet as a numbered list:
 3. [insight] "What most people miss about..." (178 chars)
 ```
 
-Also present extracted images with URLs. Recommend the hero/header image as the default media attachment.
+Also present relevant image candidates with their source headings and previews. Apply the [newsletter image-caption alignment gate](../PATTERNS.md#pattern-newsletter-image-caption-alignment); do not default every excerpt to the hero.
 
 **Before presenting the list, check the Buffer queue for existing posts from this article.**
 
@@ -123,7 +124,7 @@ Users often kick off `/promote-newsletter` when earlier promotion runs (crosspos
 
 Ask the user:
 - Which snippet(s) to approve for posting (default: all `✅ new` snippets)
-- Which image to attach to each snippet (default: hero image for the first, then walk through the article's other images in order; remaining snippets go text-only)
+- Which relevant image to attach to each snippet, showing the source heading and why the image fits. Do not walk through unrelated article images in order.
 
 **Default fan-out behavior:** every approved snippet posts to every eligible Buffer channel — one post per (snippet × channel) pair. Do not ask the user to assign different snippets to different platforms; the user picks which snippets are good, and every approved snippet ships to every channel.
 
@@ -147,6 +148,8 @@ For each approved snippet, compose one post per eligible Buffer channel — same
 ```
 
 A Python loop calling `buffer-post-prep` once per cell handles multi-line bodies safely. Confirmed 2026-05-17: a bash array-based prep silently truncated all 6 long-form bodies to their first line.
+
+The example above shows transport fields only. Every real cell must also retain `source_section`, `source_excerpt`, and the image rationale, preview, and visual review fields defined in the [shared alignment gate](../PATTERNS.md#pattern-newsletter-image-caption-alignment). Keep these review fields in the manifest; pass only supported fields to Buffer.
 
 **CRITICAL RULE — No Rewriting:**
 Never rewrite, paraphrase, or rephrase the author's words. You may only:
@@ -181,11 +184,11 @@ Calculate the actual CTA length using the article title to determine snippet bud
 For short-form platforms (Twitter, Bluesky, Pinterest): when a snippet exceeds the budget, trim from the end with `…` while preserving complete sentences. If even the first sentence won't fit, drop that snippet for that channel and surface the skip — never paraphrase to fit.
 For long-form platforms (LinkedIn, Instagram): the full snippet can be used, potentially with multiple paragraphs.
 
-**Media attachment (snippet × channel fan-out has a tight image budget):**
-- **IMPORTANT — Buffer duplicate detection:** Buffer will reject posts that share the same image URL, treating them as duplicate content. Each (snippet × channel) cell needs either a **unique** image URL or to be text-only across the whole batch.
-- **Default distribution:** the article's inline images are a shared pool. Distribute them across the snippet × channel matrix with this priority order, never reusing a URL: (1) **Instagram cells first** — Instagram requires an image, so every snippet's Instagram cell must get one before other channels; (2) **LinkedIn cells next** — visuals lift engagement most here; (3) **Facebook cells**; (4) **Threads cells** — Threads is conversational, text-only is fine. Cells that don't receive an image go text-only.
-- **Out of images:** if the pool runs dry, remaining cells go text-only. If a snippet has no image left for its Instagram cell, **skip Instagram for that snippet** rather than sending text-only (Buffer will reject) or reusing a URL (Buffer dedups).
-- Attach images via `assets.images` with `metadata.altText` set to the article title.
+**Media attachment: relevance before distribution**
+- Follow the shared alignment gate for each cell. An image from another section is acceptable only when its visible content directly illustrates this caption and the independent review explains that connection.
+- A relevant image may be reused across channels; do not enforce global URL uniqueness. If Buffer actually reports a duplicate, inspect the existing post to establish whether the intended action already landed. Resolve that result without substituting unrelated media or changing URLs to evade a guard.
+- Where images are optional, use reviewed text-only with a reason if a relevant asset is unavailable. Where images are required, prepare a relevant compatible adaptation or hold that cell; exclude held cells from scheduling.
+- Use the image shape produced by `buffer-post-prep` and descriptive alt text. Alt text and dimensions do not replace visual inspection.
 
 **Skip TikTok and YouTube channels** — they require video assets, not images.
 
@@ -195,6 +198,7 @@ Apply the **[Adversarial Review pattern](../PATTERNS.md#pattern-adversarial-revi
 
 - **SOURCE_LABEL:** "SOURCE ARTICLE"
 - **SOURCE_CONTENT:** the full beehiiv article body, verbatim
+- **PAIRING_EVIDENCE:** per-cell source passages/headings, final image previews, and independent visual review records bound to the exact final caption and image URL. Text-only reviewers may verify those records but must not claim to have inspected pixels they cannot access.
 - **SKILL_NAME:** `promote-newsletter`
 - **ARTIFACT_NAME:** "post"
 - **RULES_LIST:**
@@ -203,6 +207,7 @@ Apply the **[Adversarial Review pattern](../PATTERNS.md#pattern-adversarial-revi
   - Every post MUST end with the canonical CTA from `_shared/cta.sh "<Article Title>"`.
   - No emoji unless explicitly requested.
   - No unverifiable third-party claims ("every leader I respect…", "everyone in [industry] knows…").
+  - Every image-bearing cell must pass the shared alignment gate. Missing, failed, inaccessible, or stale visual evidence blocks that cell. A valid URL, matching alt text, or general article branding is not enough.
 - **ISSUE_GUIDANCE:** "If a snippet IS verbatim, confirm by saying 'Verbatim match: lines N-M of source.' Do not give a PASS without citing the verbatim location."
 
 This is what makes "no fabrication" a property of the system rather than a hope.
@@ -214,14 +219,14 @@ Render the snippet × channel matrix as a single table — at 4 snippets × 6 ch
 ```
 Snippet × Channel matrix (24 cells)
 
-# | snippet | channel        | chars/limit | image                  | body preview
-01 | A      | LinkedIn (Mike)| 613/3000    | text-only              | We as an industry need…
-02 | A      | LinkedIn (EVC) | 613/3000    | Open Secret (#2)       | We as an industry need…
-03 | A      | Threads (mike) | 307/500     | text-only              | The key question for…
+# | snippet | channel | source section | chars/limit | image preview | why it fits | pairing
+01 | A | LinkedIn (Mike) | Attention | 613/3000 | text-only | no relevant image ready | text_only
+02 | A | LinkedIn (EVC) | Attention | 613/3000 | rendered preview | depicts fragmented attention | PASS
+03 | A | Threads (mike) | Attention | 307/500 | text-only | no relevant image ready | text_only
 ...
 ```
 
-Follow the table with the full body of each unique snippet variant (long-form vs short-form per snippet — typically 2 variants × N snippets = 6–10 unique bodies, not 24), so the user can scan once per snippet rather than once per cell.
+Follow the table with the full body of each unique snippet variant and its actual image preview adjacent to it. If variants use different images, show each distinct pairing. Image names, alt text, and bare links do not count as previews.
 
 Ask: **"Ready to schedule all N posts to Buffer?"**
 
@@ -236,6 +241,8 @@ The user can:
 
 **🔒 HARD GATE — adversarial review must have returned `summary == "all_pass"` before this phase.**
 
+Also require a current independent visual PASS for every image-bearing cell and user approval of the rendered pairings. Text-only cells need the documented reason; held cells are not scheduled. A changed caption or asset must repeat the affected review before a create or edit.
+
 If the prior `_shared/adversarial-review/adversarial-review` run returned `some_fail` for any draft in this batch, you MUST NOT call `mcp__buffer__create_post` for that draft. Iterate fixes per the [round cap](../PATTERNS.md#round-cap-5-iterations-max), then re-run. After 5 rounds, surface remaining FAILs as deadlocks to the user; only proceed once the user explicitly accepts each deadlocked claim. Spot-checking claims manually does NOT substitute — the 4-way independent review catches issues a careful manual review misses (today's run caught "30+ PRs" inflated metric vs actual 30, voice drift, "on every public method" overstatement — all caught by reviewers and missed by the composer's manual check).
 
 Apply the **[Buffer create_post pattern](../PATTERNS.md#pattern-buffer-create_post-with-channel-filter--caps)** for the transport layer (channel filter, min_followers, max_posts cap, format tag attachment, platform metadata). The skill provides:
@@ -245,9 +252,9 @@ Apply the **[Buffer create_post pattern](../PATTERNS.md#pattern-buffer-create_po
 
 **Schedule byte-identical to what passed review (verbatim-critical).** Curly vs straight apostrophes/quotes are part of the verbatim rule — the source of "I turned 35…" uses *straight* apostrophes in the body but *curly* in quoted phrases ("Become Undeniable") and the CTA ("Here's"). On 2026-06-19 a hand-typed *curly* `it's` (source has *straight*) FAILed agy + codex while claude passed (FAIL-OR → blocked). Two safeguards:
 1. **Don't re-type snippet bodies.** Extract each body directly from the assembled adversarial-review prompt (the exact text that passed) or index-slice it from the source `body_text` (`body[si:ei]`). Generate the per-cell `create_post` args once with a Python script — **not a bash loop**: `mapfile` is a bash builtin that silently yields an empty array under zsh (Claude Code's Bash tool runs zsh), which drops every `--image-url` and makes Instagram cells fail with "instagram posts require --image-url". Python is shell-agnostic.
-2. **Readback gate after scheduling.** `mcp__buffer__list_posts` filtered by the `verbatim_quote` tagId + `status: scheduled` + `createdAt.start`, then byte-diff each stored `text` against the prepped args (and assert image-URL uniqueness — Buffer dedups, so each URL is used once across the whole queue). Confirms storage is byte-faithful before you call the run done.
+2. **Readback gate after scheduling.** Read each returned post ID directly with `mcp__buffer__get_post`; filtered listings can omit posts. Compare stored text, image URL, channel, tag IDs, status, and dueAt against the approved manifest and creation receipt. Confirm platform-compatible returned dimensions. Do not assert image-URL uniqueness; verify the approved pairing was stored. Inspect and review any substituted image before claiming success.
 
-The skill's cognition for this phase is **image assignment** (which snippet × channel cell gets which image, since Buffer dedups image URLs) and **scheduling order** (typically snippet-by-snippet across all channels, so each snippet's fan-out goes out together). Fan-out level is no longer a per-run question — the default is "every approved snippet → every eligible channel." The user controls saturation by approving more or fewer snippets in Phase 3. The transport layer enforces:
+The skill's cognition for this phase is **image relevance and assignment**, visual pairing review, and scheduling order. Fan-out remains every approved snippet to every eligible channel, except held cells reported to the user. The transport helper validates API shape and limits; it does not prove semantic image relevance. The transport layer enforces:
 
 - Skips channels with `isDisconnected: true`, `isLocked: true`, or `service: "startPage"`
 - Skips channels below `min_followers_to_promote = 50` (verified via `mcp__buffer__get_channel`)
